@@ -167,14 +167,23 @@ final class AppleDeviceBackend: SessionBackend {
     }
     func status() throws -> [String: Any] {
         guard !stopped else { throw SomaError("backend_unavailable", "Native session closed") }
-        let healthy = media?.health()["healthy"] as? Bool == true
-        return ["backend": "apple-native", "sessionGeneration": generation, "deviceID": cli?.device ?? config.device,
-                "capabilities": ["screenshot": true, "tap": hid?.isAvailable == true && healthy, "ax": false, "swipe": hid?.isAvailable == true && healthy, "text": false],
-                "controlAvailable": hid?.isAvailable == true && healthy, "controlError": controlError as Any? ?? NSNull(),
-                "controlErrorCode": controlErrorCode as Any? ?? NSNull(),
-                "media": media?.health() ?? [:], "runnerStarted": false, "serviceTransport": config.nativeEndpointInventory == nil ? "apple-coredevice-service-socket" : "apple-paired-tunnel",
+        let health = media?.health() ?? [:]
+        let hidState = hid?.state
+        let closing = cancellation.isCancelled
+        let control = NativeControlStatus.resolve(hid: hidState, media: health, closing: closing,
+                                                   startupCode: controlErrorCode, startupError: controlError)
+        var result: [String: Any] = ["backend": "apple-native", "sessionGeneration": generation, "deviceID": cli?.device ?? config.device,
+                "capabilities": ["screenshot": true, "tap": control.available, "ax": false, "swipe": control.available, "text": false],
+                "sessionClosing": closing, "hidState": hidState?.rawValue ?? "unprepared",
+                "media": health, "runnerStarted": false, "serviceTransport": config.nativeEndpointInventory == nil ? "apple-coredevice-service-socket" : "apple-paired-tunnel",
                 "endpointDiscovery": config.nativeEndpointInventory == nil ? "apple-coredevice-service-socket" : "supplied-apple-netstat-inventory",
                 "validation": "experimental; inspect the after-observation to verify each input"]
+        result.merge(control.result) { _, new in new }
+        return result
+    }
+    private func controlStatus(mediaHealth: [String: Any]) -> NativeControlStatus {
+        NativeControlStatus.resolve(hid: hid?.state, media: mediaHealth, closing: cancellation.isCancelled,
+                                    startupCode: controlErrorCode, startupError: controlError)
     }
     func apps() throws -> AppCatalog {
         guard let cli else { throw SomaError("backend_unavailable", "Native backend not started") }
@@ -198,8 +207,10 @@ final class AppleDeviceBackend: SessionBackend {
     }
     func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any] {
         guard ["tap", "swipe"].contains(action.kind), action.coordinate else { throw SomaError("native_action_unsupported", "Native backend implements screenshot-coordinate tap and swipe only") }
-        guard let hid, hid.isAvailable, let media, media.health()["healthy"] as? Bool == true else {
-            throw SomaError("native_control_unavailable", controlError ?? "Native media/HID session is not healthy")
+        let control = controlStatus(mediaHealth: media?.health() ?? [:])
+        guard control.available, let hid, let media else {
+            throw ActionFailure(code: "native_control_unavailable", description: control.message ?? "Native control is unavailable",
+                                possiblyExecuted: false, requiresObservation: false, result: control.result)
         }
         guard target.context["deviceID"] as? String == cli?.device,
               target.context["sessionGeneration"] as? String == generation,

@@ -75,6 +75,10 @@ struct NativeSwipePlan {
 }
 
 final class NativeHIDAdapter {
+    enum State: String {
+        case ready, unprepared, cancelled
+        case contactActive = "contact_active", inputUncertain = "input_uncertain", releaseUncertain = "release_uncertain"
+    }
     private let transport: NativeTransport
     private let cancellation: NativeCancellation
     private let clock: () -> UInt64
@@ -84,7 +88,14 @@ final class NativeHIDAdapter {
     private var contact: (UInt16, UInt16)?
     private(set) var releaseUncertain = false
     private var inputUncertain = false
-    var isAvailable: Bool { surface != nil && contact == nil && !inputUncertain && !releaseUncertain && !cancellation.isCancelled }
+    var state: State {
+        if releaseUncertain { return .releaseUncertain }
+        if inputUncertain { return .inputUncertain }
+        if cancellation.isCancelled { return .cancelled }
+        if contact != nil { return .contactActive }
+        return surface == nil ? .unprepared : .ready
+    }
+    var isAvailable: Bool { state == .ready }
     private static let feature = "com.apple.coredevice.feature.remote.universalhidservice"
 
     init(transport: NativeTransport, cancellation: NativeCancellation,

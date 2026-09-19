@@ -466,6 +466,7 @@ final class AppleNativeTests: XCTestCase {
         }
         XCTAssertEqual(channel.reports.map { $0[3] }, [0xc2, 2])
         XCTAssertFalse(hid.isAvailable)
+        XCTAssertEqual(hid.state, .inputUncertain)
         XCTAssertEqual(channel.cancellations, 0)
         XCTAssertThrowsError(try hid.tap((123, 456)))
         _ = hid.release()
@@ -491,6 +492,7 @@ final class AppleNativeTests: XCTestCase {
         XCTAssertEqual(channel.reports.map { $0[3] }, [0xc2])
         XCTAssertTrue(hid.releaseUncertain)
         XCTAssertFalse(hid.isAvailable)
+        XCTAssertEqual(hid.state, .releaseUncertain)
         XCTAssertThrowsError(try hid.tap((123, 456)))
         XCTAssertEqual(hid.release()["releaseUncertain"] as? Bool, true)
         XCTAssertEqual(channel.reports.count, 1)

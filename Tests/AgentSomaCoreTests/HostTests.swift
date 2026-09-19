@@ -126,6 +126,7 @@ final class HostTests: XCTestCase {
         XCTAssertEqual(facts["afterObservationID"] as? String, "o2")
         XCTAssertEqual(facts["actionID"] as? String, response["id"] as? String)
         XCTAssertEqual(facts["transportStatus"] as? String, "sent")
+        XCTAssertEqual((facts["recovery"] as? [String: Any])?["nextAction"] as? String, "inspect_observation")
         XCTAssertEqual(backend.actionCount, 1); XCTAssertEqual(backend.observeCount, 2)
         let stale = try call(paths, session: session, op: "tap", fields: ["reference": "o1:e11"])
         XCTAssertEqual(stale["outcome"] as? String, "not_dispatched")
@@ -146,6 +147,7 @@ final class HostTests: XCTestCase {
         XCTAssertEqual(response["outcome"] as? String, "unknown")
         XCTAssertEqual((response["result"] as? [String: Any])?["transportStatus"] as? String, "sent")
         XCTAssertEqual((response["observation"] as? [String: Any])?["ok"] as? Bool, false)
+        XCTAssertEqual(((response["result"] as? [String: Any])?["recovery"] as? [String: Any])?["nextAction"] as? String, "observe")
         XCTAssertEqual(backend.actionCount, 1)
     }
 
@@ -165,6 +167,30 @@ final class HostTests: XCTestCase {
         XCTAssertEqual(backend.inputCount, 0); XCTAssertEqual(backend.observeCount, 1)
         let snapshot = try call(paths, session: session, op: "inspect", fields: ["reference": "o1", "offset": 0])
         XCTAssertEqual((snapshot["result"] as? [String: Any])?["refs"] as? String, "current")
+    }
+
+    func testNativeUncertainControlRecoverySurvivesAssociatedCaptureAndNextRejection() throws {
+        let backend = ControlledBackend()
+        backend.statusInfo = NativeControlStatus.resolve(hid: .releaseUncertain, media: ["healthy": true], closing: false,
+                                                         startupCode: nil, startupError: nil).result
+        backend.actionFailure = ActionFailure(code: "native_input_uncertain", description: "Lost release",
+            possiblyExecuted: true, requiresObservation: true, result: ["cleanup": ["releaseUncertain": true]])
+        let (paths, session, finished) = try host(timeout: 5, backend: backend, native: true)
+        defer { _ = try? call(paths, session: session, op: "disconnect"); wait(for: [finished], timeout: 3) }
+        _ = try call(paths, session: session, op: "observe")
+        let failed = try call(paths, session: session, op: "tap", fields: ["reference": "o1:e11"])
+        let facts = try XCTUnwrap(failed["result"] as? [String: Any])
+        XCTAssertEqual(failed["outcome"] as? String, "unknown")
+        XCTAssertEqual(facts["controlErrorCode"] as? String, "native_release_uncertain")
+        XCTAssertEqual((facts["recovery"] as? [String: Any])?["requiresReconnect"] as? Bool, true)
+        XCTAssertEqual(facts["afterObservationID"] as? String, "o2")
+        backend.actionFailure = ActionFailure(code: "native_control_unavailable", description: "Release uncertain",
+            possiblyExecuted: false, requiresObservation: false, result: backend.statusInfo)
+        let rejected = try call(paths, session: session, op: "tap", fields: ["reference": "o2:e11"])
+        XCTAssertEqual(rejected["outcome"] as? String, "not_dispatched")
+        XCTAssertEqual(((rejected["result"] as? [String: Any])?["recovery"] as? [String: Any])?["nextAction"] as? String, "reconnect_and_observe")
+        XCTAssertEqual(backend.observeCount, 2)
+        XCTAssertEqual(backend.inputCount, 0)
     }
 
     private func host(timeout: Double, backend: ControlledBackend, native: Bool = false) throws -> (SessionPaths, String, XCTestExpectation) {

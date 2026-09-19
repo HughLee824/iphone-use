@@ -16,6 +16,8 @@ python3 scripts/sync-plugin.py --check
 
 The opt-in Swift check loads the installed Apple media negotiator but does not connect to a phone. The ordinary `swift test` skips that installed-framework check. These tests validate request correlation, submission/cancel ordering, stale observations, coordinates, media ownership and failure bookkeeping; they cannot prove a real tap.
 
+For native control diagnostics, `NativeControlStatusTests` checks reason precedence, transient media health, exact rejection snapshots and recovery guidance; `HostTests` checks the actual IPC response composition. An unavailable-control error keeps its existing top-level code and adds the specific `result.controlErrorCode`. Uncertain HID state requires explicit reconnect, while a stale image requires observation. Local IPC loss only requests checking the original session and never establishes that it exited. The native-only client test uses a missing local Unix socket and saved host configuration; no device connection is made. See [the recovery contract](apple-native-backend.md#control-diagnostics-and-recovery).
+
 For the unchanged Runner compatibility requirement, compile without signing or running:
 
 ```sh

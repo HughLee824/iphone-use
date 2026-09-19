@@ -76,8 +76,10 @@ final class SessionHost {
         let id = request["id"] as? String ?? ""
         let operation = request["op"] as? String ?? ""
         func reject(_ code: String, _ message: String) {
-            reply(["id": id, "session": config.session, "ok": false,
-                   "outcome": "not_dispatched", "error": ["code": code, "message": message]], {})
+            var response: [String: Any] = ["id": id, "session": config.session, "ok": false,
+                   "outcome": "not_dispatched", "error": ["code": code, "message": message]]
+            if config.backend == "apple-native", code == "session_closed" { NativeRecovery.enrich(&response, control: nil) }
+            reply(response, {})
         }
         guard request["version"] as? Int == 1, request["session"] as? String == config.session,
               !id.isEmpty, (["status", "apps", "open", "observe", "inspect", "disconnect"] + DeviceAction.operations).contains(operation) else {
@@ -196,6 +198,9 @@ final class SessionHost {
                 } catch {
                     response["observation"] = ["ok": false, "error": String(describing: error)]
                 }
+            }
+            if config.backend == "apple-native", operation == "open" || action != nil || (operation == "observe" && response["ok"] as? Bool == false) {
+                NativeRecovery.enrich(&response, control: try? backend.status())
             }
             if config.backend == "apple-native", operation == "open" || action != nil {
                 var result = response["result"] as? [String: Any] ?? [:]

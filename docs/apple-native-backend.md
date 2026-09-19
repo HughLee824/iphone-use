@@ -29,6 +29,28 @@ Use the device/session/observation identifiers returned by your own run. The coo
 
 `apps` and `open` use Apple CLI requests. Native `open` reports launch acknowledgement separately from foreground confirmation and takes a fresh screenshot; the external agent must check which page is actually visible. No AX tree, focus traversal, OCR or built-in model is involved.
 
+## Control diagnostics and recovery
+
+`status.result.controlErrorCode` and `controlError` now describe current control availability, including failures after startup. `hidState` distinguishes `ready`, `unprepared`, `contact_active`, `input_uncertain`, `release_uncertain` and `cancelled`; `sessionClosing` records cancellation independently. These local status reads neither contact the device again nor reopen a service. Tap/swipe capabilities use the same control snapshot. Read `media` separately: media can remain healthy after an HID failure.
+
+| Control reason | `recovery.nextAction` | Meaning |
+| --- | --- | --- |
+| No error / control available | `none` | No control repair required; a current observation is still required for input. |
+| `native_release_uncertain` | `reconnect_and_observe` | RELEASE's local send completion was not confirmed. Closing or reconnecting cannot establish its prior device delivery. |
+| `native_input_uncertain` | `reconnect_and_observe` | A failed input attempt permanently withdrew this adapter's input availability, even if cleanup was queued. |
+| `native_session_closing` | `reconnect_and_observe` | Wait for this owned session's cleanup before explicitly opening a new one. |
+| `native_media_unhealthy` | `check_media_and_observe` | Read status without input. Media health may recover; then observe again. If it stays unhealthy, explicitly close/reconnect and observe. This diagnostic does not latch a new permanent failure. |
+| Original startup error or `native_hid_unavailable` | `resolve_error` | Fix the reported device/service/protocol prerequisite before explicit reconnect and observation. Reconnecting alone may not fix it. |
+| `native_contact_active` | `check_session` | Inspect the original operation/session; do not overlap input. |
+
+Uncertain release takes precedence over uncertain input, then session closing, startup failure, missing/active HID and media health. This keeps irreversible execution facts visible when several conditions coexist. Original service-denial/protocol error codes and messages are retained for startup failures.
+
+Native action results use the same additive control fields and `result.recovery` when facts are available. Existing `error.code`, `outcome`, `requiresObservation`, cleanup and observation IDs retain their meanings. In particular, a subsequent unavailable-control action still returns `error.code=native_control_unavailable`; its more specific cause is `result.controlErrorCode`. A rejected action keeps the control snapshot that caused the rejection even if media recovers before the response is assembled. The legacy `requiresObservation` flag is not a reconnect policy; consult recovery before any future input.
+
+Every recovery object contains `nextAction`, `requiresReconnect`, `automaticReplayAllowed=false` and a human-readable `message`. `requiresReconnect=true` applies to `reconnect_and_observe` and `resolve_error`; false does not promise the existing session can recover. For a normally queued native input, the outcome remains unknown: `inspect_observation` points to the attached image, or `observe` requests another capture when the attached capture failed. A stale reference/capture requires `observe`, not reconnect. Capture prerequisites such as unlocking still need resolution. Always inspect available after-images for execution effects; a control repair instruction concerns readiness for future input, not semantic verification of the earlier action.
+
+If the native host explicitly rejects a closing session, recovery requests `reconnect_and_observe`. If local IPC fails, `session_unavailable` requests `check_session`: the original host may still be running or cleaning up. No host exit, release delivery or successful cleanup is inferred from an IPC failure. This client-side addition applies only when the saved configuration identifies the native backend; existing XCTest responses remain unchanged. Recovery fields are guidance only and execute no retries, reconnections or replay.
+
 ## Implemented behavior
 
 - Reuses `SessionHost`, local IPC, the per-device lock, serial execution, observation cache, short observation references and `ScreenGuard` pixel comparison. Native backend selection is explicit in the saved host configuration; old configurations still select XCTest.
@@ -80,6 +102,7 @@ Environment was independently checked: macOS 27.0 (26A428), Xcode 27.0 (27A266a)
 | Swipe interrupted by SIGTERM | The self-written debug fault host triggered SIGTERM after 12 changed-position MOVE send barriers, observed cancellation and queued one RELEASE at the last MOVE coordinate on the same connection. The action stayed unknown; its attached capture failed because the session was closing. After acknowledged scoped cleanup, a new session screenshot showed offset 510 → 530, with hits 10, generation 2 and focus 0 unchanged. Both the before PNG and the new-session post-signal PNG were archived immediately. Queue completion is not a device RELEASE acknowledgement. |
 | HID channel closed during swipe | A separate fault session closed only its own HID channel after 12 MOVE barriers. The next MOVE and RELEASE failed before channel submission, with no later send barrier; release stayed uncertain, tap/swipe capabilities became false and a different subsequent action was rejected before dispatch. The associated after-PNG showed offset 530 → 499 with the other counters unchanged. Owned media/tunnel/cache cleanup succeeded while overall shutdown correctly remained unconfirmed. This was client-channel closure, not physical link loss. |
 | Recovery after interrupted swipe | A new ordinary release session observed the Probe and clicked a different button, changing generation 2 → 3 while hits 10, offset 499 and focus 0 remained unchanged. Scoped disconnect succeeded. Five critical PNGs across the fault/recovery sequence were archived with hashes. All three hosts exited and caches were absent. The 141-test host suite and the fault harness's fake-transport self-test passed; no product source changed for this acceptance extension. |
+| Control diagnostics and recovery host checks | 149 host tests passed, including failure precedence, exact rejection snapshots, transient media recovery, unknown outcomes with/without after-images, native host response integration and missing-IPC behavior without changing XCTest responses. Release build passed. This diagnostics-only continuation did not access the phone; previous device evidence does not claim these new JSON fields were retested on hardware. |
 
 Run portable host tests with `swift test`. To also exercise the installed macOS 27 Apple media negotiator:
 

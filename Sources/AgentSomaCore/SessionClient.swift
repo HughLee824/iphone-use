@@ -104,6 +104,10 @@ public enum SessionClient {
             if operation == "open" || DeviceAction.operations.contains(operation) {
                 response["outcome"] = uncertain ? "unknown" : "not_dispatched"
             }
+            if let data = try? Data(contentsOf: paths.config),
+               let config = try? JSONDecoder().decode(HostConfiguration.self, from: data), config.backend == "apple-native" {
+                NativeRecovery.enrich(&response, control: nil)
+            }
             return response
         }
     }
