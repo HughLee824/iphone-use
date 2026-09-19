@@ -11,6 +11,11 @@ protocol SessionBackend: AnyObject {
     func observe() throws -> CapturedObservation
     func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any]
     func stop() -> [String: Any]
+    func cancelCurrent()
+}
+
+extension SessionBackend {
+    func cancelCurrent() {}
 }
 
 final class XCTestBackend: SessionBackend {

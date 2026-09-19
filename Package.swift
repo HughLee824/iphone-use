@@ -9,7 +9,9 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.5.0")
     ],
     targets: [
-        .target(name: "AgentSomaCore"),
+        .target(name: "AppleNativeBridge", cSettings: [.unsafeFlags(["-fobjc-arc"])],
+                linkerSettings: [.linkedFramework("Foundation")]),
+        .target(name: "AgentSomaCore", dependencies: ["AppleNativeBridge"]),
         .executableTarget(name: "AgentSoma", dependencies: [
             "AgentSomaCore", .product(name: "ArgumentParser", package: "swift-argument-parser")
         ]),

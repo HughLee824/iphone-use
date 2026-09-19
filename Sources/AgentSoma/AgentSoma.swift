@@ -57,13 +57,21 @@ struct BuildRunner: ParsableCommand {
 }
 
 struct Connect: ParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Start a session and return once the Runner is ready.")
+    static let configuration = CommandConfiguration(abstract: "Start a device session using the selected backend.")
     @Option(help: "Connected iPhone UDID or CoreDevice identifier.") var device: String
     @Option(help: "Developer override: explicit signed .xctestrun. Release users run setup once, then omit this option.") var xctestrun: String?
     @Option(help: "Idle duration, such as 30m, 60m or 10s.") var idleTimeout = "30m"
+    @Option(help: "xctest (default) or experimental apple-native. Native readiness reports control availability explicitly.") var backend = "xctest"
+    @Option(help: "Diagnostic override: a recent Apple netstat -anvl -p tcp file selects direct RSD discovery. Native connections normally use CoreDevice service sockets.") var nativeEndpointInventory: String?
 
     mutating func run() throws {
         try output {
+            guard ["xctest", "apple-native"].contains(backend) else { throw ValidationError("Use --backend xctest or apple-native") }
+            if backend == "apple-native" {
+                guard xctestrun == nil else { throw ValidationError("--xctestrun is not used by apple-native") }
+                return try SessionClient.connectNative(device: device, idleTimeout: IdleTimeout(idleTimeout), endpointInventory: nativeEndpointInventory)
+            }
+            guard nativeEndpointInventory == nil else { throw ValidationError("--native-endpoint-inventory requires --backend apple-native") }
             if let xctestrun {
                 return try SessionClient.connect(device: device,
                     xctestrun: URL(fileURLWithPath: xctestrun).standardizedFileURL,

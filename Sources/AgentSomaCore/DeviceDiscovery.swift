@@ -2,7 +2,8 @@ import Foundation
 
 // devicectl's JSON file is its supported programmatic interface. Never parse its display table.
 enum CoreDevice {
-    static func read(_ arguments: [String], savingTo output: URL? = nil) throws -> [String: Any] {
+    static func read(_ arguments: [String], savingTo output: URL? = nil,
+                     cancelled: () -> Bool = { false }, trailingArguments: [String] = []) throws -> [String: Any] {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("agentsoma-discovery-\(UUID().uuidString)")
         try SessionPaths.secureDirectory(directory)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -13,11 +14,23 @@ enum CoreDevice {
         defer { try? log.close() }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-        process.arguments = ["devicectl"] + arguments + ["--timeout", "20", "--quiet", "--json-output", resultURL.path]
+        process.arguments = commandArguments(arguments, output: resultURL, trailingArguments: trailingArguments)
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = log
         process.standardError = log
         try process.run()
+        let deadline = ProcessInfo.processInfo.systemUptime + 25
+        while process.isRunning, !cancelled(), ProcessInfo.processInfo.systemUptime < deadline {
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        if process.isRunning {
+            process.terminate()
+            let stopDeadline = ProcessInfo.processInfo.systemUptime + 2
+            while process.isRunning, ProcessInfo.processInfo.systemUptime < stopDeadline { Thread.sleep(forTimeInterval: 0.02) }
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            process.waitUntilExit()
+            throw SomaError(cancelled() ? "coredevice_cancelled" : "coredevice_timeout", "CoreDevice process was cancelled or exceeded the host deadline")
+        }
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
             let detail = (try? String(contentsOf: logURL, encoding: .utf8)) ?? ""
@@ -27,6 +40,12 @@ enum CoreDevice {
             throw SomaError("invalid_discovery", "CoreDevice did not return a result object")
         }
         return result
+    }
+
+    // Launch treats everything after the bundle as application arguments. All tool options,
+    // including JSON output and device selection, must precede that positional tail.
+    static func commandArguments(_ arguments: [String], output: URL, trailingArguments: [String] = []) -> [String] {
+        ["devicectl"] + arguments + ["--timeout", "20", "--quiet", "--json-output", output.path] + trailingArguments
     }
 
     static func commandFailure(_ arguments: [String], exitCode: Int32, output: String) -> SomaError {

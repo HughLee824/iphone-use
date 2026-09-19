@@ -11,6 +11,10 @@ public enum SessionClient {
     }
 
     static func observing(session: String, action: [String: Any], capture: () throws -> [String: Any]) -> [String: Any] {
+        if action["session"] as? String == session, let observation = action["observation"] as? [String: Any] {
+            return ["session": session, "ok": action["ok"] as? Bool == true && observation["ok"] as? Bool == true,
+                    "action": action, "observation": observation]
+        }
         let rejected = action["session"] as? String == session && action["ok"] as? Bool == false
             && action["outcome"] as? String == "not_dispatched"
             && (action["requiresObservation"] == nil || action["requiresObservation"] as? Bool == false)
@@ -32,12 +36,21 @@ public enum SessionClient {
         guard FileManager.default.isReadableFile(atPath: xctestrun.path), xctestrun.pathExtension == "xctestrun" else {
             throw SomaError("runner_not_built", "Run build-runner, then provide its readable .xctestrun path using --xctestrun")
         }
+        return try connect(device: device, runnerPath: xctestrun.path, backend: "xctest", idleTimeout: idleTimeout)
+    }
+
+    public static func connectNative(device: String, idleTimeout: IdleTimeout, endpointInventory: String? = nil) throws -> [String: Any] {
+        try connect(device: device, runnerPath: "", backend: "apple-native", idleTimeout: idleTimeout,
+                    endpointInventory: endpointInventory.map { URL(fileURLWithPath: $0).standardizedFileURL.path })
+    }
+
+    private static func connect(device: String, runnerPath: String, backend: String, idleTimeout: IdleTimeout, endpointInventory: String? = nil) throws -> [String: Any] {
         umask(0o077)
         let session = "s" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
         let paths = try SessionPaths(session: session)
         try SessionPaths.secureDirectory(paths.directory)
-        let config = HostConfiguration(session: session, device: device, xctestrun: xctestrun.path,
-                                       idleTimeoutSeconds: idleTimeout.seconds)
+        let config = HostConfiguration(session: session, device: device, xctestrun: runnerPath,
+                                       idleTimeoutSeconds: idleTimeout.seconds, backend: backend, nativeEndpointInventory: endpointInventory)
         try JSONEncoder().encode(config).write(to: paths.config, options: .atomic)
         FileManager.default.createFile(atPath: paths.log.path, contents: nil)
         let log = try FileHandle(forWritingTo: paths.log)

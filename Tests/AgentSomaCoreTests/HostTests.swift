@@ -20,11 +20,13 @@ private final class ControlledBackend: SessionBackend {
     var actionFailure: ActionFailure?
     var blockAction = false
     var failObservation = false
+    var nativeSend = false
     let actionStarted = DispatchSemaphore(value: 0)
     let releaseAction = DispatchSemaphore(value: 0)
 
     func start() throws -> [String: Any] { ["runnerSession": "controlled-runner", "runnerPid": 123] }
-    func status() throws -> [String: Any] { try start() }
+    var statusInfo: [String: Any]?
+    func status() throws -> [String: Any] { try statusInfo ?? start() }
     func apps() throws -> AppCatalog {
         appsCount += 1
         return try AppCatalog(["apps": [["bundleIdentifier": "com.example.fixture", "name": "Fixture"]]])
@@ -40,7 +42,7 @@ private final class ControlledBackend: SessionBackend {
     func stop() -> [String: Any] {
         stopCount += 1
         stopped.signal()
-        return ["shutdownAcknowledged": true, "xcodebuildExited": true, "xcodebuildExitCode": 0, "forced": false]
+        return ["shutdownAcknowledged": true, "backendStopped": true, "xcodebuildExited": true, "xcodebuildExitCode": 0, "forced": false]
     }
     func observe() throws -> CapturedObservation {
         observeCount += 1
@@ -60,7 +62,7 @@ private final class ControlledBackend: SessionBackend {
             }
         }
         inputCount += 1
-        return ["kind": action.kind]
+        return nativeSend ? ["kind": action.kind, "transportStatus": "sent", "verificationStatus": "not_checked"] : ["kind": action.kind]
     }
 }
 
@@ -108,12 +110,70 @@ final class HostTests: XCTestCase {
         XCTAssertEqual(recovery["outcome"] as? String, "completed")
     }
 
-    private func host(timeout: Double, backend: ControlledBackend) throws -> (SessionPaths, String, XCTestExpectation) {
+    func testNativeSendStaysUnknownAndGetsNewObservationWithoutReplay() throws {
+        let backend = ControlledBackend(); backend.nativeSend = true
+        let (paths, session, finished) = try host(timeout: 5, backend: backend, native: true)
+        defer {
+            _ = try? call(paths, session: session, op: "disconnect")
+            wait(for: [finished], timeout: 3)
+        }
+        _ = try call(paths, session: session, op: "observe")
+        let response = try call(paths, session: session, op: "tap", fields: ["reference": "o1:e11"])
+        XCTAssertEqual(response["outcome"] as? String, "unknown")
+        XCTAssertEqual(response["ok"] as? Bool, false)
+        let facts = try XCTUnwrap(response["result"] as? [String: Any])
+        XCTAssertEqual(facts["sourceObservationID"] as? String, "o1")
+        XCTAssertEqual(facts["afterObservationID"] as? String, "o2")
+        XCTAssertEqual(facts["actionID"] as? String, response["id"] as? String)
+        XCTAssertEqual(facts["transportStatus"] as? String, "sent")
+        XCTAssertEqual(backend.actionCount, 1); XCTAssertEqual(backend.observeCount, 2)
+        let stale = try call(paths, session: session, op: "tap", fields: ["reference": "o1:e11"])
+        XCTAssertEqual(stale["outcome"] as? String, "not_dispatched")
+        XCTAssertEqual(backend.actionCount, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.directory.appendingPathComponent("native-events.jsonl").path))
+    }
+
+    func testNativeAfterCaptureFailurePreservesInputFacts() throws {
+        let backend = ControlledBackend(); backend.nativeSend = true
+        let (paths, session, finished) = try host(timeout: 5, backend: backend, native: true)
+        defer {
+            _ = try? call(paths, session: session, op: "disconnect")
+            wait(for: [finished], timeout: 3)
+        }
+        _ = try call(paths, session: session, op: "observe")
+        backend.failObservation = true
+        let response = try call(paths, session: session, op: "tap", fields: ["reference": "o1:e11"])
+        XCTAssertEqual(response["outcome"] as? String, "unknown")
+        XCTAssertEqual((response["result"] as? [String: Any])?["transportStatus"] as? String, "sent")
+        XCTAssertEqual((response["observation"] as? [String: Any])?["ok"] as? Bool, false)
+        XCTAssertEqual(backend.actionCount, 1)
+    }
+
+    func testNativePreDispatchFailureDoesNotCaptureOrInvalidateCurrentReference() throws {
+        let backend = ControlledBackend()
+        backend.actionFailure = ActionFailure(code: "native_control_unavailable", description: "No authorized HID service",
+            possiblyExecuted: false, requiresObservation: false)
+        let (paths, session, finished) = try host(timeout: 5, backend: backend, native: true)
+        defer {
+            _ = try? call(paths, session: session, op: "disconnect")
+            wait(for: [finished], timeout: 3)
+        }
+        _ = try call(paths, session: session, op: "observe")
+        let response = try call(paths, session: session, op: "tap", fields: ["reference": "o1:e11"])
+        XCTAssertEqual(response["outcome"] as? String, "not_dispatched")
+        XCTAssertNil(response["observation"])
+        XCTAssertEqual(backend.inputCount, 0); XCTAssertEqual(backend.observeCount, 1)
+        let snapshot = try call(paths, session: session, op: "inspect", fields: ["reference": "o1", "offset": 0])
+        XCTAssertEqual((snapshot["result"] as? [String: Any])?["refs"] as? String, "current")
+    }
+
+    private func host(timeout: Double, backend: ControlledBackend, native: Bool = false) throws -> (SessionPaths, String, XCTestExpectation) {
         let directory = URL(fileURLWithPath: "/private/tmp/as-test-\(UUID().uuidString.prefix(8))")
         try SessionPaths.secureDirectory(directory)
         let paths = SessionPaths(directory: directory)
         let session = "test-session"
-        let config = HostConfiguration(session: session, device: "test", xctestrun: "/unused", idleTimeoutSeconds: timeout)
+        let config = HostConfiguration(session: session, device: "test", xctestrun: "/unused", idleTimeoutSeconds: timeout,
+                                       backend: native ? "apple-native" : nil)
         let host = SessionHost(config: config, paths: paths, backend: backend)
         let finished = expectation(description: "host exited")
         DispatchQueue.global().async {
@@ -152,6 +212,22 @@ final class HostTests: XCTestCase {
         XCTAssertEqual(backend.stopCount, 1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: paths.socket))
         XCTAssertThrowsError(try call(paths, session: session, op: "status"))
+    }
+
+    func testNativeExitUsesFinalAvailabilityInsteadOfStartupSnapshot() throws {
+        let backend = ControlledBackend()
+        backend.statusInfo = ["controlAvailable": false, "capabilities": ["tap": false], "media": ["rtpPackets": 37]]
+        let (paths, session, finished) = try host(timeout: 5, backend: backend, native: true)
+        let response = try call(paths, session: session, op: "disconnect")
+        wait(for: [finished], timeout: 3)
+        let result = try XCTUnwrap(response["result"] as? [String: Any])
+        let final = try XCTUnwrap(result["backend"] as? [String: Any])
+        XCTAssertEqual(final["controlAvailable"] as? Bool, false)
+        XCTAssertEqual((final["capabilities"] as? [String: Any])?["tap"] as? Bool, false)
+        XCTAssertEqual((final["media"] as? [String: Any])?["rtpPackets"] as? Int, 37)
+        let saved = try jsonObject(Data(contentsOf: paths.exit))
+        XCTAssertEqual((saved["backend"] as? [String: Any])?["controlAvailable"] as? Bool, false)
+        XCTAssertEqual(backend.stopCount, 1)
     }
 
     func testOverlongSwipeNeverReachesBackendOrInvalidatesObservation() throws {

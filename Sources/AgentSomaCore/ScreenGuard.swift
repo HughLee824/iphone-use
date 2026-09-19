@@ -187,7 +187,7 @@ struct CoordinateGesture: Codable {
     }
 }
 
-private struct ScreenImage {
+struct ScreenImage {
     let image: CGImage
 
     init(png: Data) throws {

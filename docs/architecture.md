@@ -2,6 +2,8 @@
 
 AgentSoma provides observations and actions for an external agent operating a physical iPhone. The calling agent owns task planning, image interpretation, and judging outcomes. AgentSoma owns device access, reference validity, execution facts, and session cleanup.
 
+The opt-in [Apple native backend](apple-native-backend.md) adds native screenshots and an experimental media/HID adapter. The controlled portrait screenshot/tap loop has device acceptance through native CoreDevice service sockets; the default release path below remains XCTest.
+
 ## Runtime components
 
 ```mermaid

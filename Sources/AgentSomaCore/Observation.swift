@@ -151,6 +151,12 @@ final class ObservationCache {
         guard let entry = entries.first(where: { $0.id == reference.observation }), currentID == entry.id else {
             throw SomaError("stale_reference", "Observe again before using this reference for an action")
         }
+        if entry.capture.metadata["backend"] as? String == "apple-native" {
+            guard action.kind == "tap", action.coordinate else {
+                throw SomaError("native_action_unsupported", "Use tap oN --x --y with native screenshot screen-point coordinates")
+            }
+            return try coordinateTarget(for: action, capture: entry.capture)
+        }
         guard let scope = entry.capture.metadata["scope"] as? String, ["app", "appAlert", "systemAlert"].contains(scope),
               !entry.capture.nodes.isEmpty else { throw SomaError("target_context_unknown", "Observe a known app or alert before acting") }
         if ["tap", "swipe"].contains(action.kind) { return try coordinateTarget(for: action, capture: entry.capture) }
@@ -261,6 +267,11 @@ final class ObservationCache {
             lines.append("ax_error=\(quoted(String(error.prefix(256))))\(error.count > 256 ? " detail_clipped=true" : "")")
         }
         let footer = "snapshot=\(quoted(snapshot)) (cached source; inspect \(entry.id) for details)"
+        if metadata["backend"] as? String == "apple-native" {
+            lines.append("backend=apple-native coordinate_space=screen_points pixels_per_point=\(metadata["pointScale"] ?? "unknown") rotation=\(metadata["displayRotation"] ?? "unknown")")
+            lines.append("device=\(quoted(metadata["deviceID"] ?? NSNull())) generation=\(quoted(metadata["sessionGeneration"] ?? NSNull())) capture_started=\(metadata["captureStartedAt"] ?? "unknown") capture_completed=\(metadata["captureCompletedAt"] ?? "unknown")")
+            lines.append("foreground=unverified keyboard_state=unknown; locate targets visually in the original screenshot")
+        }
         var body: [String] = []
         var nextOffset: Int?
         if let (reference, indices, offset, query) = detail {

@@ -157,6 +157,15 @@ final class SessionHost {
                     response["result"] = try backend.perform(action!, target: target)
                     observations.finishAction(previous: previousObservation, dispatched: true)
                     response["outcome"] = "completed"
+                    if config.backend == "apple-native",
+                       (response["result"] as? [String: Any])?["transportStatus"] as? String == "sent" {
+                        // RemoteXPC's send barrier is not a device execution acknowledgement.
+                        response["outcome"] = "unknown"
+                        response["ok"] = false
+                        response["requiresObservation"] = true
+                        response["error"] = ["code": "native_input_unacknowledged",
+                            "message": "Contact/release were queued; inspect the new screenshot to judge the result. Input was not replayed."]
+                    }
                 default: break
                 }
             } catch {
@@ -172,6 +181,39 @@ final class SessionHost {
                 }
                 if operation == "status" { observations.invalidate("backend_unavailable") }
                 response["error"] = ["code": failure?.code ?? (error as? SomaError)?.code ?? "backend_error", "message": String(describing: error)]
+            }
+            // Native actions always return a new observation while still holding the device
+            // work queue. Capture failure preserves the action's execution facts.
+            if config.backend == "apple-native", operation == "open" || action != nil,
+               response["outcome"] as? String != "not_dispatched" {
+                observations.invalidate("post_action_capture")
+                do {
+                    let after = try observations.store(backend.observe())
+                    response["observation"] = ["ok": true, "result": after]
+                    var result = response["result"] as? [String: Any] ?? [:]
+                    result["afterObservationID"] = after["observation"]
+                    response["result"] = result
+                } catch {
+                    response["observation"] = ["ok": false, "error": String(describing: error)]
+                }
+            }
+            if config.backend == "apple-native", operation == "open" || action != nil {
+                var result = response["result"] as? [String: Any] ?? [:]
+                result["actionID"] = id
+                result["sourceObservationID"] = action?.reference.observation
+                response["result"] = result
+                do {
+                    let eventURL = paths.directory.appendingPathComponent("native-events.jsonl")
+                    if !FileManager.default.fileExists(atPath: eventURL.path) {
+                        FileManager.default.createFile(atPath: eventURL.path, contents: nil, attributes: [.posixPermissions: 0o600])
+                    }
+                    let file = try FileHandle(forWritingTo: eventURL)
+                    defer { try? file.close() }
+                    try file.seekToEnd()
+                    var data = try jsonData(["request": request, "response": response, "hostRecordedAt": Date().timeIntervalSince1970])
+                    data.append(10)
+                    try file.write(contentsOf: data)
+                } catch { response["eventRecordingError"] = String(describing: error) }
             }
             // The control queue serializes command admission against expiry and completion.
             control.sync {
@@ -189,18 +231,22 @@ final class SessionHost {
     private func close(reason: String, requestID: String? = nil, reply: JSONServer.Reply? = nil) {
         guard lifecycle.phase != .closing else { return }
         lifecycle.close()
+        if reason == "signal" || reason.hasPrefix("ipc_failed") { backend.cancelCurrent() }
         timer?.cancel()
         server?.stopAccepting()
         // Already admitted work finishes first on this same serial queue.
         work.async { [self] in
+            // Native health and HID availability may have changed since startup.
+            // Its status is local; do not add a Runner request to XCTest teardown.
+            let finalBackendInfo = config.backend == "apple-native" ? (try? backend.status()) ?? backendInfo : backendInfo
             var cleanup = backend.stop()
             do { try observations.clear(); cleanup["observationCacheRemoved"] = true }
             catch { cleanup["observationCacheRemoved"] = false; cleanup["cacheError"] = String(describing: error) }
-            let clean = cleanup["xcodebuildExited"] as? Bool == true && cleanup["forced"] as? Bool != true
-                && cleanup["shutdownAcknowledged"] as? Bool == true && cleanup["xcodebuildExitCode"] as? Int == 0
-                && cleanup["observationCacheRemoved"] as? Bool == true
+            let stopped = config.backend == "apple-native" ? cleanup["backendStopped"] as? Bool == true
+                : cleanup["xcodebuildExited"] as? Bool == true && cleanup["forced"] as? Bool != true && cleanup["xcodebuildExitCode"] as? Int == 0
+            let clean = stopped && cleanup["shutdownAcknowledged"] as? Bool == true && cleanup["observationCacheRemoved"] as? Bool == true
             let result: [String: Any] = ["session": config.session, "reason": reason,
-                "hostPid": ProcessInfo.processInfo.processIdentifier, "backend": backendInfo,
+                "hostPid": ProcessInfo.processInfo.processIdentifier, "backend": finalBackendInfo,
                 "cleanup": cleanup, "endedAt": Date().timeIntervalSince1970]
             try? saveJSON(result, to: paths.exit)
             if let reply, let requestID {
@@ -217,7 +263,13 @@ public func runHost(directory: URL) throws {
     do {
         try SessionPaths.secureDirectory(directory)
         let config = try JSONDecoder().decode(HostConfiguration.self, from: Data(contentsOf: paths.config))
-        let host = SessionHost(config: config, paths: paths, backend: XCTestBackend(config: config, paths: paths))
+        let backend: SessionBackend
+        switch config.backend ?? "xctest" {
+        case "xctest": backend = XCTestBackend(config: config, paths: paths)
+        case "apple-native": backend = AppleDeviceBackend(config: config, paths: paths)
+        default: throw SomaError("unsupported_backend", "Unknown session backend")
+        }
+        let host = SessionHost(config: config, paths: paths, backend: backend)
         try host.run()
     } catch {
         try? saveJSON(["code": (error as? SomaError)?.code ?? "host_start_failed", "message": String(describing: error)],

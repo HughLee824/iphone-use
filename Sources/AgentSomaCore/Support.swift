@@ -50,6 +50,8 @@ struct HostConfiguration: Codable {
     let device: String
     let xctestrun: String
     let idleTimeoutSeconds: TimeInterval
+    var backend: String? = nil
+    var nativeEndpointInventory: String? = nil
 }
 
 public struct SessionPaths {
