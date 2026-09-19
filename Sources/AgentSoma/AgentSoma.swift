@@ -233,7 +233,7 @@ struct Swipe: ParsableCommand {
     @Option(help: "Start vertical screen point coordinate.") var fromY: Double?
     @Option(help: "End horizontal screen point coordinate.") var toX: Double?
     @Option(help: "End vertical screen point coordinate.") var toY: Double?
-    @Option(help: "Drag speed in XCTest pixels/second; 0 < value <= 10000, default 500.") var velocity: Double?
+    @Option(help: "Speed in XCTest pixels/second, or original screenshot pixels/second for apple-native; 0 < value <= 10000, default 500.") var velocity: Double?
     @Option(help: "Seconds to hold at the start BEFORE moving, not drag duration; 0...5, default 0.") var pressDuration: Double?
     @Option(help: "Seconds to hold at the end BEFORE lifting; 0...5, default 0.") var holdDuration: Double?
     mutating func run() throws {

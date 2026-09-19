@@ -53,6 +53,22 @@ To test Device Hub independence, quit it normally when idle and record that neit
 
 This procedure requires an external human/agent to inspect the images. The scripts do not implement visual judgment or encode a reusable coordinate for an arbitrary screen.
 
+## Coordinate swipe on the controlled Probe
+
+Use the same explicit native connection and fresh screenshot procedure. Check `capabilities.swipe` and choose two points wholly inside the visible Probe scroll area, away from text fields, navigation edges and other controls. Convert both points from the original PNG to screen points using the captured scale. Submit one short swipe:
+
+```sh
+.build/release/agentsoma --session "$SESSION" swipe "$OBSERVATION" \
+  --from-x "$START_X" --from-y "$START_Y" --to-x "$END_X" --to-y "$END_Y" \
+  --velocity 500 --hold-duration 0.2
+```
+
+For this backend, velocity means original PNG pixels/second. A terminal hold can reduce momentum but does not guarantee a specific scroll distance. Keep the default screen guard; it protects the entire swipe corridor. Native input currently requires original portrait orientation and bounds planned motion to 10 seconds. Cancellation, media loss and deadline expiry attempt RELEASE at the last attempted position without a new connection or MOVE replay.
+
+Preserve the action response and attached after-PNG. Verify the intended scroll direction using both visible rows and Probe's scroll offset, and check that target-hit/generation/focus counters did not change unexpectedly. Record the source/after observation IDs, requested motion, queued MOVE count and measured host duration separately from visual acceptance. `outcome=unknown` remains correct after local queue completion. A later swipe must be chosen from a fresh observation, never automatically repeated after uncertainty. Host cancellation/failed-MOVE tests are separate from on-device swipe interruption acceptance.
+
+For idle USB removal, record a healthy session before asking a human to unplug, then read media counters and Apple's actual transport inventory. USB removal can switch to `localNetwork` while media continues. This verifies continuity under that event, not transport loss or release during contact. Disconnect only the owned session and preserve cleanup facts; do not disable networking or change device settings to manufacture a failure.
+
 ## Cancellation and channel-close fault host
 
 `scripts/native-contact-fault-host.swift` is a development-only harness linked to the actual debug backend. It does not ship in the CLI and sends no input on startup. The following build command matches the validated Xcode 27 Swift build layout:

@@ -169,7 +169,7 @@ final class AppleDeviceBackend: SessionBackend {
         guard !stopped else { throw SomaError("backend_unavailable", "Native session closed") }
         let healthy = media?.health()["healthy"] as? Bool == true
         return ["backend": "apple-native", "sessionGeneration": generation, "deviceID": cli?.device ?? config.device,
-                "capabilities": ["screenshot": true, "tap": hid?.isAvailable == true && healthy, "ax": false, "swipe": false, "text": false],
+                "capabilities": ["screenshot": true, "tap": hid?.isAvailable == true && healthy, "ax": false, "swipe": hid?.isAvailable == true && healthy, "text": false],
                 "controlAvailable": hid?.isAvailable == true && healthy, "controlError": controlError as Any? ?? NSNull(),
                 "controlErrorCode": controlErrorCode as Any? ?? NSNull(),
                 "media": media?.health() ?? [:], "runnerStarted": false, "serviceTransport": config.nativeEndpointInventory == nil ? "apple-coredevice-service-socket" : "apple-paired-tunnel",
@@ -197,7 +197,7 @@ final class AppleDeviceBackend: SessionBackend {
         return try cli.capture(generation: generation)
     }
     func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any] {
-        guard action.kind == "tap", action.coordinate else { throw SomaError("native_action_unsupported", "Native backend currently implements screenshot-coordinate tap only") }
+        guard ["tap", "swipe"].contains(action.kind), action.coordinate else { throw SomaError("native_action_unsupported", "Native backend implements screenshot-coordinate tap and swipe only") }
         guard let hid, hid.isAvailable, let media, media.health()["healthy"] as? Bool == true else {
             throw SomaError("native_control_unavailable", controlError ?? "Native media/HID session is not healthy")
         }
@@ -212,6 +212,8 @@ final class AppleDeviceBackend: SessionBackend {
         guard target.context["displayRotation"] as? String == "rot0", target.context["nativeRotation"] as? String == "rot0" else {
             throw SomaError("native_orientation_unsupported", "Native HID currently requires the original portrait orientation")
         }
+        try gesture.validate(kind: action.kind)
+        let swipe = action.kind == "swipe" ? try NativeSwipePlan(gesture: gesture) : nil
         let before: CapturedObservation
         let check: ScreenGuard.Check
         do {
@@ -230,7 +232,14 @@ final class AppleDeviceBackend: SessionBackend {
         }
         guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped before touch") }
         let point = try NativeCoordinateMapper.map(gesture.start, screen: gesture.screenGuard.context.screen, rotation: "rot0")
-        var result = try hid.tap(point)
+        var result: [String: Any]
+        if let swipe {
+            result = try hid.swipe(swipe) {
+                guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped during swipe") }
+            }
+        } else {
+            result = try hid.tap(point)
+        }
         result["sourceObservationID"] = action.reference.observation
         result["screenGuard"] = check.result
         return result

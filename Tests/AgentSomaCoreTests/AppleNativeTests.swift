@@ -277,6 +277,132 @@ final class AppleNativeTests: XCTestCase {
         XCTAssertEqual((payload["_1"] as? ASNativeUnsigned)?.value, 987)
         XCTAssertEqual(hid.release()["releaseRequired"] as? Bool, false)
     }
+    private func swipePlan(start: CGPoint = CGPoint(x: 195, y: 600), end: CGPoint = CGPoint(x: 195, y: 500),
+                           motion: SwipeMotion = SwipeMotion(), scale: Int = 3) throws -> NativeSwipePlan {
+        let context = screenTestContext()
+        let guardValue = try ScreenGuard(png: screenPNG(width: 390 * scale, height: 844 * scale), context: context,
+            rects: CoordinateGesture.actionRegions(start: start, end: end, screen: context.screen.cgRect), policy: .init())
+        return try NativeSwipePlan(gesture: CoordinateGesture(start: start, end: end, screenGuard: guardValue, motion: motion))
+    }
+    private func point(_ data: Data) -> [Int] { [Int(data[4]) | Int(data[5]) << 8, Int(data[6]) | Int(data[7]) << 8] }
+
+    func testSwipePlanUsesOriginalPixelsAndExactMappedEndpoints() throws {
+        let plan = try swipePlan()
+        XCTAssertEqual(plan.movementDuration, 0.6, accuracy: 0.00001)
+        XCTAssertEqual(try swipePlan(scale: 1).movementDuration, 0.2, accuracy: 0.00001)
+        XCTAssertEqual(plan.point(at: 0).0, plan.start.0)
+        XCTAssertEqual(plan.point(at: 1).1, plan.end.1)
+        XCTAssertEqual(plan.point(at: 0.5).1, UInt16(((Double(plan.start.1) + Double(plan.end.1)) / 2).rounded()))
+        XCTAssertThrowsError(try swipePlan(end: CGPoint(x: 195, y: -1)))
+        XCTAssertThrowsError(try swipePlan(end: CGPoint(x: 195, y: 600)))
+        XCTAssertThrowsError(try swipePlan(motion: SwipeMotion(velocity: 1)))
+        XCTAssertThrowsError(try swipePlan(motion: SwipeMotion(velocity: .nan)))
+    }
+    func testSwipeReportsMonotonicPathHoldsAndOneRelease() throws {
+        let transport = ScriptedTransport(), plan = try swipePlan(motion: SwipeMotion(velocity: 500, pressDuration: 0.1, holdDuration: 0.2))
+        var now = 100.0, times: [Double] = []
+        transport.onSend = { _ in times.append(now) }
+        let hid = NativeHIDAdapter(transport: transport, cancellation: NativeCancellation(), wait: { now += $0 }, uptime: { now })
+        try hid.prepare()
+        let result = try hid.swipe(plan)
+        let packets = reports(transport), points = packets.map(point)
+        XCTAssertEqual(points.first, [Int(plan.start.0), Int(plan.start.1)])
+        XCTAssertEqual(points.suffix(2), [[Int(plan.end.0), Int(plan.end.1)], [Int(plan.end.0), Int(plan.end.1)]])
+        XCTAssertTrue(zip(points, points.dropFirst()).allSatisfy { $0[0] == $1[0] && $0[1] >= $1[1] })
+        XCTAssertTrue(packets.dropLast().allSatisfy { $0[3] == 0xc2 })
+        XCTAssertEqual(packets.last?[3], 2)
+        XCTAssertGreaterThanOrEqual(times[1] - times[0], 0.1)
+        XCTAssertEqual(times.last! - times[times.count - 2], 0.2, accuracy: 0.00001)
+        XCTAssertEqual(now - 100, 0.9, accuracy: 0.00001)
+        XCTAssertEqual((result["motion"] as? [String: Double])?["velocity"], 500)
+        XCTAssertEqual(result["motionVelocityUnit"] as? String, "original_screenshot_pixels_per_second")
+        XCTAssertEqual(result["moveReportsQueued"] as? Int, packets.count - 2)
+        XCTAssertTrue(hid.isAvailable)
+        XCTAssertEqual(hid.release()["releaseRequired"] as? Bool, false)
+    }
+    func testSlowSwipeSendSkipsMissedSamplesWithoutBurstOrReplay() throws {
+        let transport = ScriptedTransport(), plan = try swipePlan()
+        var now = 10.0, times: [Double] = []
+        transport.onSend = { _ in times.append(now); now += 0.07 }
+        let hid = NativeHIDAdapter(transport: transport, cancellation: NativeCancellation(), wait: { now += $0 }, uptime: { now })
+        try hid.prepare()
+        _ = try hid.swipe(plan)
+        XCTAssertLessThan(reports(transport).count, 15)
+        XCTAssertTrue(zip(times, times.dropFirst()).allSatisfy { $1 - $0 >= 0.069 })
+        XCTAssertEqual(point(reports(transport).last!), [Int(plan.end.0), Int(plan.end.1)])
+    }
+    func testSwipeCancellationDuringPressMoveAndHoldReleasesLastPosition() throws {
+        let plan = try swipePlan(motion: SwipeMotion(velocity: 500, pressDuration: 0.1, holdDuration: 0.2))
+        for phase in [0, 1, 2] {
+            let transport = ScriptedTransport(), cancel = NativeCancellation()
+            var now = 0.0, contacts = 0, reachedEnd = false
+            transport.onSend = { message in
+                let data = ((message["payload"] as! [String: Any])["send"] as! [String: Any])["_0"] as! Data
+                if data[3] == 0xc2 { contacts += 1; reachedEnd = self.point(data) == [Int(plan.end.0), Int(plan.end.1)] }
+            }
+            let hid = NativeHIDAdapter(transport: transport, cancellation: cancel, wait: {
+                now += $0
+                if (phase == 0 && contacts == 1) || (phase == 1 && contacts >= 3) || (phase == 2 && reachedEnd) { cancel.cancel() }
+            }, uptime: { now })
+            try hid.prepare()
+            XCTAssertThrowsError(try hid.swipe(plan)) {
+                XCTAssertEqual(($0 as? ActionFailure)?.possiblyExecuted, true)
+                XCTAssertEqual(($0 as? ActionFailure)?.result?["transportStatus"] as? String, "uncertain")
+            }
+            let packets = reports(transport)
+            XCTAssertEqual(packets.last?[3], 2)
+            XCTAssertEqual(point(packets.last!), point(packets[packets.count - 2]))
+            let count = packets.count
+            XCTAssertFalse(hid.isAvailable)
+            XCTAssertThrowsError(try hid.swipe(plan))
+            _ = hid.release()
+            XCTAssertEqual(transport.sends.count, count)
+        }
+    }
+    func testFailedMoveReleasesAttemptedPositionAndWithdrawsCapability() throws {
+        let transport = ScriptedTransport(), plan = try swipePlan()
+        var now = 0.0
+        transport.onSend = { _ in
+            if transport.sends.count == 3 { throw TransportError(description: "lost MOVE reply", possiblySent: true) }
+        }
+        let hid = NativeHIDAdapter(transport: transport, cancellation: NativeCancellation(), wait: { now += $0 }, uptime: { now })
+        try hid.prepare()
+        XCTAssertThrowsError(try hid.swipe(plan)) {
+            let cleanup = ($0 as? ActionFailure)?.result?["cleanup"] as? [String: Any]
+            XCTAssertEqual(cleanup?["releaseQueued"] as? Bool, true)
+        }
+        let packets = reports(transport)
+        XCTAssertEqual(packets.count, 4)
+        XCTAssertEqual(point(packets[2]), point(packets[3]))
+        XCTAssertFalse(hid.isAvailable)
+        XCTAssertThrowsError(try hid.tap((1, 2)))
+        XCTAssertEqual(transport.sends.count, 4)
+    }
+    func testSwipeMediaFailureAndDeadlineAttemptReleaseWithoutContinuing() throws {
+        let plan = try swipePlan()
+        for deadline in [false, true] {
+            let transport = ScriptedTransport()
+            var now = 0.0
+            let hid = NativeHIDAdapter(transport: transport, cancellation: NativeCancellation(), wait: {
+                now += deadline ? 11 : $0
+            }, uptime: { now })
+            try hid.prepare()
+            XCTAssertThrowsError(try hid.swipe(plan) {
+                if !deadline && !transport.sends.isEmpty { throw SomaError("native_media_unhealthy", "test media loss") }
+            }) { XCTAssertEqual(($0 as? ActionFailure)?.possiblyExecuted, true) }
+            XCTAssertEqual(reports(transport).map { $0[3] }, [0xc2, 2])
+            XCTAssertFalse(hid.isAvailable)
+        }
+    }
+    func testSwipePreflightFailureSendsNothing() throws {
+        let plan = try swipePlan(), transport = ScriptedTransport(), cancel = NativeCancellation()
+        let hid = NativeHIDAdapter(transport: transport, cancellation: cancel)
+        try hid.prepare()
+        XCTAssertThrowsError(try hid.swipe(plan) { throw SomaError("native_media_unhealthy", "test") })
+        cancel.cancel()
+        XCTAssertThrowsError(try hid.swipe(plan))
+        XCTAssertTrue(transport.sends.isEmpty)
+    }
     func testCancelDuringContactStillReleasesWithoutReplay() throws {
         let transport = ScriptedTransport(), cancel = NativeCancellation()
         let hid = NativeHIDAdapter(transport: transport, cancellation: cancel, wait: { _ in cancel.cancel() })
@@ -492,7 +618,11 @@ final class AppleNativeTests: XCTestCase {
         _ = try cache.store(capture)
         XCTAssertThrowsError(try cache.resolveTarget(for: action)) { XCTAssertEqual(($0 as? SomaError)?.code, "stale_reference") }
         let swipe = try DeviceAction(operation: "swipe", request: ["reference": "o2", "fromX": 100, "fromY": 400, "toX": 100, "toY": 200])
-        XCTAssertThrowsError(try cache.resolveTarget(for: swipe))
+        let target = try cache.resolveTarget(for: swipe)
+        XCTAssertEqual(target.gesture?.end, CGPoint(x: 100, y: 200))
+        XCTAssertEqual(target.gesture?.screenGuard.regions.count, 2)
+        _ = try cache.store(capture)
+        XCTAssertThrowsError(try cache.resolveTarget(for: swipe)) { XCTAssertEqual(($0 as? SomaError)?.code, "stale_reference") }
     }
     func testNativeEmbeddedObservationDoesNotRecaptureOrReplay() {
         let response: [String: Any] = ["session": "test", "ok": false, "outcome": "unknown",

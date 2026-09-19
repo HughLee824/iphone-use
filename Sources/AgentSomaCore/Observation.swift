@@ -152,8 +152,8 @@ final class ObservationCache {
             throw SomaError("stale_reference", "Observe again before using this reference for an action")
         }
         if entry.capture.metadata["backend"] as? String == "apple-native" {
-            guard action.kind == "tap", action.coordinate else {
-                throw SomaError("native_action_unsupported", "Use tap oN --x --y with native screenshot screen-point coordinates")
+            guard ["tap", "swipe"].contains(action.kind), action.coordinate else {
+                throw SomaError("native_action_unsupported", "Use tap or swipe oN with native screenshot screen-point coordinates")
             }
             return try coordinateTarget(for: action, capture: entry.capture)
         }

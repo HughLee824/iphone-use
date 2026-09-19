@@ -59,7 +59,7 @@ agentsoma --session "$SESSION" type o2:e8 --mode replace --text '新内容' --ob
 
 | 参数 | 含义 | 范围 | 默认值 |
 | --- | --- | --- | --- |
-| `--velocity` | 移动速度，采用 XCTest 的 pixels/s 单位，不将其当作 PNG 坐标 | 大于 0、至多 10000 | 500 |
+| `--velocity` | 移动速度：XCTest 后端采用 XCTest pixels/s；apple-native 采用原始截图 pixels/s。起终点仍用屏幕 points | 大于 0、至多 10000 | 500 |
 | `--press-duration` | 开始移动前按住的秒数；可用于先长按再拖动 | 0–5 | 0 |
 | `--hold-duration` | 到达终点后、抬手前停留的秒数 | 0–5 | 0 |
 
@@ -90,6 +90,10 @@ agentsoma --session "$SESSION" observe
 宿主和 Runner 均校验参数及动作预算。以 `起始停留 + 路径屏幕点距离 × 截图倍率 / 速度 + 结束停留` 保守估算，超过 10 秒的请求在派发前返回 `swipe_duration_exceeded`，不消耗当前引用；应缩短路径/停留或加快速度。这个预算用于限制请求的运动过程，不是整个命令的硬超时；XCTest 前后等待及帧检测仍使用现有策略。
 
 成功回执增加 `result.motion`，例如 `{"velocity":100,"pressDuration":0.5,"holdDuration":0.2}`。它表示 Runner 调用 XCTest 时采用的参数，不是从触摸硬件采样出的实测速度。宿主核对它与请求一致；缺失或不一致时保留输入事实及可用结果帧，返回 `unknown` / `missing_swipe_motion_facts`，不重放。`completed` 仍只表示输入结束且画面稳定，目标值必须由调用 agent 核验。
+
+实验性 `apple-native` 后端仅支持基于当前截图 `oN` 的坐标 swipe，要求原始竖屏，不读取 AX 或启动 Runner。它按原始截图比例换算速度，至少用一个 1/60 秒采样间隔完成移动，并返回 `motionVelocityUnit=original_screenshot_pixels_per_second`、计划移动时长及实际排队的 MOVE 数量。采样目标为 60 Hz，发送延迟时跳过过期点；速度是计划值，不是设备实测值。整个输入有 10 秒执行期限（释放清理另有最多 3 秒等待）。按住和末端停留沿用 `--press-duration`、`--hold-duration`；这不等于已验收拖放或长按菜单行为。
+
+原生 CONTACT/MOVE/RELEASE 的发送完成不是设备执行确认，因此始终保留 `outcome=unknown`，附带新的截图供外部 Agent 判断滚动方向和目标状态。取消、媒体失活或发送异常时尝试在最后发送位置释放，撤销该会话后续输入能力，不补发 MOVE，不重放动作；需显式建立新会话并重新观察。
 
 本地验证覆盖参数拒绝、默认值兼容、两种目标形式的参数传输、Runner 共享模型解码、包含截图倍率及两端停留的预算、旧 Runner 拒绝、回执不一致以及拒绝后引用仍可用。2026-09-06 的 `swift test` 为 73 项通过、0 失败。非默认时长的 Lark 实机验收由用户另开 session 进行，本轮没有创建测试日程。
 
