@@ -250,7 +250,7 @@ struct TypeText: ParsableCommand {
     static let configuration = CommandConfiguration(commandName: "type", abstract: "Insert at the existing caret, or replace a text input's entire contents.")
     @OptionGroup var options: SessionOptions
     @OptionGroup var observation: ActionObservationOptions
-    @Argument(help: "Current text input reference.") var reference: String
+    @Argument(help: "Current text input reference; apple-native uses oN after visual focus confirmation (insert, printable ASCII, at most 64 characters).") var reference: String
     @Option(help: "insert requires existing keyboard focus; replace focuses and selects all.") var mode: String
     @Option(help: "Literal text up to 4096 UTF-8 bytes; no control keys or newlines. Empty text clears in replace mode.") var text: String?
     @Flag(help: "Read UTF-8 text from stdin until EOF, up to 4096 bytes. No trimming; use instead of --text.") var stdin = false

@@ -38,6 +38,9 @@ enum NativeRecovery: String {
         else if code == "session_closed" { step = NativeRecovery.reconnectAndObserve.result }
         else if let recovery = effectiveControl?["recovery"] as? [String: Any], effectiveControl?["controlAvailable"] as? Bool == false {
             step = recovery
+        } else if let recovery = facts["recovery"] as? [String: Any] { step = recovery
+        } else if ["native_keyboard_unavailable", "native_keyboard_ownership_unknown"].contains(code ?? "") {
+            step = NativeRecovery.resolveError.result
         } else if code == "native_media_unhealthy" { step = NativeRecovery.checkMediaAndObserve.result }
         else if response["outcome"] as? String == "unknown" || response["requiresObservation"] as? Bool == true
                     || (response["observation"] as? [String: Any])?["ok"] as? Bool == true {
@@ -64,12 +67,12 @@ struct NativeControlStatus {
     static func resolve(hid: NativeHIDAdapter.State?, media: [String: Any], closing: Bool,
                         startupCode: String?, startupError: String?) -> Self {
         // Preserve irreversible input uncertainty even if media also stops or cancellation follows.
-        if hid == .releaseUncertain { return Self(code: "native_release_uncertain", message: "Touch release was not confirmed by the local send barrier; device delivery remains unknown.", recovery: .reconnectAndObserve) }
+        if hid == .releaseUncertain { return Self(code: "native_release_uncertain", message: "Input release was not confirmed by the local send barrier; device delivery remains unknown.", recovery: .reconnectAndObserve) }
         if hid == .inputUncertain { return Self(code: "native_input_uncertain", message: "An input failed after a send attempt; this HID session cannot accept more input.", recovery: .reconnectAndObserve) }
         if closing || hid == .cancelled { return Self(code: "native_session_closing", message: "The native session is closing; wait for its cleanup facts.", recovery: .reconnectAndObserve) }
         if let startupError { return Self(code: startupCode ?? "native_control_unavailable", message: startupError, recovery: .resolveError) }
         guard let hid, hid != .unprepared else { return Self(code: "native_hid_unavailable", message: "No negotiated HID surface is available.", recovery: .resolveError) }
-        if hid == .contactActive { return Self(code: "native_contact_active", message: "A contact is still active; wait for the original action and inspect the session.", recovery: .checkSession) }
+        if hid == .contactActive { return Self(code: "native_contact_active", message: "A touch contact or keyboard key is still active; wait for the original action and inspect the session.", recovery: .checkSession) }
         guard media["healthy"] as? Bool == true else {
             return Self(code: "native_media_unhealthy", message: media["error"] as? String ?? "Media has no recent healthy RTP/RTCP flow.", recovery: .checkMediaAndObserve)
         }

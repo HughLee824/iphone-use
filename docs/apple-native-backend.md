@@ -31,7 +31,7 @@ Use the device/session/observation identifiers returned by your own run. The coo
 
 ## Control diagnostics and recovery
 
-`status.result.controlErrorCode` and `controlError` now describe current control availability, including failures after startup. `hidState` distinguishes `ready`, `unprepared`, `contact_active`, `input_uncertain`, `release_uncertain` and `cancelled`; `sessionClosing` records cancellation independently. These local status reads neither contact the device again nor reopen a service. Tap/swipe capabilities use the same control snapshot. Read `media` separately: media can remain healthy after an HID failure.
+`status.result.controlErrorCode` and `controlError` now describe current control availability, including failures after startup. `hidState` distinguishes `ready`, `unprepared`, `contact_active`, `input_uncertain`, `release_uncertain` and `cancelled`; `sessionClosing` records cancellation independently. These local status reads neither contact the device again nor reopen a service. Tap/swipe capabilities use the same control snapshot; text also requires keyboard preparation to be possible or complete. Read `media` separately: media can remain healthy after an HID failure.
 
 | Control reason | `recovery.nextAction` | Meaning |
 | --- | --- | --- |
@@ -114,6 +114,26 @@ The opt-in offer check is skipped in portable CI. It does not mount a DDI, start
 
 Local evidence: `.local/research/apple-native-backend-20260919/`, `.local/research/apple-native-lifecycle-20260919/`, `.local/research/apple-native-discovery-20260919/RESULT.md`, `.local/research/apple-native-independent-20260919/RESULT.md`, `.local/research/apple-native-cancel-20260919/RESULT.md`, `.local/research/apple-native-acceptance-20260919/RESULT.md` and `.local/research/apple-native-swipe-20260919/RESULT.md`. The discovery report supersedes the earlier inventory requirement; the independent report adds Device Hub-free connection evidence and the timeout regression fix; the cancellation report adds signal/channel-close evidence and capability/exit-state fixes. The swipe report adds release swipe and idle USB-removal evidence. These directories contain environment inventories, self-written probes, actual service-denial logs, command outputs and copied Probe captures. They are not build or test dependencies and must not be committed as public fixtures.
 
+## Minimal native keyboard input (2026-09-20)
+
+`type oN --mode insert --text 'Ab7!?'` binds printable ASCII input (1–64 characters) to the current screenshot. The external agent confirms focus and caret placement visually. The backend neither focuses a field nor switches layout/IME, and does not support replace, Unicode, Return or submission. US usage mapping is explicit; device layout, focus and autocorrection remain unverified execution assumptions.
+
+The adapter validates the entire string before creating a service or sending keys. It lazily creates a virtual keyboard with AgentSoma manufacturer/product, zero vendor/product IDs and a random session identifier; no Apple identity is claimed. iOS prefixes the product with `CD-`. Creation must acknowledge the requested ID, and a correlated same-connection inventory must confirm the unique prefixed product. A failed/uncertain creation cannot be retried in place. Preparation may hide the soft keyboard: a fresh pre-input capture then rejects the changed screen before sending keys. The caller observes and makes a new explicit decision.
+
+Typing retains the device/session/30-second binding and default whole-screen guard. It sends modifier-only reports before shifted characters and an empty pressed set after each character. Cancellation/media failure/deadline checks stop further input and attempt release on the original channel, with uncertain input permanently withdrawing control. `charactersQueued`, `keyboardReleaseQueued` and host times are local facts; `focusConfirmed=false`, `layoutConfirmed=false` and `outcome=unknown` remain deliberate. No automatic continuation of partially entered text occurs.
+
+Keyboard cleanup verifies ID and unique product ownership before a void `removeService` send, then uses a correlated inventory to confirm absence. A local send barrier alone is insufficient. Lost transport or identity mismatch leaves `keyboardRemoveAcknowledged=false`; it contributes to overall shutdown failure. Other clients' services and media sessions are never removed. Fake transport tests retain a foreign keyboard during successful cleanup and reject an identity mismatch.
+
+Current device evidence in `.local/research/apple-native-keyboard-20260920/RESULT.md`:
+
+- Rechecked macOS 27.0 (26A428), Xcode 27.0 (27A266a), discovered iPhone 12 Pro / iOS 27.0 (24A437). No Runner or third-party device tool was used.
+- The diagnostic CONTACT/channel-close run focused Probe (`Focus events 0 → 1`) and returned `native_release_uncertain`, `reconnect_and_observe`, no replay, disabled input, acknowledged owned media stop and deliberately unacknowledged overall shutdown. These dynamic diagnostic fields now have device evidence.
+- Initial keyboard identity and cleanup checks failed before key dispatch; the actual `CD-` product transformation and void removal behavior were isolated with self-written Swift probes. Those failed runs remain recorded as failures.
+- Combined Shift+character initially produced `seed az91/` from requested ` aZ9!?`; this was a failed text acceptance, not a pass. Modifier-first ordering fixed the tested path. A distinct new action appended exactly ` B7@?`, yielding `seed az91/ B7@?` in both the field and Probe's value label. Focus count 1, target generation 3/hits 10 and scroll offset 499 stayed unchanged. Source `o2` and after `o3` were archived; the API stayed unknown.
+- Final session confirmed keyboard removal, owned media stop, tunnel release and cache removal; all test host PIDs exited. 155 host tests ran: 154 passed, one installed-framework opt-in test skipped; 29 Python tests passed; release build passed. Keyboard cancellation and lost-reply tests are host tests, not device interruption acceptance.
+
+This establishes a short ASCII Probe loop on this device. It does not establish every printable character, non-US layouts, Chinese/IME input, long text, keyboard interruption under SIGTERM/link loss, or concurrent keyboards on a real device.
+
 ## Remaining acceptance and limitations
 
 The controlled portrait M2–M3 path now has real-device evidence, including default connection without a supplied endpoint file and new sessions with Device Hub/Xcode exited and the tunnel initially disconnected. Longer media stress, physical disconnect during an active contact, device coexistence, screen edges and rotated input still need device acceptance. Full host/device reboot and re-pairing were not tested; ordinary Apple background services remained running.
@@ -128,4 +148,4 @@ Unknown execution results stay unknown in the API even when an external agent la
 
 Coordinate swipe now uses the same observation binding and whole-corridor screen guard as tap. Native velocity is original screenshot pixels/second; endpoints remain screen points. The adapter interpolates normalized digitizer positions on a monotonic 60 Hz target schedule, skips missed samples instead of bursting, and always attempts the exact endpoint before release. It supports bounded press/endpoint holds, a 10-second execution deadline, cancellation/media checks while waiting and before each MOVE, and same-connection release at the last attempted position after failure. Cleanup gets its own bounded send wait. `result.motion`, `motionVelocityUnit`, planned movement duration and queued MOVE count are execution facts, not device-measured speed or semantic verification. Any uncertain input failure withdraws tap and swipe availability even when cleanup could be queued.
 
-Long-press menus, drag-and-drop behavior, keyboard/Chinese input, hardware keys, AX, recording and real-time decoding remain unaccepted or unsupported by this backend. No release or migration of the default backend is part of this change.
+Long-press menus, drag-and-drop behavior, general keyboard/Chinese input, hardware keys, AX, recording and real-time decoding remain unaccepted or unsupported by this backend. No release or migration of the default backend is part of this change.

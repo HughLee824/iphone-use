@@ -11,7 +11,7 @@ struct DeviceAction {
     let protectedReferences: [ObservationReference]
     let swipeMotion: SwipeMotion?
 
-    init(operation: String, request: [String: Any]) throws {
+    init(operation: String, request: [String: Any], allowScreenText: Bool = false) throws {
         guard Self.operations.contains(operation) else { throw SomaError("invalid_action", "Unknown device action") }
         kind = operation
         reference = try ObservationReference(request["reference"] as? String ?? "")
@@ -33,7 +33,7 @@ struct DeviceAction {
                 guard let value = Self.number(request[key]) else { throw SomaError("invalid_coordinates", "Supply every coordinate as a finite number of screen points") }
                 fields[key] = value
             }
-        } else if reference.node == nil {
+        } else if reference.node == nil && !(allowScreenText && operation == "type") {
             throw SomaError("element_required", "Use an element reference such as o1:e2")
         }
         if operation == "swipe", coordinate {
@@ -122,6 +122,7 @@ struct ObservedTarget {
     // Root through target, with each child's position within its captured parent.
     let path: [[String: Any]]
     var gesture: CoordinateGesture? = nil
+    var textGuard: ScreenGuard? = nil
 }
 
 struct ActionFailure: Error, CustomStringConvertible {

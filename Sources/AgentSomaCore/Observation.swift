@@ -152,6 +152,13 @@ final class ObservationCache {
             throw SomaError("stale_reference", "Observe again before using this reference for an action")
         }
         if entry.capture.metadata["backend"] as? String == "apple-native" {
+            if action.kind == "type", action.reference.node == nil {
+                _ = try NativeKeyboard.keys(for: action.fields["text"] as! String, mode: action.fields["mode"] as! String)
+                guard let raw = entry.capture.metadata["screenContext"] as? [String: Any] else { throw ScreenGuard.Failure.invalidGuard }
+                let context = try JSONDecoder().decode(ScreenContext.self, from: jsonData(raw))
+                let guardValue = try ScreenGuard(png: entry.capture.screenshot, context: context, rects: [context.screen], policy: .init())
+                return ObservedTarget(context: entry.capture.metadata, path: [], textGuard: guardValue)
+            }
             guard ["tap", "swipe"].contains(action.kind), action.coordinate else {
                 throw SomaError("native_action_unsupported", "Use tap or swipe oN with native screenshot screen-point coordinates")
             }

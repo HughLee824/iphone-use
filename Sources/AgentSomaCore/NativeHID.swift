@@ -88,11 +88,20 @@ final class NativeHIDAdapter {
     private var contact: (UInt16, UInt16)?
     private(set) var releaseUncertain = false
     private var inputUncertain = false
+    private let keyboardID = UInt64(1) << 32 | UInt64.random(in: 1...UInt64(UInt32.max))
+    private let keyboardProduct = "AgentSoma " + UUID().uuidString
+    private var keyboardMayExist = false
+    private var keyboardReady = false
+    private var keysDown = false
+    private var keyboardCleanup: [String: Any]?
+    var canType: Bool { isAvailable && (keyboardReady || !keyboardMayExist) }
+    var keyboardStatus: [String: Any] { ["prepared": keyboardReady, "keysMayBeDown": keysDown,
+        "serviceMayExist": keyboardMayExist, "layout": "US usage mapping; active device layout unverified"] }
     var state: State {
         if releaseUncertain { return .releaseUncertain }
         if inputUncertain { return .inputUncertain }
         if cancellation.isCancelled { return .cancelled }
-        if contact != nil { return .contactActive }
+        if contact != nil || keysDown { return .contactActive }
         return surface == nil ? .unprepared : .ready
     }
     var isAvailable: Bool { state == .ready }
@@ -122,6 +131,109 @@ final class NativeHIDAdapter {
         try transport.send(["featureIdentifier": Self.feature, "messageType": "Request",
             "payload": ["send": ["_0": NativeTouchReport.make(contact: contact, x: point.0, y: point.1, timestamp: clock()),
                                    "_1": nativeUInt(surface)]]], timeout: timeout)
+    }
+    private func keyboardRequest(_ payload: [String: Any]) throws -> [String: Any] {
+        try transport.request(["featureIdentifier": Self.feature, "messageType": "Request", "payload": payload], timeout: 8)
+    }
+    private func keyboardInventory() throws -> [[String: Any]] {
+        guard let services = try keyboardRequest(["connectedServices": [:]])["connectedServices"] as? [[String: Any]] else {
+            throw SomaError("native_keyboard_ownership_unknown", "HID inventory is unavailable")
+        }
+        return services
+    }
+    func prepareKeyboard() throws {
+        try cancellation.check()
+        guard isAvailable else { throw SomaError("native_hid_unavailable", "Reconnect and observe before typing") }
+        if keyboardReady { return }
+        guard !keyboardMayExist else { throw SomaError("native_keyboard_ownership_unknown", "Keyboard creation is uncertain; close this owned session before reconnecting") }
+        guard try !keyboardInventory().contains(where: { ($0["_ServiceID"] as? NSNumber)?.uint64Value == keyboardID }) else {
+            throw SomaError("native_keyboard_ownership_unknown", "Generated keyboard identifier is already present")
+        }
+        keyboardMayExist = true
+        do {
+            let reply = try keyboardRequest(["createService": ["_0": NativeKeyboard.properties(id: keyboardID, product: keyboardProduct)]])
+            guard (reply["serviceID"] as? NSNumber)?.uint64Value == keyboardID else {
+                throw SomaError("native_keyboard_ownership_unknown", "Keyboard creation did not confirm the requested service ID")
+            }
+            let matches = try keyboardInventory().filter { ($0["_ServiceID"] as? NSNumber)?.uint64Value == keyboardID }
+            guard matches.count == 1, matches[0]["Product"] as? String == "CD-" + keyboardProduct else {
+                throw SomaError("native_keyboard_ownership_unknown", "Created keyboard identity was not confirmed")
+            }
+            keyboardReady = true
+        } catch {
+            // No key was sent. Still close this possibly-created service before another workflow.
+            throw ActionFailure(code: "native_keyboard_unavailable", description: String(describing: error), possiblyExecuted: false,
+                requiresObservation: true, result: ["recovery": NativeRecovery.resolveError.result])
+        }
+    }
+    private func sendKeys(_ keys: [UInt8]) throws {
+        try transport.send(["featureIdentifier": Self.feature, "messageType": "Request",
+            "payload": ["send": ["_0": NativeKeyboard.report(keys, timestamp: clock()), "_1": nativeUInt(keyboardID)]]], timeout: 3)
+    }
+    func type(_ keySets: [[UInt8]], checkHealth: () throws -> Void = {}) throws -> [String: Any] {
+        try cancellation.check()
+        guard isAvailable, keyboardReady, !keySets.isEmpty, keySets.count <= NativeKeyboard.maximumCharacters else {
+            throw SomaError("native_keyboard_unavailable", "Prepare the native keyboard and observe the focused field before typing")
+        }
+        try checkHealth()
+        var attempted = false, completed = 0
+        let started = uptime()
+        func pause() throws {
+            let until = uptime() + 0.025
+            while uptime() < until { try cancellation.check(); try checkHealth(); wait(min(0.005, max(0, until - uptime()))) }
+            try cancellation.check(); try checkHealth()
+        }
+        do {
+            for keys in keySets {
+                try cancellation.check(); try checkHealth()
+                guard uptime() - started < 10 else { throw SomaError("native_input_deadline", "Native typing exceeded ten seconds") }
+                attempted = true; keysDown = true // Mark before send; a failure may follow device delivery.
+                // Establish modifiers before the character. The device processes usage
+                // transitions in order; a combined Shift+character report can type unshifted.
+                let modifiers = keys.filter { (0xe0...0xe7).contains($0) }
+                if !modifiers.isEmpty { try sendKeys(modifiers); try pause() }
+                try sendKeys(keys)
+                try pause()
+                try sendKeys([]); keysDown = false
+                completed += 1
+                try pause()
+            }
+            return ["transportStatus": "sent", "verificationStatus": "not_checked", "charactersQueued": completed,
+                    "keyboardReleaseQueued": true, "focusConfirmed": false, "layoutConfirmed": false,
+                    "hostStartedUptime": started, "hostCompletedUptime": uptime()]
+        } catch {
+            guard attempted else { throw error }
+            inputUncertain = true
+            throw ActionFailure(code: "native_input_uncertain", description: "Text may be partially entered: \(error). Observe; do not replay.",
+                possiblyExecuted: true, requiresObservation: true,
+                result: ["transportStatus": "uncertain", "verificationStatus": "uncertain", "charactersQueued": completed, "cleanup": release()])
+        }
+    }
+    func closeKeyboard() -> [String: Any] {
+        if let keyboardCleanup { return keyboardCleanup }
+        var result: [String: Any] = ["keyboardRemoveAcknowledged": !keyboardMayExist]
+        if keyboardMayExist {
+            do {
+                let inventory = try keyboardInventory()
+                guard !inventory.contains(where: { $0["Product"] as? String == "CD-" + keyboardProduct && ($0["_ServiceID"] as? NSNumber)?.uint64Value != keyboardID }) else {
+                    throw SomaError("native_keyboard_ownership_unknown", "Keyboard appears under a different identifier; cleanup is unconfirmed")
+                }
+                let matches = inventory.filter { ($0["_ServiceID"] as? NSNumber)?.uint64Value == keyboardID }
+                if !matches.isEmpty {
+                    guard matches.count == 1, matches[0]["Product"] as? String == "CD-" + keyboardProduct else {
+                        throw SomaError("native_keyboard_ownership_unknown", "Refusing to remove a keyboard without confirmed ownership")
+                    }
+                    // This void command has no dictionary reply. A local barrier is not
+                    // deletion evidence; the following correlated inventory must show absence.
+                    try transport.send(["featureIdentifier": Self.feature, "messageType": "Request",
+                        "payload": ["removeService": ["_0": nativeUInt(keyboardID)]]], timeout: 3)
+                }
+                result["keyboardRemoveAcknowledged"] = try !keyboardInventory().contains { ($0["_ServiceID"] as? NSNumber)?.uint64Value == keyboardID }
+            } catch { result["keyboardRemoveError"] = String(describing: error) }
+        }
+        if result["keyboardRemoveAcknowledged"] as? Bool == true { keyboardMayExist = false }
+        keyboardReady = false; keyboardCleanup = result
+        return result
     }
     func tap(_ point: (UInt16, UInt16), hold: TimeInterval = 0.06) throws -> [String: Any] {
         try cancellation.check()
@@ -217,15 +329,21 @@ final class NativeHIDAdapter {
         }
     }
     func release() -> [String: Any] {
-        guard let point = contact else { return ["releaseRequired": false, "releaseUncertain": releaseUncertain] }
+        var keyboardFacts: [String: Any] = ["keyboardReleaseRequired": keysDown]
+        if keysDown {
+            keysDown = false
+            do { try sendKeys([]); keyboardFacts["keyboardReleaseQueued"] = true }
+            catch { releaseUncertain = true; keyboardFacts["keyboardReleaseQueued"] = false; keyboardFacts["keyboardReleaseError"] = String(describing: error) }
+        }
+        guard let point = contact else { return keyboardFacts.merging(["releaseRequired": false, "releaseUncertain": releaseUncertain]) { _, new in new } }
         contact = nil
         do {
             // Deliberately independent of cancellation, but never opens a replacement connection.
             try report(contact: false, point: point)
-            return ["releaseRequired": true, "releaseQueued": true, "releaseUncertain": false]
+            return keyboardFacts.merging(["releaseRequired": true, "releaseQueued": true, "releaseUncertain": releaseUncertain]) { _, new in new }
         } catch {
             releaseUncertain = true
-            return ["releaseRequired": true, "releaseQueued": false, "releaseUncertain": true, "error": String(describing: error)]
+            return keyboardFacts.merging(["releaseRequired": true, "releaseQueued": false, "releaseUncertain": true, "error": String(describing: error)]) { _, new in new }
         }
     }
 }

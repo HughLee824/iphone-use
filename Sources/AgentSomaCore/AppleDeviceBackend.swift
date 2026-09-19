@@ -173,7 +173,8 @@ final class AppleDeviceBackend: SessionBackend {
         let control = NativeControlStatus.resolve(hid: hidState, media: health, closing: closing,
                                                    startupCode: controlErrorCode, startupError: controlError)
         var result: [String: Any] = ["backend": "apple-native", "sessionGeneration": generation, "deviceID": cli?.device ?? config.device,
-                "capabilities": ["screenshot": true, "tap": control.available, "ax": false, "swipe": control.available, "text": false],
+                "capabilities": ["screenshot": true, "tap": control.available, "ax": false, "swipe": control.available, "text": control.available && hid?.canType == true],
+                "keyboard": hid?.keyboardStatus ?? [:],
                 "sessionClosing": closing, "hidState": hidState?.rawValue ?? "unprepared",
                 "media": health, "runnerStarted": false, "serviceTransport": config.nativeEndpointInventory == nil ? "apple-coredevice-service-socket" : "apple-paired-tunnel",
                 "endpointDiscovery": config.nativeEndpointInventory == nil ? "apple-coredevice-service-socket" : "supplied-apple-netstat-inventory",
@@ -206,7 +207,11 @@ final class AppleDeviceBackend: SessionBackend {
         return try cli.capture(generation: generation)
     }
     func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any] {
-        guard ["tap", "swipe"].contains(action.kind), action.coordinate else { throw SomaError("native_action_unsupported", "Native backend implements screenshot-coordinate tap and swipe only") }
+        let typing = action.kind == "type" && action.reference.node == nil
+        guard typing || (["tap", "swipe"].contains(action.kind) && action.coordinate) else {
+            throw SomaError("native_action_unsupported", "Use coordinate tap/swipe, or type oN --mode insert after visually confirming focus")
+        }
+        let keySets = typing ? try NativeKeyboard.keys(for: action.fields["text"] as! String, mode: action.fields["mode"] as! String) : nil
         let control = controlStatus(mediaHealth: media?.health() ?? [:])
         guard control.available, let hid, let media else {
             throw ActionFailure(code: "native_control_unavailable", description: control.message ?? "Native control is unavailable",
@@ -216,15 +221,21 @@ final class AppleDeviceBackend: SessionBackend {
               target.context["sessionGeneration"] as? String == generation,
               let captured = target.context["captureStartedUptime"] as? Double,
               ProcessInfo.processInfo.systemUptime - captured <= 30,
-              let gesture = target.gesture else {
+              let screenGuard = typing ? target.textGuard : target.gesture?.screenGuard else {
             throw ActionFailure(code: "stale_observation", description: "Observe this device/session again before input", possiblyExecuted: false, requiresObservation: true)
         }
         // Rotation formulas have host tests but lack device acceptance. Fail closed for now.
         guard target.context["displayRotation"] as? String == "rot0", target.context["nativeRotation"] as? String == "rot0" else {
             throw SomaError("native_orientation_unsupported", "Native HID currently requires the original portrait orientation")
         }
-        try gesture.validate(kind: action.kind)
-        let swipe = action.kind == "swipe" ? try NativeSwipePlan(gesture: gesture) : nil
+        if let gesture = target.gesture { try gesture.validate(kind: action.kind) }
+        let swipe = action.kind == "swipe" ? try NativeSwipePlan(gesture: target.gesture!) : nil
+        if typing {
+            try screenGuard.validate()
+            guard screenGuard.regions.map(\.rect) == [screenGuard.context.screen] else { throw ScreenGuard.Failure.invalidGuard }
+            // Registration can change keyboard visibility. Capture/guard after it, before any key.
+            try hid.prepareKeyboard()
+        }
         let before: CapturedObservation
         let check: ScreenGuard.Check
         do {
@@ -232,7 +243,7 @@ final class AppleDeviceBackend: SessionBackend {
             guard before.metadata["displayID"] as? UInt64 == target.context["displayID"] as? UInt64,
                   let raw = before.metadata["screenContext"] as? [String: Any] else { throw ScreenGuard.Failure.contextChanged }
             let context = try JSONDecoder().decode(ScreenContext.self, from: jsonData(raw))
-            check = try gesture.screenGuard.check(png: before.screenshot, context: context)
+            check = try screenGuard.check(png: before.screenshot, context: context)
             guard check.accepted else { throw SomaError("screen_changed", "Screen guard rejected changed pixels") }
         } catch {
             throw ActionFailure(code: "stale_observation", description: "Pre-input capture/guard failed: \(error)", possiblyExecuted: false, requiresObservation: true)
@@ -241,14 +252,18 @@ final class AppleDeviceBackend: SessionBackend {
         guard ProcessInfo.processInfo.systemUptime - captured <= 30 else {
             throw ActionFailure(code: "stale_observation", description: "Observation expired during pre-input capture", possiblyExecuted: false, requiresObservation: true)
         }
-        guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped before touch") }
-        let point = try NativeCoordinateMapper.map(gesture.start, screen: gesture.screenGuard.context.screen, rotation: "rot0")
+        guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped before input") }
         var result: [String: Any]
-        if let swipe {
+        if let keySets {
+            result = try hid.type(keySets) {
+                guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped during typing") }
+            }
+        } else if let swipe {
             result = try hid.swipe(swipe) {
                 guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped during swipe") }
             }
         } else {
+            let point = try NativeCoordinateMapper.map(target.gesture!.start, screen: screenGuard.context.screen, rotation: "rot0")
             result = try hid.tap(point)
         }
         result["sourceObservationID"] = action.reference.observation
@@ -260,6 +275,7 @@ final class AppleDeviceBackend: SessionBackend {
         if stopped { return cleanupFacts }
         stopped = true; cancellation.cancel()
         var result = hid?.release() ?? ["releaseRequired": false, "releaseUncertain": false]
+        result.merge(hid?.closeKeyboard() ?? ["keyboardRemoveAcknowledged": true]) { _, new in new }
         result.merge(media?.close() ?? cleanupFacts) { _, new in new }
         mediaTransport?.cancel(); hidTransport?.cancel(); hid = nil; media = nil
         result["tunnelReleaseAcknowledged"] = tunnel?.close() ?? (cleanupFacts["tunnelReleaseAcknowledged"] as? Bool ?? true)
@@ -268,6 +284,7 @@ final class AppleDeviceBackend: SessionBackend {
         result["connectionsClosed"] = true
         result["shutdownAcknowledged"] = result["mediaStopAcknowledged"] as? Bool != false && result["releaseUncertain"] as? Bool != true
             && result["tunnelReleaseAcknowledged"] as? Bool == true
+            && result["keyboardRemoveAcknowledged"] as? Bool == true
         result["backendStopped"] = true
         cleanupFacts = result
         return result

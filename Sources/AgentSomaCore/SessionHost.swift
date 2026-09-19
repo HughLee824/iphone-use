@@ -103,7 +103,7 @@ final class SessionHost {
         var reference: ObservationReference?
         var action: DeviceAction?
         if DeviceAction.operations.contains(operation) {
-            do { action = try DeviceAction(operation: operation, request: request) }
+            do { action = try DeviceAction(operation: operation, request: request, allowScreenText: config.backend == "apple-native") }
             catch { reject((error as? SomaError)?.code ?? "invalid_action", String(describing: error)); return }
         }
         if operation == "inspect" {
@@ -166,7 +166,7 @@ final class SessionHost {
                         response["ok"] = false
                         response["requiresObservation"] = true
                         response["error"] = ["code": "native_input_unacknowledged",
-                            "message": "Contact/release were queued; inspect the new screenshot to judge the result. Input was not replayed."]
+                            "message": "Input reports were queued; inspect the new screenshot to judge the result. Input was not replayed."]
                     }
                 default: break
                 }

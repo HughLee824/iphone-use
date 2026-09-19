@@ -109,6 +109,14 @@ The harness's `--self-test` exercises only fake-transport arming, including stat
 
 Use a different controlled target and fresh observation for any subsequent explicit recovery action. Do not replay the uncertain action. These modes verify a host signal and a client channel closure; neither substitutes for pulling the physical cable, killing the process without cleanup, or guaranteeing device touch release across link loss.
 
+## Minimal ASCII input on Probe
+
+Connect explicitly with `--backend apple-native`. Observe the controlled Probe, choose a focus tap from the PNG if needed, then inspect a new screenshot for the intended field and caret. Native typing never focuses implicitly. Submit one short `type "$OBSERVATION" --mode insert --text 'Ab7!?'` with the current screenshot reference, not an AX node. Keep the original portrait and default screen guard.
+
+The first request lazily registers an owned keyboard, which can hide the soft keyboard. If the subsequent guard returns `not_dispatched`, inspect a new observation and decide explicitly whether a new input action is appropriate. Do not automatically retry. Save the before image before input evicts it, then archive the attached after-image immediately. Check exact text, case, symbols, caret and unrelated Probe counters; a queued-character count or exit status is not acceptance. Never replay text after an unknown outcome.
+
+Disconnect the exact session and check `keyboardRemoveAcknowledged` along with media/tunnel/cache cleanup and actual host exit. The keyboard ID and unique product must match before removal; same-connection enumeration after the removal barrier must confirm absence. Preserve failures separately. Printable ASCII validation, modifier ordering, release on cancellation, lost creation/send replies and foreign ownership are host-test cases; only explicitly performed device cases can be marked accepted.
+
 ## Acceptance boundaries
 
 The implementation evidence is summarized in [the backend report](apple-native-backend.md). Physical unplug during contact, SIGKILL, reboot/re-pairing, device coexistence, rotated/edge input and extended stress remain separate tests. Do not report them as passed based on these scripts or host fakes. No release or default-backend migration is part of M2–M3 acceptance.
