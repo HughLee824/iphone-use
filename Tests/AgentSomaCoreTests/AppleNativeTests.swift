@@ -403,6 +403,41 @@ final class AppleNativeTests: XCTestCase {
         XCTAssertThrowsError(try hid.swipe(plan))
         XCTAssertTrue(transport.sends.isEmpty)
     }
+    func testSwipeInterruptedAfterMovesKeepsReleaseAndClosedChannelFactsSeparate() throws {
+        let plan = try swipePlan()
+        for closeChannel in [false, true] {
+            let channel = TouchChannel(), cancellation = NativeCancellation()
+            let transport = AppleServiceTransport(channel: channel)
+            var now = 0.0, injected = false
+            let hid = NativeHIDAdapter(transport: transport, cancellation: cancellation, wait: {
+                now += $0
+                if channel.reports.count >= 5 && !injected {
+                    injected = true
+                    if closeChannel { transport.cancel() } else { cancellation.cancel() }
+                }
+            }, uptime: { now })
+            try hid.prepare()
+            XCTAssertThrowsError(try hid.swipe(plan)) {
+                let failure = $0 as? ActionFailure
+                XCTAssertEqual(failure?.possiblyExecuted, true)
+                let cleanup = failure?.result?["cleanup"] as? [String: Any]
+                XCTAssertEqual(cleanup?["releaseQueued"] as? Bool, !closeChannel)
+                XCTAssertEqual(cleanup?["releaseUncertain"] as? Bool, closeChannel)
+                XCTAssertEqual(failure?.result?["moveReportsQueued"] as? Int, 4)
+            }
+            XCTAssertTrue(injected)
+            XCTAssertEqual(channel.reports.count, closeChannel ? 5 : 6)
+            XCTAssertNotEqual(point(channel.reports[0]), point(channel.reports[4]))
+            if !closeChannel {
+                XCTAssertEqual(channel.reports.last?[3], 2)
+                XCTAssertEqual(point(channel.reports[4]), point(channel.reports[5]))
+            }
+            XCTAssertFalse(hid.isAvailable)
+            XCTAssertThrowsError(try hid.swipe(plan))
+            _ = hid.release()
+            XCTAssertEqual(channel.reports.count, closeChannel ? 5 : 6)
+        }
+    }
     func testCancelDuringContactStillReleasesWithoutReplay() throws {
         let transport = ScriptedTransport(), cancel = NativeCancellation()
         let hid = NativeHIDAdapter(transport: transport, cancellation: cancel, wait: { _ in cancel.cancel() })

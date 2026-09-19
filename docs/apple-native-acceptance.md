@@ -83,6 +83,7 @@ swiftc -parse-as-library -I "$NATIVE_BUILD" \
   "$NATIVE_BUILD/AgentSomaCore.o" "$NATIVE_BUILD/AppleNativeBridge.o" \
   -o .local/research/native-fault-build/ContactFaultHost
 .local/research/native-fault-build/ContactFaultHost --help
+.local/research/native-fault-build/ContactFaultHost --self-test
 ```
 
 In one terminal, start an owned host with a discovered device and a new evidence directory:
@@ -96,6 +97,13 @@ The host prints its session/directory/PID and writes `session.json`. In another 
 
 - `signal-after-contact` sends real SIGTERM only after CONTACT's send barrier. Expect cancellation observed, one RELEASE queued through the original connection, an unknown action result, and scoped cleanup. Post-action screenshot capture is expected to fail because the cancellation token is active; inspect the phone through a new explicit observation session.
 - `close-hid-after-contact` closes only this client's HID channel after CONTACT. Expect failed RELEASE attempts without a replacement connection, `releaseUncertain=true`, tap disabled and no further input dispatch. Explicit disconnect should still confirm owned media/tunnel/cache cleanup but must not claim overall clean shutdown. A screenshot may show the action happened despite the failed release. Preserve that uncertainty.
+- `signal-after-move` and `close-hid-after-move` use the same faults after **12 successful changed-position MOVE send barriers**. Stationary reports, the initial CONTACT and failed sends cannot arm the trigger. Use a short Probe coordinate swipe long enough to reach that count, with the same fresh-image checks. A gesture ending before the trigger is not interruption acceptance. These are local queue-completion barriers, not device execution acknowledgements.
+
+For MOVE modes, archive the source PNG and snapshot immediately after observing, before issuing the action. Do not wait until the end of the run: the observation cache retains only two entries, and signal shutdown removes it. For a returned after-observation, copy its PNG and snapshot before any further observation. For the signal mode, expect the attached capture to fail because the session is closing; wait for its scoped cleanup, explicitly open a new session and archive that new observation as the post-signal state. Keep its distinct device-session generation and observation ID.
+
+`fault-events.jsonl` associates attempts and barriers with normalized HID coordinates. Check exactly one fault after the required MOVE barriers. Signal mode should show cancellation followed by one RELEASE barrier at the last queued MOVE coordinate. Channel-close mode can attempt the next MOVE and RELEASE, but both must fail before submission (`possiblySent=false`), with no later send barrier. RELEASE uses the last attempted coordinate conservatively. The action stays unknown, both tap/swipe capabilities are withdrawn, and a different subsequent Probe action must be rejected before dispatch. Preserve acknowledged media/tunnel/cache cleanup separately from unconfirmed release and overall shutdown. Do not treat successful visual scrolling as proof that RELEASE arrived.
+
+The harness's `--self-test` exercises only fake-transport arming, including stationary/failed reports. The host test `testSwipeInterruptedAfterMovesKeepsReleaseAndClosedChannelFactsSeparate` also checks the production transport's closed-channel rejection. Neither is device acceptance. Normal explicit recovery uses a new ordinary session, a fresh image and a different controlled action; it never replays an interrupted swipe.
 
 Use a different controlled target and fresh observation for any subsequent explicit recovery action. Do not replay the uncertain action. These modes verify a host signal and a client channel closure; neither substitutes for pulling the physical cable, killing the process without cleanup, or guaranteeing device touch release across link loss.
 
