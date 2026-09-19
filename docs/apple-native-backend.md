@@ -134,6 +134,14 @@ Current device evidence in `.local/research/apple-native-keyboard-20260920/RESUL
 
 This establishes a short ASCII Probe loop on this device. It does not establish every printable character, non-US layouts, Chinese/IME input, long text, keyboard interruption under SIGTERM/link loss, or concurrent keyboards on a real device.
 
+## Chinese IME visual acceptance (2026-09-20)
+
+Using the unchanged `e57b898` release binary, native coordinate taps successfully appended `你好` to the controlled Probe through its existing Simplified Pinyin nine-key keyboard. The external agent selected the globe key, inspected the Chinese keyboard, tapped MNO, selected the visible `你` candidate, tapped GHI and selected the visible `好` candidate. Each action had a fresh source screenshot, the default guard and its own after-image. The final field and Probe value label both showed `seed az91/ B7@?你好`, with composition finished; focus 1, target generation 3/hits 10, switch off and this run's scroll offset 490 remained unchanged. This validates screenshot-guided soft-keyboard composition and candidate selection on this device.
+
+The separate HID batch-Pinyin attempt was **not accepted**: keyboard registration hid the soft keyboard, and three `type zhongwen` requests were rejected by the pre-input screen guard before any key dispatch. Subsequent fresh observations did not resolve the rejection. Caret changes are visible in the evidence, but the exact rejected samples were not recorded, so their cause remains unproven. Repeated attempts stopped; guard thresholds were not relaxed. Direct `type --text '你好'` remains unsupported. Neither arbitrary Unicode insertion nor clipboard writing was implemented or exercised.
+
+Private evidence: `.local/research/apple-native-chinese-20260920/RESULT.md`, per-action JSON/PNG pairs and an evidence consistency check. Both owned sessions acknowledged keyboard/media/tunnel/cache cleanup and their exact host PIDs exited. No production code changed and host tests were not rerun for this documentation-only acceptance update. Prior host test counts remain prior evidence. Next priority is diagnostic evidence for the whole-screen guard rejection, followed by HID Pinyin/candidate acceptance; this successful soft-keyboard test does not substitute for either.
+
 ## Remaining acceptance and limitations
 
 The controlled portrait M2–M3 path now has real-device evidence, including default connection without a supplied endpoint file and new sessions with Device Hub/Xcode exited and the tunnel initially disconnected. Longer media stress, physical disconnect during an active contact, device coexistence, screen edges and rotated input still need device acceptance. Full host/device reboot and re-pairing were not tested; ordinary Apple background services remained running.

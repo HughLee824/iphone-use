@@ -117,6 +117,12 @@ The first request lazily registers an owned keyboard, which can hide the soft ke
 
 Disconnect the exact session and check `keyboardRemoveAcknowledged` along with media/tunnel/cache cleanup and actual host exit. The keyboard ID and unique product must match before removal; same-connection enumeration after the removal barrier must confirm absence. Preserve failures separately. Printable ASCII validation, modifier ordering, release on cancellation, lost creation/send replies and foreign ownership are host-test cases; only explicitly performed device cases can be marked accepted.
 
+## Chinese soft-keyboard composition
+
+On the controlled Probe, inspect the current keyboard and choose an already-installed Chinese input method through its visible globe control. Do not add keyboards or enter settings. Use fresh screenshot-coordinate taps for the visible Pinyin keys, inspect the composition and candidate row, then explicitly select the intended candidate from the new image. Candidate position and ranking are not stable identifiers. Check both the field and Probe value label after selection; underlined Pinyin/marked text is not a committed Chinese result. Preserve unrelated counters and cleanup facts as for other taps.
+
+Report this separately from hardware-HID batch Pinyin and direct Unicode insertion. A screen-guard rejection is not a permission denial or proof of unsupported Chinese HID; preserve its not-dispatched outcome, diagnose changed pixels and do not repeatedly retry or relax the default guard to obtain a pass. The current tested sample is `你好` through soft-keyboard taps, with no submission or Return.
+
 ## Acceptance boundaries
 
 The implementation evidence is summarized in [the backend report](apple-native-backend.md). Physical unplug during contact, SIGKILL, reboot/re-pairing, device coexistence, rotated/edge input and extended stress remain separate tests. Do not report them as passed based on these scripts or host fakes. No release or default-backend migration is part of M2–M3 acceptance.

@@ -4,11 +4,13 @@
 
 ## 实验性原生文字输入
 
-`apple-native` 使用 `type oN --mode insert --text 'Ab7!?'`，绑定当前截图而非 AX 节点。先在受控页面观察、点击输入框，再用新截图确认焦点和插入位置。首版接受 1–64 个可打印 ASCII 字符，使用 US HID 映射；不切换设备布局/输入法，不自动聚焦，不支持 replace、中文、Return 或提交。
+`apple-native` 使用 `type oN --mode insert --text 'Ab7!?'`，绑定当前截图而非 AX 节点。先在受控页面观察、点击输入框，再用新截图确认焦点和插入位置。首版接受 1–64 个可打印 ASCII 字符，使用 US HID 映射；不切换设备布局/输入法，不自动聚焦，不支持 replace、直接传入中文、Return 或提交。
 
 键盘按需创建且只属于当前连接。首次注册可能收起软键盘，随后屏幕保护会拒绝旧截图并返回 `not_dispatched`；必须重新观察并决定新动作。输入前仍校验设备、会话、30 秒有效期和整屏指纹。每个字符后释放全部按键，Shift 先独立按下；取消或发送失败尝试释放且不重放文本。结果截图由外部 Agent 核对，`charactersQueued` 不代表已输入字符数，`outcome=unknown` 不自动升级为成功。
 
 `capabilities.text` 表示当前可尝试原生输入，`keyboard.prepared` 表示键盘已完成注册。设备焦点、布局、自动更正仍未由后端确认。关闭时必须按 ID 和唯一名称确认所属键盘，发送移除命令后通过关联枚举确认消失；`keyboardRemoveAcknowledged=false` 时不得宣称完整清理。以下原有节点输入与 Runner 检查描述适用于 XCTest 后端。
+
+原生坐标点击已有中文软键盘、观察并选择候选词的路线已在 Probe 验证追加“你好”。这使用 `tap`，不代表 `type --text '你好'` 已受支持；HID 批量拼音输入本轮被整屏保护拦截，尚未验收。详见[中文输入验证](apple-native-backend.md#chinese-ime-visual-acceptance-2026-09-20)。
 
 ## CLI 形式
 
