@@ -169,6 +169,35 @@ final class HostTests: XCTestCase {
         XCTAssertEqual((snapshot["result"] as? [String: Any])?["refs"] as? String, "current")
     }
 
+    func testNativeGuardRejectionAttachesExactFrameWithoutInputOrRecapture() throws {
+        let backend = ControlledBackend()
+        let capture = try observationFixture()
+        backend.actionFailure = ActionFailure(code: "stale_observation", description: "Changed pixels",
+            possiblyExecuted: false, requiresObservation: true,
+            result: ["screenGuard": ["accepted": false, "regionChanges": [0.125]]], rejectedCapture: capture)
+        let (paths, session, finished) = try host(timeout: 5, backend: backend, native: true)
+        defer { _ = try? call(paths, session: session, op: "disconnect"); wait(for: [finished], timeout: 3) }
+        _ = try call(paths, session: session, op: "observe")
+        backend.failObservation = true // Attaching the already captured frame must not recapture.
+        let response = try call(paths, session: session, op: "tap", fields: ["reference": "o1:e11"])
+        XCTAssertEqual(response["outcome"] as? String, "not_dispatched")
+        let observation = try XCTUnwrap(response["observation"] as? [String: Any])
+        XCTAssertEqual(observation["phase"] as? String, "pre_input_rejection")
+        XCTAssertEqual(observation["ok"] as? Bool, true)
+        let stored = try XCTUnwrap(observation["result"] as? [String: Any])
+        let path = try XCTUnwrap(stored["screenshot"] as? String)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path)), capture.screenshot)
+        let facts = try XCTUnwrap(response["result"] as? [String: Any])
+        XCTAssertEqual(facts["rejectedObservationID"] as? String, "o2")
+        XCTAssertNil(facts["afterObservationID"])
+        XCTAssertEqual((facts["screenGuard"] as? [String: Any])?["regionChanges"] as? [Double], [0.125])
+        XCTAssertEqual((facts["recovery"] as? [String: Any])?["nextAction"] as? String, "inspect_observation")
+        XCTAssertEqual(backend.inputCount, 0); XCTAssertEqual(backend.observeCount, 1)
+        let old = try call(paths, session: session, op: "tap", fields: ["reference": "o1:e11"])
+        XCTAssertEqual(old["outcome"] as? String, "not_dispatched")
+        XCTAssertEqual(backend.actionCount, 1)
+    }
+
     func testNativeUncertainControlRecoverySurvivesAssociatedCaptureAndNextRejection() throws {
         let backend = ControlledBackend()
         backend.statusInfo = NativeControlStatus.resolve(hid: .releaseUncertain, media: ["healthy": true], closing: false,

@@ -10,6 +10,7 @@ struct DeviceAction {
     let guardPolicy: ScreenGuard.Policy
     let protectedReferences: [ObservationReference]
     let swipeMotion: SwipeMotion?
+    let textRegion: ScreenRect?
 
     init(operation: String, request: [String: Any], allowScreenText: Bool = false) throws {
         guard Self.operations.contains(operation) else { throw SomaError("invalid_action", "Unknown device action") }
@@ -82,6 +83,22 @@ struct DeviceAction {
             guard request["key"] as? String == "return" else { throw SomaError("invalid_key", "Use --key return") }
             fields["key"] = "return"
         }
+        if let raw = request["fieldRect"] {
+            guard allowScreenText, operation == "type", reference.node == nil,
+                  let value = raw as? String else {
+                throw SomaError("invalid_text_region", "--field-rect applies only to native type oN")
+            }
+            let parts = value.split(separator: ",", omittingEmptySubsequences: false)
+            let numbers = parts.compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            guard parts.count == 4, numbers.count == 4, numbers.allSatisfy(\.isFinite) else {
+                throw SomaError("invalid_text_region", "Use --field-rect x,y,width,height in screenshot screen points")
+            }
+            let rect = ScreenRect(CGRect(x: numbers[0], y: numbers[1], width: numbers[2], height: numbers[3]))
+            guard numbers[2] > 0, numbers[3] > 0, rect.valid else {
+                throw SomaError("invalid_text_region", "Text field width and height must be positive")
+            }
+            textRegion = rect
+        } else { textRegion = nil }
         var policy = ScreenGuard.Policy()
         var protected: [ObservationReference] = []
         if ["tap", "swipe"].contains(operation) {
@@ -131,8 +148,10 @@ struct ActionFailure: Error, CustomStringConvertible {
     let possiblyExecuted: Bool
     let requiresObservation: Bool
     let result: [String: Any]?
+    let rejectedCapture: CapturedObservation?
 
-    init(code: String, description: String, possiblyExecuted: Bool, requiresObservation: Bool, result: [String: Any]? = nil) {
+    init(code: String, description: String, possiblyExecuted: Bool, requiresObservation: Bool, result: [String: Any]? = nil, rejectedCapture: CapturedObservation? = nil) {
+        self.rejectedCapture = rejectedCapture
         self.code = code
         self.description = description
         self.possiblyExecuted = possiblyExecuted

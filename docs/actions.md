@@ -10,7 +10,11 @@
 
 `capabilities.text` 表示当前可尝试原生输入，`keyboard.prepared` 表示键盘已完成注册。设备焦点、布局、自动更正仍未由后端确认。关闭时必须按 ID 和唯一名称确认所属键盘，发送移除命令后通过关联枚举确认消失；`keyboardRemoveAcknowledged=false` 时不得宣称完整清理。以下原有节点输入与 Runner 检查描述适用于 XCTest 后端。
 
-原生坐标点击已有中文软键盘、观察并选择候选词的路线已在 Probe 验证追加“你好”。这使用 `tap`，不代表 `type --text '你好'` 已受支持；HID 批量拼音输入本轮被整屏保护拦截，尚未验收。详见[中文输入验证](apple-native-backend.md#chinese-ime-visual-acceptance-2026-09-20)。
+原生坐标点击已有中文软键盘、观察并选择候选词的路线已在 Probe 验证追加“你好”。这使用 `tap`，不代表 `type --text '你好'` 已受支持；HID 批量输入 `zhongwen` 后截图选择候选“中文”也已在 Probe 验证。详见[中文输入验证](apple-native-backend.md#chinese-ime-visual-acceptance-2026-09-20)。
+
+原生 `type` 可指定 `--field-rect x,y,width,height`，由调用方在当前原始截图中选择完整输入框，以屏幕 points 表示。局部仍为零变化限制，全屏仍为 1% 变化限制；省略该参数时仍对整屏实施局部零变化保护。矩形必须在该截图范围内，不自动聚焦、不自动识别输入框，不接受 XCTest/节点引用用法。光标闪烁也可能引起局部保护拒绝；不得缩小矩形去绕开正文或光标，也不自动重试。
+
+原生画面差异拒绝现在返回 `result.screenGuard` 的实际变化比例，并将触发拒绝的原图作为 `observation.phase=pre_input_rejection` 附带。`result.rejectedObservationID` 是该新观察，原引用失效；它不是动作后图，不提供 `afterObservationID`，动作仍为 `not_dispatched`。调用方先检查附图，再决定新动作；捕获失败/无差异比较结果的拒绝不保证带图。缓存仍只保留两个观察，关闭会话时移除，需及时保存证据。
 
 ## CLI 形式
 

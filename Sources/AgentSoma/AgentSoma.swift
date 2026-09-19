@@ -253,6 +253,7 @@ struct TypeText: ParsableCommand {
     @Argument(help: "Current text input reference; apple-native uses oN after visual focus confirmation (insert, printable ASCII, at most 64 characters).") var reference: String
     @Option(help: "insert requires existing keyboard focus; replace focuses and selects all.") var mode: String
     @Option(help: "Literal text up to 4096 UTF-8 bytes; no control keys or newlines. Empty text clears in replace mode.") var text: String?
+    @Option(help: "Native type oN only: visually selected input field x,y,width,height in screen points; strict region guard plus default whole-screen guard. Does not focus. Omit to protect the whole screen strictly.") var fieldRect: String?
     @Flag(help: "Read UTF-8 text from stdin until EOF, up to 4096 bytes. No trimming; use instead of --text.") var stdin = false
 
     mutating func validate() throws {
@@ -268,7 +269,9 @@ struct TypeText: ParsableCommand {
                 return ["session": session, "ok": false, "outcome": "not_dispatched",
                         "error": ["code": (error as? SomaError)?.code ?? "stdin_read_failed", "message": String(describing: error)]]
             }
-            return try SessionClient.call(session: session, operation: "type", fields: ["reference": reference, "mode": mode, "text": value])
+            var fields: [String: Any] = ["reference": reference, "mode": mode, "text": value]
+            if let fieldRect { fields["fieldRect"] = fieldRect }
+            return try SessionClient.call(session: session, operation: "type", fields: fields)
         }
     }
 }

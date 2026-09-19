@@ -232,7 +232,7 @@ final class AppleDeviceBackend: SessionBackend {
         let swipe = action.kind == "swipe" ? try NativeSwipePlan(gesture: target.gesture!) : nil
         if typing {
             try screenGuard.validate()
-            guard screenGuard.regions.map(\.rect) == [screenGuard.context.screen] else { throw ScreenGuard.Failure.invalidGuard }
+            guard screenGuard.regions.map(\.rect) == [action.textRegion ?? screenGuard.context.screen] else { throw ScreenGuard.Failure.invalidGuard }
             // Registration can change keyboard visibility. Capture/guard after it, before any key.
             try hid.prepareKeyboard()
         }
@@ -244,8 +244,12 @@ final class AppleDeviceBackend: SessionBackend {
                   let raw = before.metadata["screenContext"] as? [String: Any] else { throw ScreenGuard.Failure.contextChanged }
             let context = try JSONDecoder().decode(ScreenContext.self, from: jsonData(raw))
             check = try screenGuard.check(png: before.screenshot, context: context)
-            guard check.accepted else { throw SomaError("screen_changed", "Screen guard rejected changed pixels") }
-        } catch {
+            guard check.accepted else {
+                throw ActionFailure(code: "stale_observation", description: "Screen guard rejected changed pixels before input; inspect the attached pre-input image",
+                    possiblyExecuted: false, requiresObservation: true, result: ["screenGuard": check.result], rejectedCapture: before)
+            }
+        } catch let failure as ActionFailure { throw failure }
+        catch {
             throw ActionFailure(code: "stale_observation", description: "Pre-input capture/guard failed: \(error)", possiblyExecuted: false, requiresObservation: true)
         }
         try cancellation.check()
@@ -268,6 +272,10 @@ final class AppleDeviceBackend: SessionBackend {
         }
         result["sourceObservationID"] = action.reference.observation
         result["screenGuard"] = check.result
+        if typing {
+            let rect = screenGuard.regions[0].rect
+            result["textFieldRect"] = ["x": rect.x, "y": rect.y, "width": rect.width, "height": rect.height]
+        }
         return result
     }
     func cancelCurrent() { cancellation.cancel() }

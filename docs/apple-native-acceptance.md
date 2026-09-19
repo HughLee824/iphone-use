@@ -123,6 +123,14 @@ On the controlled Probe, inspect the current keyboard and choose an already-inst
 
 Report this separately from hardware-HID batch Pinyin and direct Unicode insertion. A screen-guard rejection is not a permission denial or proof of unsupported Chinese HID; preserve its not-dispatched outcome, diagnose changed pixels and do not repeatedly retry or relax the default guard to obtain a pass. The current tested sample is `你好` through soft-keyboard taps, with no submission or Return.
 
+## HID Pinyin through a visually selected field
+
+Confirm an existing Chinese IME and focused Probe field from the screenshot. If using `type "$OBSERVATION" --mode insert --field-rect "$X,$Y,$WIDTH,$HEIGHT" --text zhongwen`, select the complete field in that observation's screen points; never copy a rectangle from another device/page or shrink it to exclude text/caret. Omitting `--field-rect` preserves strict whole-screen comparison. Registration can hide the soft keyboard and must still fail the global guard before key dispatch.
+
+Inspect any `pre_input_rejection` image and actual guard metrics before making a new explicit decision. It is a valid newly cached pre-input observation, not an after-action result. Preserve it and the old source immediately; no recapture is substituted and no failed action is replayed. Input-field changes, including caret animation, can still reject with zero local tolerance. Do not adjust thresholds or repeatedly submit without new evidence.
+
+When the HID action is dispatched, inspect its after-image for composition and the intended candidate. Select the actual visible Chinese candidate with a separate screenshot-bound tap; never assume candidate 1 is correct or use Return to submit the app. Verify committed text in the field and Probe label, disappearance of composition/candidates, unchanged unrelated counters and owned cleanup. The tested sample appended `中文` using HID `zhongwen` and a visually chosen candidate. This is distinct from soft-keyboard taps and from unsupported direct Unicode insertion.
+
 ## Acceptance boundaries
 
 The implementation evidence is summarized in [the backend report](apple-native-backend.md). Physical unplug during contact, SIGKILL, reboot/re-pairing, device coexistence, rotated/edge input and extended stress remain separate tests. Do not report them as passed based on these scripts or host fakes. No release or default-backend migration is part of M2–M3 acceptance.

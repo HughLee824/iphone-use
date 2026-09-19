@@ -181,6 +181,19 @@ final class SessionHost {
                     response["outcome"] = uncertain ? "unknown" : "not_dispatched"
                     response["requiresObservation"] = uncertain || failure?.requiresObservation == true || (error as? SomaError)?.code == "stale_reference"
                 }
+                if config.backend == "apple-native", !uncertain, let capture = failure?.rejectedCapture {
+                    // Keep the exact valid frame that rejected input, not a later recapture.
+                    // It is a new observation, never evidence of a dispatched action.
+                    do {
+                        let rejected = try observations.store(capture)
+                        response["observation"] = ["ok": true, "phase": "pre_input_rejection", "result": rejected]
+                        var result = response["result"] as? [String: Any] ?? [:]
+                        result["rejectedObservationID"] = rejected["observation"]
+                        response["result"] = result
+                    } catch {
+                        response["observation"] = ["ok": false, "phase": "pre_input_rejection", "error": String(describing: error)]
+                    }
+                }
                 if operation == "status" { observations.invalidate("backend_unavailable") }
                 response["error"] = ["code": failure?.code ?? (error as? SomaError)?.code ?? "backend_error", "message": String(describing: error)]
             }
