@@ -83,6 +83,48 @@ final class NativeTextInputTests: XCTestCase {
         // Identical changed frames never establish a new baseline.
     }
 
+    func testPreflightTracePreservesEachComparisonWithoutChangingBaseline() throws {
+        let context = screenTestContext(), baseline = try screenPNG()
+        let changed = try screenPNG(patches: [(CGRect(x: 50, y: 160, width: 4, height: 10), [0,0,0])])
+        let guardValue = try ScreenGuard(png: baseline, context: context,
+            rects: [ScreenRect(CGRect(x: 18, y: 146, width: 354, height: 36))], policy: .init())
+        let metadata: [String: Any] = ["displayID": UInt64(1), "screenContext": try jsonObject(JSONEncoder().encode(context))]
+        for restoresBaseline in [false, true] {
+            var time = 0.0, captures = 0, records: [[String: Any]] = []
+            func run() throws -> (ScreenGuard.Check, Int) {
+                try NativeInputPreflight.check(guard: guardValue, displayID: 1, deadline: 8, maximumCaptures: 3,
+                    now: { time }, record: { records.append($0) }) {
+                    captures += 1; time += 1
+                    return CapturedObservation(nodes: [], metadata: metadata,
+                        screenshot: restoresBaseline && captures == 3 ? baseline : changed)
+                }
+            }
+            if restoresBaseline { XCTAssertTrue(try run().0.accepted) }
+            else { XCTAssertThrowsError(try run()) { XCTAssertFalse(($0 as! ActionFailure).possiblyExecuted) } }
+            XCTAssertEqual(captures, 3)
+            XCTAssertEqual(records.compactMap { $0["attempt"] as? Int }, [1, 2, 3])
+            XCTAssertEqual(records.compactMap { $0["elapsedMs"] as? Double }, [1000, 2000, 3000])
+            XCTAssertEqual(records.compactMap { $0["captureAndCheckMs"] as? Double }, [1000, 1000, 1000])
+            XCTAssertEqual(records.compactMap { ($0["screenGuard"] as? [String: Any])?["accepted"] as? Bool }, [false, false, restoresBaseline])
+            XCTAssertTrue(records.allSatisfy { $0["inTime"] as? Bool == true })
+        }
+    }
+
+    func testPreflightTraceRecordsLateMatchButNeverAuthorizesIt() throws {
+        let context = screenTestContext(), baseline = try screenPNG()
+        let guardValue = try ScreenGuard(png: baseline, context: context, rects: [context.screen], policy: .init())
+        var time = 0.0, records: [[String: Any]] = []
+        XCTAssertThrowsError(try NativeInputPreflight.check(guard: guardValue, displayID: 1,
+            deadline: 8, maximumCaptures: 3, now: { time }, record: { records.append($0) }) {
+                time = 9
+                return CapturedObservation(nodes: [], metadata: ["displayID": UInt64(1),
+                    "screenContext": try jsonObject(JSONEncoder().encode(context))], screenshot: baseline)
+            }) { XCTAssertFalse(($0 as! ActionFailure).possiblyExecuted) }
+        XCTAssertEqual(records.count, 1)
+        XCTAssertEqual(records[0]["inTime"] as? Bool, false)
+        XCTAssertEqual((records[0]["screenGuard"] as? [String: Any])?["accepted"] as? Bool, true)
+    }
+
     func testLateMatchingFrameAndCancellationCannotAuthorizeInput() throws {
         let context = screenTestContext(), png = try screenPNG()
         let guardValue = try ScreenGuard(png: png, context: context, rects: [context.screen], policy: .init())

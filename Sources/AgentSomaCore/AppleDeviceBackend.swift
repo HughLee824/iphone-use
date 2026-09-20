@@ -246,11 +246,16 @@ final class AppleDeviceBackend: SessionBackend {
         }
         var check: ScreenGuard.Check
         var captures = 0
-        func preflight() throws -> ScreenGuard.Check {
+        var preInputChecks: [[String: Any]] = []
+        func preflight(stage: String) throws -> ScreenGuard.Check {
             let (value, count) = try NativeInputPreflight.check(guard: screenGuard,
                 displayID: target.context["displayID"] as? UInt64,
                 deadline: min(captured + 30, ProcessInfo.processInfo.systemUptime + 8),
-                maximumCaptures: textInput?.usesPasteboard == true ? 3 : 1) {
+                maximumCaptures: textInput?.usesPasteboard == true ? 3 : 1,
+                record: { sample in
+                    var sample = sample; sample["stage"] = stage
+                    preInputChecks.append(sample)
+                }) {
                     try cancellation.check()
                     guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped before input") }
                     return try self.observe()
@@ -259,7 +264,7 @@ final class AppleDeviceBackend: SessionBackend {
             return value
         }
         do {
-            check = try preflight()
+            check = try preflight(stage: textInput?.usesPasteboard == true ? "before_clipboard" : "before_input")
             if case .pasteboard(let text) = textInput {
                 do {
                     if let pasteboardError { throw SomaError("native_pasteboard_unavailable", pasteboardError) }
@@ -282,18 +287,19 @@ final class AppleDeviceBackend: SessionBackend {
                 }
                 // A clipboard operation can trigger UI. Recheck against the same
                 // source observation after staging; never replace the guard baseline.
-                check = try preflight()
+                check = try preflight(stage: "after_clipboard")
                 try pasteboard!.checkOwnership()
             }
         } catch let failure as ActionFailure {
             var result = failure.result ?? [:]
+            result["preInputChecks"] = preInputChecks
             result["preInputCaptures"] = captures + (result["preInputCaptures"] as? Int ?? 0)
             if let pasteboard { result["pasteboard"] = pasteboard.status }
             throw ActionFailure(code: failure.code, description: failure.description, possiblyExecuted: failure.possiblyExecuted,
                 requiresObservation: failure.requiresObservation, result: result, rejectedCapture: failure.rejectedCapture)
         } catch {
             throw ActionFailure(code: "stale_observation", description: "Pre-input capture/guard/clipboard check failed: \(error)",
-                possiblyExecuted: false, requiresObservation: true, result: ["pasteboard": pasteboard?.status ?? [:]])
+                possiblyExecuted: false, requiresObservation: true, result: ["pasteboard": pasteboard?.status ?? [:], "preInputChecks": preInputChecks])
         }
         try cancellation.check()
         guard ProcessInfo.processInfo.systemUptime - captured <= 30 else {
@@ -329,6 +335,7 @@ final class AppleDeviceBackend: SessionBackend {
         result["sourceObservationID"] = action.reference.observation
         result["screenGuard"] = check.result
         result["preInputCaptures"] = captures
+        result["preInputChecks"] = preInputChecks
         if typing {
             let rect = screenGuard.regions[0].rect
             result["textFieldRect"] = ["x": rect.x, "y": rect.y, "width": rect.width, "height": rect.height]

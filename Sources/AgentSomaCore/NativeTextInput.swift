@@ -23,16 +23,23 @@ enum NativeTextInput {
 enum NativeInputPreflight {
     static func check(guard screenGuard: ScreenGuard, displayID: UInt64?, deadline: TimeInterval, maximumCaptures: Int,
                       now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+                      record: ([String: Any]) -> Void = { _ in },
                       capture: () throws -> CapturedObservation) throws -> (ScreenGuard.Check, Int) {
         guard (1...3).contains(maximumCaptures), deadline.isFinite else { throw ScreenGuard.Failure.invalidGuard }
+        let started = now()
         for attempt in 1...maximumCaptures {
             guard now() < deadline else { throw SomaError("stale_observation", "Input observation deadline expired") }
+            let captureStarted = now()
             let frame = try capture()
             guard frame.metadata["displayID"] as? UInt64 == displayID,
                   let raw = frame.metadata["screenContext"] as? [String: Any] else { throw ScreenGuard.Failure.contextChanged }
             let context = try JSONDecoder().decode(ScreenContext.self, from: jsonData(raw))
             let check = try screenGuard.check(png: frame.screenshot, context: context)
-            let inTime = now() < deadline
+            let checkedAt = now()
+            let inTime = checkedAt < deadline
+            record(["attempt": attempt, "elapsedMs": (checkedAt - started) * 1000,
+                    "captureAndCheckMs": (checkedAt - captureStarted) * 1000,
+                    "screenGuard": check.result, "inTime": inTime])
             if check.accepted && inTime { return (check, attempt) }
             if attempt == maximumCaptures || !inTime || check.screenChange > check.policy.maxScreenChange {
                 throw ActionFailure(code: "stale_observation", description: "Screen guard or deadline rejected input; inspect the attached pre-input image",
