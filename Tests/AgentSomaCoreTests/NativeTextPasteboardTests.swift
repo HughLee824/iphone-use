@@ -24,11 +24,18 @@ private final class PasteboardTransport: NativeTransport {
     var items: [[String: Any]] = []
     var count = 1
     var setCount = 0
+    var policies: [String] = []
+    var failResolvedRead = false
     func request(_ message: [String: Any], timeout: TimeInterval) throws -> [String: Any] {
         XCTAssertEqual(message["pasteboardName"] as? String, "general")
         let setting = message["command"] as? String == "SET"
+        let policy = (message["dataPolicy"] as? [String: Any])?.keys.first
+        if let policy { policies.append(policy) }
+        if policy == "allResolved", failResolvedRead {
+            throw TransportError(description: "Fixture data resolution timed out", possiblySent: true)
+        }
         if setting { items = message["items"] as! [[String: Any]]; count += 1; setCount += 1 }
-        let returnedItems = setting ? items.map { ["types": $0["types"]!, "data": [:]] } : items
+        let returnedItems = setting || policy == "allPromised" ? items.map { ["types": $0["types"]!, "data": [:]] } : items
         return ["command": setting ? "SET_REPLY" : "PULL_REPLY", "pasteboard": ["items": returnedItems,
             "metadata": ["pasteboardName": "general", "changeCount": count, "nonce": "device"]]]
     }
@@ -37,6 +44,77 @@ private final class PasteboardTransport: NativeTransport {
 }
 
 final class NativeTextPasteboardTests: XCTestCase {
+    func testIdentityQueriesDoNotResolveDataAndBackupStillRequiresAllFlavors() throws {
+        let transport = PasteboardTransport()
+        let board = NativeTextPasteboard(io: AppleTextPasteboardIO(transport: transport, cancellation: NativeCancellation()))
+        try board.stage("test")
+        XCTAssertEqual(transport.policies, ["allPromised", "allResolved", "allPromised", "allPromised", "allResolved", "allPromised"])
+        XCTAssertEqual(board.status["preparationPhase"] as? String, "ready")
+        XCTAssertEqual(board.close()["pasteboardRestoreAcknowledged"] as? Bool, true)
+    }
+
+    func testMetadataSuccessButUnresolvedOriginalNeverWritesOrClaimsBackup() throws {
+        let transport = PasteboardTransport()
+        transport.items = [["types": ["public.text", "public.html"], "data": [:]]]
+        transport.failResolvedRead = true
+        let board = NativeTextPasteboard(io: AppleTextPasteboardIO(transport: transport, cancellation: NativeCancellation()))
+        XCTAssertThrowsError(try board.stage("test"))
+        XCTAssertEqual(transport.policies, ["allPromised", "allResolved"])
+        XCTAssertEqual(board.status["preparationPhase"] as? String, "read_original")
+        XCTAssertEqual(board.status["restorePending"] as? Bool, false)
+        XCTAssertEqual(board.status["writeUncertain"] as? Bool, false)
+        XCTAssertNil(board.status["transactionID"])
+        XCTAssertEqual(board.close()["pasteboardRestoreAcknowledged"] as? Bool, true)
+        XCTAssertEqual(transport.setCount, 0)
+        XCTAssertEqual(transport.items.count, 1)
+    }
+
+    func testExplicitFinishIsBoundToLatestTransactionAndPostInputCapture() throws {
+        let io = PasteboardIO(), board = NativeTextPasteboard(io: io)
+        let before = ProcessInfo.processInfo.systemUptime
+        try board.stage("ASCII", sourceObservationID: "o1")
+        let first = board.status["transactionID"] as! String
+        try board.stage("ASCII", sourceObservationID: "o3")
+        let latest = board.status["transactionID"] as! String
+        XCTAssertNotEqual(first, latest)
+        XCTAssertEqual(io.writes, 1)
+        XCTAssertEqual(board.status["sourceObservationID"] as? String, "o3")
+        board.endInputAttempt()
+        let after = ProcessInfo.processInfo.systemUptime
+        XCTAssertThrowsError(try board.finish(transaction: first, observedAt: after))
+        XCTAssertThrowsError(try board.finish(transaction: latest, observedAt: before))
+        XCTAssertThrowsError(try board.finish(transaction: latest, observedAt: .nan))
+        XCTAssertEqual(io.cleanupWrites, 0)
+        XCTAssertEqual(try board.finish(transaction: latest, observedAt: after)["pasteboardRestoreAcknowledged"] as? Bool, true)
+        _ = try board.finish(transaction: latest, observedAt: after)
+        _ = board.close()
+        XCTAssertEqual(io.cleanupWrites, 1)
+        XCTAssertTrue(board.restored)
+        XCTAssertEqual(board.status["restorePending"] as? Bool, false)
+        // The next backend transaction uses a fresh manager and fresh backup.
+        io.items = [.init(flavors: ["public.text": Data("new original".utf8)])]
+        let original = io.items, next = NativeTextPasteboard(io: io)
+        try next.stage("next")
+        XCTAssertThrowsError(try next.finish(transaction: latest, observedAt: ProcessInfo.processInfo.systemUptime))
+        _ = next.close()
+        XCTAssertEqual(io.items, original)
+    }
+
+    func testExplicitFinishNeverRetriesFailedRestoreOrOverwritesForeignOwner() throws {
+        for foreignWriter in [false, true] {
+            let io = PasteboardIO(), board = NativeTextPasteboard(io: io)
+            try board.stage("中文")
+            let token = board.status["transactionID"] as! String
+            if foreignWriter { io.count += 1 } else { io.failWrite = true }
+            let now = ProcessInfo.processInfo.systemUptime
+            XCTAssertEqual(try board.finish(transaction: token, observedAt: now)["pasteboardRestoreAcknowledged"] as? Bool, false)
+            _ = try board.finish(transaction: token, observedAt: now)
+            _ = board.close()
+            XCTAssertEqual(io.cleanupWrites, foreignWriter ? 0 : 1)
+            XCTAssertFalse(board.available)
+        }
+    }
+
     func testSETReplyWithoutPayloadUsesPullForVerificationAndClearsExactly() throws {
         let transport = PasteboardTransport(), cancellation = NativeCancellation()
         let io = AppleTextPasteboardIO(transport: transport, cancellation: cancellation)

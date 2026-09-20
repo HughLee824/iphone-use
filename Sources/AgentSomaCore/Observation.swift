@@ -153,7 +153,7 @@ final class ObservationCache {
         }
         if entry.capture.metadata["backend"] as? String == "apple-native" {
             if action.kind == "type", action.reference.node == nil {
-                _ = try NativeTextInput(text: action.fields["text"] as! String, mode: action.fields["mode"] as! String)
+                _ = try NativeTextInput(text: action.fields["text"] as! String, mode: action.fields["mode"] as! String, method: action.fields["textMethod"] as? String ?? "auto")
                 guard let raw = entry.capture.metadata["screenContext"] as? [String: Any] else { throw ScreenGuard.Failure.invalidGuard }
                 let context = try JSONDecoder().decode(ScreenContext.self, from: jsonData(raw))
                 let guardValue = try ScreenGuard(png: entry.capture.screenshot, context: context, rects: [action.textRegion ?? context.screen], policy: .init())
@@ -186,6 +186,15 @@ final class ObservationCache {
             index = parent
         }
         return ObservedTarget(context: entry.capture.metadata, path: path)
+    }
+
+    func resolveTextConfirmation(_ reference: ObservationReference) throws -> [String: Any] {
+        guard reference.node == nil,
+              let entry = entries.first(where: { $0.id == reference.observation }), currentID == entry.id,
+              entry.capture.metadata["backend"] as? String == "apple-native" else {
+            throw SomaError("stale_reference", "Use the current native screenshot oN after visually checking the text result")
+        }
+        return entry.capture.metadata
     }
 
     private func coordinateTarget(for action: DeviceAction, capture: CapturedObservation) throws -> ObservedTarget {

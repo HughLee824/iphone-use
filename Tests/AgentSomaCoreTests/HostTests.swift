@@ -21,6 +21,10 @@ private final class ControlledBackend: SessionBackend {
     var blockAction = false
     var failObservation = false
     var nativeSend = false
+    var nativeTextFixture = false
+    var finishAcknowledged = true
+    private(set) var finishCount = 0
+    private(set) var lastTextMethod: String?
     let actionStarted = DispatchSemaphore(value: 0)
     let releaseAction = DispatchSemaphore(value: 0)
 
@@ -47,9 +51,18 @@ private final class ControlledBackend: SessionBackend {
     func observe() throws -> CapturedObservation {
         observeCount += 1
         if failObservation { throw SomaError("capture_failed", "Fixture capture failure") }
+        if nativeTextFixture {
+            return CapturedObservation(nodes: [], metadata: ["backend": "apple-native",
+                "screenContext": try jsonObject(JSONEncoder().encode(screenTestContext()))], screenshot: try screenPNG())
+        }
         return try observationFixture()
     }
+    func finishText(transaction: String, observation: [String: Any]) throws -> [String: Any] {
+        finishCount += 1
+        return ["pasteboardRestoreAcknowledged": finishAcknowledged, "transactionID": transaction]
+    }
     func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any] {
+        lastTextMethod = action.fields["textMethod"] as? String
         actionCount += 1
         actionStarted.signal()
         if blockAction { _ = releaseAction.wait(timeout: .now() + 5) }
@@ -67,6 +80,54 @@ private final class ControlledBackend: SessionBackend {
 }
 
 final class HostTests: XCTestCase {
+    func testExplicitTextMethodAndCompletionUseCurrentNativeObservationWithoutStoppingHost() throws {
+        let backend = ControlledBackend(); backend.nativeSend = true; backend.nativeTextFixture = true
+        let (paths, session, finished) = try host(timeout: 5, backend: backend, native: true)
+        defer { _ = try? call(paths, session: session, op: "disconnect"); wait(for: [finished], timeout: 3) }
+        let token = UUID().uuidString
+        _ = try call(paths, session: session, op: "observe")
+        let typed = try call(paths, session: session, op: "type-with-method", fields: ["reference": "o1", "mode": "insert", "text": String(repeating: "A", count: 100), "textMethod": "paste"])
+        XCTAssertEqual(typed["outcome"] as? String, "unknown")
+        XCTAssertEqual(backend.lastTextMethod, "paste")
+        XCTAssertEqual(backend.inputCount, 1)
+        let stale = try call(paths, session: session, op: "text-finish", fields: ["reference": "o1", "transaction": token])
+        XCTAssertEqual(stale["outcome"] as? String, "not_dispatched")
+        XCTAssertEqual(backend.finishCount, 0)
+        let response = try call(paths, session: session, op: "text-finish", fields: ["reference": "o2", "transaction": token])
+        XCTAssertEqual(response["outcome"] as? String, "completed")
+        XCTAssertEqual((response["result"] as? [String: Any])?["sourceObservationID"] as? String, "o2")
+        XCTAssertEqual((response["result"] as? [String: Any])?["afterObservationID"] as? String, "o3")
+        XCTAssertEqual(backend.finishCount, 1)
+        XCTAssertEqual(backend.inputCount, 1)
+        XCTAssertEqual(backend.stopCount, 0)
+        XCTAssertEqual(try call(paths, session: session, op: "status")["ok"] as? Bool, true)
+        let reused = try call(paths, session: session, op: "text-finish", fields: ["reference": "o2", "transaction": token])
+        XCTAssertEqual(reused["outcome"] as? String, "not_dispatched")
+        XCTAssertEqual(backend.finishCount, 1)
+    }
+
+    func testUnconfirmedFinishPreservesCleanupFactsWhenCaptureFailsAndRunnerRejectsOptions() throws {
+        for native in [true, false] {
+            let backend = ControlledBackend(); backend.nativeTextFixture = native; backend.finishAcknowledged = false
+            let (paths, session, finished) = try host(timeout: 5, backend: backend, native: native)
+            defer { _ = try? call(paths, session: session, op: "disconnect"); wait(for: [finished], timeout: 3) }
+            _ = try call(paths, session: session, op: "observe")
+            backend.failObservation = true
+            let response = try call(paths, session: session, op: "text-finish", fields: ["reference": "o1", "transaction": UUID().uuidString])
+            XCTAssertEqual(response["outcome"] as? String, native ? "unknown" : "not_dispatched")
+            XCTAssertEqual(backend.finishCount, native ? 1 : 0)
+            XCTAssertEqual(backend.inputCount, 0)
+            if native {
+                XCTAssertEqual((response["result"] as? [String: Any])?["pasteboardRestoreAcknowledged"] as? Bool, false)
+                XCTAssertEqual((response["observation"] as? [String: Any])?["ok"] as? Bool, false)
+            } else {
+                let typed = try call(paths, session: session, op: "type-with-method", fields: ["reference": "o1:e27", "mode": "insert", "text": "abc", "textMethod": "paste"])
+                XCTAssertEqual((typed["error"] as? [String: Any])?["code"] as? String, "invalid_text_method")
+                XCTAssertEqual(backend.actionCount, 0)
+            }
+        }
+    }
+
     func testClientFollowupUsesExistingProtocolAndPreservesReferenceRules() throws {
         let backend = ControlledBackend()
         let (paths, session, finished) = try host(timeout: 5, backend: backend)

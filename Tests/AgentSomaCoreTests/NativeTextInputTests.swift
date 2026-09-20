@@ -2,6 +2,36 @@ import XCTest
 @testable import AgentSomaCore
 
 final class NativeTextInputTests: XCTestCase {
+    func testExplicitPasteAcceptsLongASCIIAndKeysNeverFallBackToClipboard() throws {
+        let text = String(repeating: "Ab7 ?", count: 819) + "!"
+        XCTAssertEqual(text.utf8.count, 4096)
+        guard case .pasteboard(let payload) = try NativeTextInput(text: text, mode: "insert", method: "paste") else { return XCTFail("Expected literal paste") }
+        XCTAssertEqual(payload, text)
+        XCTAssertThrowsError(try NativeTextInput(text: text + "!", mode: "insert", method: "paste"))
+        for method in ["keys", "auto"] { XCTAssertThrowsError(try NativeTextInput(text: text, mode: "insert", method: method)) }
+        XCTAssertThrowsError(try NativeTextInput(text: "中文", mode: "insert", method: "keys"))
+        XCTAssertThrowsError(try NativeTextInput(text: "abc", mode: "insert", method: "invalid"))
+        XCTAssertThrowsError(try NativeTextInput(text: "abc\n", mode: "insert", method: "paste"))
+    }
+
+    func testMethodSurvivesActionAndObservationResolutionAndRejectsRunner() throws {
+        let request: [String: Any] = ["reference": "o1", "mode": "insert", "text": String(repeating: "a", count: 100), "textMethod": "paste"]
+        let action = try DeviceAction(operation: "type", request: request, allowScreenText: true)
+        XCTAssertEqual(action.fields["textMethod"] as? String, "paste")
+        XCTAssertThrowsError(try DeviceAction(operation: "type", request: request))
+        XCTAssertThrowsError(try DeviceAction(operation: "tap", request: request, allowScreenText: true))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = ObservationCache(directory: directory)
+        let frame = CapturedObservation(nodes: [], metadata: ["backend": "apple-native", "screenContext": try jsonObject(JSONEncoder().encode(screenTestContext()))], screenshot: try screenPNG())
+        _ = try cache.store(frame)
+        XCTAssertNotNil(try cache.resolveTarget(for: action).textGuard)
+        XCTAssertEqual(try cache.resolveTextConfirmation(ObservationReference("o1"))["backend"] as? String, "apple-native")
+        XCTAssertThrowsError(try cache.resolveTextConfirmation(ObservationReference("o1:e1")))
+        _ = try cache.store(frame)
+        XCTAssertThrowsError(try cache.resolveTextConfirmation(ObservationReference("o1")))
+    }
+
     func testUnicodeResolvesThroughObservationCacheAndStillRequiresCurrentSource() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

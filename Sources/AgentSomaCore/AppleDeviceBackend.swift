@@ -180,6 +180,7 @@ final class AppleDeviceBackend: SessionBackend {
                 "keyboard": hid?.keyboardStatus ?? [:],
                 "textInputMethods": ["asciiHID": control.available && hid?.canType == true,
                     "unicodePasteboard": control.available && hid?.canType == true && pasteboardError == nil && (pasteboard?.available ?? true)],
+                "textMethodSelection": ["auto", "keys", "paste"], "textFinishSupported": true,
                 "pasteboard": pasteboard?.status ?? ["restorePending": false],
                 "sessionClosing": closing, "hidState": hidState?.rawValue ?? "unprepared",
                 "media": health, "runnerStarted": false, "serviceTransport": config.nativeEndpointInventory == nil ? "apple-coredevice-service-socket" : "apple-paired-tunnel",
@@ -217,7 +218,8 @@ final class AppleDeviceBackend: SessionBackend {
         guard typing || (["tap", "swipe"].contains(action.kind) && action.coordinate) else {
             throw SomaError("native_action_unsupported", "Use coordinate tap/swipe, or type oN --mode insert after visually confirming focus")
         }
-        let textInput = typing ? try NativeTextInput(text: action.fields["text"] as! String, mode: action.fields["mode"] as! String) : nil
+        let textInput = typing ? try NativeTextInput(text: action.fields["text"] as! String, mode: action.fields["mode"] as! String, method: action.fields["textMethod"] as? String ?? "auto") : nil
+        defer { if textInput?.usesPasteboard == true { pasteboard?.endInputAttempt() } }
         let control = controlStatus(mediaHealth: media?.health() ?? [:])
         guard control.available, let hid, let media else {
             throw ActionFailure(code: "native_control_unavailable", description: control.message ?? "Native control is unavailable",
@@ -267,8 +269,11 @@ final class AppleDeviceBackend: SessionBackend {
                         pasteboardTransport = transport
                         pasteboard = NativeTextPasteboard(io: AppleTextPasteboardIO(transport: transport, cancellation: cancellation))
                     }
+                    if pasteboard?.restored == true, let transport = pasteboardTransport {
+                        pasteboard = NativeTextPasteboard(io: AppleTextPasteboardIO(transport: transport, cancellation: cancellation))
+                    }
                     try cancellation.check()
-                    try pasteboard!.stage(text)
+                    try pasteboard!.stage(text, sourceObservationID: action.reference.observation)
                 } catch {
                     pasteboardError = String(describing: error)
                     throw ActionFailure(code: "native_pasteboard_unavailable", description: "Clipboard preparation failed; no paste shortcut was sent: \(error)",
@@ -331,6 +336,18 @@ final class AppleDeviceBackend: SessionBackend {
         return result
     }
     func cancelCurrent() { cancellation.cancel() }
+    func finishText(transaction: String, observation: [String: Any]) throws -> [String: Any] {
+        try cancellation.check()
+        let now = ProcessInfo.processInfo.systemUptime
+        guard observation["deviceID"] as? String == cli?.device,
+              observation["sessionGeneration"] as? String == generation,
+              let captured = observation["captureStartedUptime"] as? Double,
+              captured <= now, now - captured <= 30 else {
+            throw SomaError("stale_reference", "Observe this device/session again before confirming text completion")
+        }
+        guard let pasteboard else { throw SomaError("no_text_transaction", "No clipboard text transaction exists in this session") }
+        return try pasteboard.finish(transaction: transaction, observedAt: captured)
+    }
     func stop() -> [String: Any] {
         if stopped { return cleanupFacts }
         stopped = true; cancellation.cancel()

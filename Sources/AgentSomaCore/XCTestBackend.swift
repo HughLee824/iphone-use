@@ -12,10 +12,14 @@ protocol SessionBackend: AnyObject {
     func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any]
     func stop() -> [String: Any]
     func cancelCurrent()
+    func finishText(transaction: String, observation: [String: Any]) throws -> [String: Any]
 }
 
 extension SessionBackend {
     func cancelCurrent() {}
+    func finishText(transaction: String, observation: [String: Any]) throws -> [String: Any] {
+        throw SomaError("native_action_unsupported", "text-finish applies only to apple-native")
+    }
 }
 
 final class XCTestBackend: SessionBackend {

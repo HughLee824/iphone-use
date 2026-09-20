@@ -134,3 +134,32 @@ When the HID action is dispatched, inspect its after-image for composition and t
 ## Acceptance boundaries
 
 The implementation evidence is summarized in [the backend report](apple-native-backend.md). Physical unplug during contact, SIGKILL, reboot/re-pairing, device coexistence, rotated/edge input and extended stress remain separate tests. Do not report them as passed based on these scripts or host fakes. No release or default-backend migration is part of M2–M3 acceptance.
+
+## Explicit literal text and in-session clipboard completion
+
+Use a newly built native host. Under Probe-only clipboard authorization, inspect a fresh screenshot of the focused controlled field. Send one short pure-ASCII payload with `type "$OBSERVATION" --mode insert --method paste --text ' A7!? exact'`. Confirm `textInputMethod=apple-pasteboard-hid-paste`, one paste chord, and the exact final text in the after-image; do not infer success from transport facts. Separately check a longer ASCII payload and representative combined Unicode sequences where the whole result is visibly verifiable.
+
+After resolving any paste dialog and verifying consumption, use the current post-input screenshot in `text-finish "$OBSERVATION" --transaction "$TRANSACTION"`. Confirm restoration readback, a new observation, and that native media and keyboard remain available. A second explicit paste should allocate a new transaction and original-content backup; its cleanup must not reuse the old token. Any stale reference/transaction must fail before restoration. Never restore early based on a timer, replay unknown input, or overwrite a foreign clipboard writer. Save only ownership/type/count/match facts for original clipboard contents.
+
+The 2026-09-20 implementation has host/CLI tests and a successful release build. Physical validation after unlock reached a healthy native session and passed input preflight, but clipboard preparation PULL timed out before any SET or paste key. Apple CLI pasteboard info independently timed out too, while screenshot capture worked. Owned cleanup succeeded. That initial attempt did not validate the additions. Subsequent explicit user authorization allowed replacing the unreadable clipboard with a disposable fixture. New device acceptance passed short ASCII literal paste, Chinese/emoji paste and two distinct in-session finish transactions, with exact independent fixture restoration and owned cleanup. Product code still refuses to overwrite an unreadable original. Long ASCII and combined Unicode sequences remain untested on device. See the backend report for evidence boundaries.
+
+
+### Reproducible long-text Probe
+
+`scripts/NativeTextProbe.xcodeproj` builds only a normal iPhone application from `scripts/native-text-probe.swift`; it has no test target, Runner, clipboard API, network channel or text-injection endpoint. Supply your own development team and provisionable bundle ID:
+
+```sh
+xcodebuild -project scripts/NativeTextProbe.xcodeproj -target NativeTextProbe \
+  -configuration Debug -sdk iphoneos DEVELOPMENT_TEAM="$TEAM_ID" \
+  PRODUCT_BUNDLE_IDENTIFIER="$PROBE_BUNDLE_ID" \
+  SYMROOT="$PWD/.local/native-text-probe/products" \
+  OBJROOT="$PWD/.local/native-text-probe/intermediates" build
+xcrun devicectl device install app --device "$DEVICE_ID" \
+  .local/native-text-probe/products/Debug-iphoneos/NativeTextProbe.app
+```
+
+Select a sample using a screenshot-bound tap. The button clears only the disposable input and focuses it; it never inserts the expected text. Send the corresponding source sample through native `type --method paste --stdin` without an added newline. Select the whole visible input rectangle, including its caret. Check complete received text, `EXACT UTF-8 MATCH`, byte/scalar counts and one editing event. The comparison uses UTF-8 arrays, not Swift canonical-equivalent String equality. It is a fixture assertion visible to the external agent, not a new backend semantic-verification capability. Confirm with a current screenshot and complete `text-finish` separately for every transaction.
+
+The 2026-09-20 controlled run passed 99-byte ASCII (99 scalars), 379-byte Chinese (133 scalars), and 98-byte combined text (37 scalars). The latter includes decomposed and precomposed acute accents, a skin-tone/ZWJ profession, a ZWJ family, a regional-indicator flag, a keycap and a variation-selector heart. Each produced one edit and exact bytes; all three restorations succeeded in one media/keyboard session. All 17 observations were archived before cache eviction. The signed device build used the same source in the existing local Probe target/bundle; the checked-in standalone project separately passed an unsigned iPhoneOS build and was not installed in that run.
+
+Input guards rejected keyboard-registration changes and blinking-caret frames. Some rejections occurred after clipboard staging but before the paste shortcut; retain that pending transaction even though input was not dispatched. One read-only pixel comparison of the rejected pair localized changed input pixels to the caret. Guards were not relaxed, and no unknown input was replayed. This demonstrates text preservation, not uniformly reliable admission timing. Near-4096-byte device input, denied paste permission, deliberate focus races, foreign writers and disconnect during paste are still separate acceptance cases.

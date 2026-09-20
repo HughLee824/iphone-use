@@ -15,7 +15,7 @@ struct SessionOptions: ParsableArguments {
 struct AgentSoma: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "agentsoma", abstract: "Eyes and hands for agents operating a real iPhone.", version: RunnerSetup.releaseVersion,
-        subcommands: [Setup.self, BuildRunner.self, Devices.self, Connect.self, Status.self, Apps.self, Open.self, Observe.self, Inspect.self, Tap.self, Swipe.self, TypeText.self, Press.self, Disconnect.self, Host.self])
+        subcommands: [Setup.self, BuildRunner.self, Devices.self, Connect.self, Status.self, Apps.self, Open.self, Observe.self, Inspect.self, Tap.self, Swipe.self, TypeText.self, TextFinish.self, Press.self, Disconnect.self, Host.self])
     @OptionGroup var options: SessionOptions
 }
 
@@ -253,6 +253,7 @@ struct TypeText: ParsableCommand {
     @Argument(help: "Current text input reference; apple-native uses oN after visual focus confirmation (insert only). ASCII uses HID (64 characters); Unicode temporarily uses the device clipboard and one HID Paste shortcut (4096 UTF-8 bytes).") var reference: String
     @Option(help: "insert requires existing keyboard focus; replace focuses and selects all.") var mode: String
     @Option(help: "Literal text up to 4096 UTF-8 bytes; no control keys or newlines. Empty text clears in replace mode.") var text: String?
+    @Option(help: "apple-native only: auto preserves ASCII keys/Unicode paste; keys sends up to 64 US-mapped ASCII characters through the active layout; paste inserts literal text via the device clipboard (up to 4096 UTF-8 bytes).") var method: String?
     @Option(help: "Native type oN only: visually selected input field x,y,width,height in screen points; strict region guard plus default whole-screen guard. Does not focus. Omit to protect the whole screen strictly.") var fieldRect: String?
     @Flag(help: "Read UTF-8 text from stdin until EOF, up to 4096 bytes. No trimming; use instead of --text.") var stdin = false
 
@@ -271,8 +272,23 @@ struct TypeText: ParsableCommand {
             }
             var fields: [String: Any] = ["reference": reference, "mode": mode, "text": value]
             if let fieldRect { fields["fieldRect"] = fieldRect }
-            return try SessionClient.call(session: session, operation: "type", fields: fields)
+            if let method { fields["textMethod"] = method }
+            // Old hosts ignore unknown type fields. A distinct operation makes
+            // explicit method selection fail closed instead of silently using keys.
+            return try SessionClient.call(session: session, operation: method == nil ? "type" : "type-with-method", fields: fields)
         }
+    }
+}
+
+struct TextFinish: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "text-finish", abstract: "After visually verifying native text input and resolving any paste dialog, restore this transaction's clipboard backup without disconnecting.")
+    @OptionGroup var options: SessionOptions
+    @Argument(help: "Current screenshot oN captured after the text action; confirms that you have checked its result.") var reference: String
+    @Option(help: "Pending result.pasteboard.transactionID returned by native type or status.") var transaction: String
+
+    mutating func run() throws {
+        let session = try options.requiredSession()
+        try output { try SessionClient.call(session: session, operation: "text-finish", fields: ["reference": reference, "transaction": transaction]) }
     }
 }
 

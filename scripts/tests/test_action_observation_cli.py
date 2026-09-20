@@ -61,6 +61,7 @@ class ActionObservationCLITests(unittest.TestCase):
                     thread.join(timeout=2)
                 self.assertFalse(thread.is_alive())
                 self.assertEqual(failures, [])
+            self.assertTrue(result.stdout, f"CLI returned no JSON: exit={result.returncode}, stderr={result.stderr!r}, requests={requests!r}")
             return result.returncode, json.loads(result.stdout), requests
 
     def test_all_five_commands_use_existing_host_requests(self):
@@ -84,6 +85,22 @@ class ActionObservationCLITests(unittest.TestCase):
         self.assertEqual(response["outcome"], "completed")
         self.assertNotIn("action", response)
         self.assertEqual(len(requests), 1)
+
+    def test_native_text_method_and_explicit_finish_are_forwarded_once(self):
+        code, response, requests = self.run_cli(["type", "o1", "--mode", "insert", "--method", "paste", "--text", "A" * 100])
+        self.assertEqual(code, 0, response)
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(requests[0]["textMethod"], "paste")
+        self.assertEqual(requests[0]["op"], "type-with-method")
+        self.assertEqual(requests[0]["text"], "A" * 100)
+        token = "2F1DC2FE-B72E-4F93-B2BD-54DB23D694DD"
+        code, response, requests = self.run_cli(["text-finish", "o2", "--transaction", token], lose_action=True)
+        self.assertEqual(code, 1, response)
+        self.assertEqual(response["outcome"], "unknown")
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(requests[0]["op"], "text-finish")
+        self.assertEqual(requests[0]["transaction"], token)
+        self.assertEqual(requests[0]["reference"], "o2")
 
     def test_unknown_and_observation_failure_exit_nonzero_without_replay(self):
         for outcome, capture_ok in [("unknown", True), ("completed", False), ("unknown", False)]:

@@ -74,7 +74,8 @@ final class SessionHost {
 
     private func receive(_ request: [String: Any], reply: @escaping JSONServer.Reply) {
         let id = request["id"] as? String ?? ""
-        let operation = request["op"] as? String ?? ""
+        let requestedOperation = request["op"] as? String ?? ""
+        let operation = requestedOperation == "type-with-method" ? "type" : requestedOperation
         func reject(_ code: String, _ message: String) {
             var response: [String: Any] = ["id": id, "session": config.session, "ok": false,
                    "outcome": "not_dispatched", "error": ["code": code, "message": message]]
@@ -82,7 +83,7 @@ final class SessionHost {
             reply(response, {})
         }
         guard request["version"] as? Int == 1, request["session"] as? String == config.session,
-              !id.isEmpty, (["status", "apps", "open", "observe", "inspect", "disconnect"] + DeviceAction.operations).contains(operation) else {
+              !id.isEmpty, (["status", "apps", "open", "observe", "inspect", "disconnect", "text-finish"] + DeviceAction.operations).contains(operation) else {
             reject("invalid_request", "Invalid session request")
             return
         }
@@ -102,6 +103,20 @@ final class SessionHost {
         }
         var reference: ObservationReference?
         var action: DeviceAction?
+        if requestedOperation == "type-with-method", request["textMethod"] == nil {
+            reject("invalid_text_method", "Explicit native text requests require a method")
+            return
+        }
+        if operation == "text-finish" {
+            do {
+                guard config.backend == "apple-native", let transaction = request["transaction"] as? String,
+                      UUID(uuidString: transaction) != nil else {
+                    throw SomaError("invalid_text_transaction", "text-finish requires apple-native and a pasteboard transaction ID")
+                }
+                reference = try ObservationReference(request["reference"] as? String ?? "")
+                guard reference?.node == nil else { throw SomaError("invalid_reference", "Use the current screenshot oN") }
+            } catch { reject((error as? SomaError)?.code ?? "invalid_request", String(describing: error)); return }
+        }
         if DeviceAction.operations.contains(operation) {
             do { action = try DeviceAction(operation: operation, request: request, allowScreenText: config.backend == "apple-native") }
             catch { reject((error as? SomaError)?.code ?? "invalid_action", String(describing: error)); return }
@@ -152,6 +167,19 @@ final class SessionHost {
                     response["result"] = try observations.inspect(reference!, offset: request["offset"] as! Int,
                                                                   query: request["query"] as? String)
                     effective = true
+                case "text-finish":
+                    let metadata = try observations.resolveTextConfirmation(reference!)
+                    let result = try backend.finishText(transaction: request["transaction"] as! String, observation: metadata)
+                    response["result"] = result
+                    effective = true
+                    let restored = result["pasteboardRestoreAcknowledged"] as? Bool == true
+                    response["ok"] = restored
+                    response["outcome"] = restored ? "completed" : "unknown"
+                    response["requiresObservation"] = true
+                    if !restored {
+                        response["error"] = ["code": "native_pasteboard_restore_unconfirmed",
+                            "message": "Clipboard restoration was not confirmed; no restorative write will be replayed. Inspect clipboard status and close the session."]
+                    }
                 case "tap", "swipe", "type", "press":
                     let target = try observations.resolveTarget(for: action!)
                     previousObservation = observations.beginAction()
@@ -175,7 +203,7 @@ final class SessionHost {
                 let failure = error as? ActionFailure
                 if let result = failure?.result { response["result"] = result }
                 let uncertain = failure?.possiblyExecuted ?? (error as? TransportError)?.possiblySent ?? false
-                if operation == "open" || action != nil {
+                if operation == "open" || action != nil || operation == "text-finish" {
                     observations.finishAction(previous: previousObservation, dispatched: uncertain)
                     if failure?.requiresObservation == true { observations.invalidate("target_changed") }
                     response["outcome"] = uncertain ? "unknown" : "not_dispatched"
@@ -199,7 +227,7 @@ final class SessionHost {
             }
             // Native actions always return a new observation while still holding the device
             // work queue. Capture failure preserves the action's execution facts.
-            if config.backend == "apple-native", operation == "open" || action != nil,
+            if config.backend == "apple-native", operation == "open" || action != nil || operation == "text-finish",
                response["outcome"] as? String != "not_dispatched" {
                 observations.invalidate("post_action_capture")
                 do {
@@ -215,10 +243,10 @@ final class SessionHost {
             if config.backend == "apple-native", operation == "open" || action != nil || (operation == "observe" && response["ok"] as? Bool == false) {
                 NativeRecovery.enrich(&response, control: try? backend.status())
             }
-            if config.backend == "apple-native", operation == "open" || action != nil {
+            if config.backend == "apple-native", operation == "open" || action != nil || operation == "text-finish" {
                 var result = response["result"] as? [String: Any] ?? [:]
                 result["actionID"] = id
-                result["sourceObservationID"] = action?.reference.observation
+                result["sourceObservationID"] = action?.reference.observation ?? reference?.observation
                 response["result"] = result
                 do {
                     let eventURL = paths.directory.appendingPathComponent("native-events.jsonl")

@@ -15,6 +15,12 @@ struct DeviceAction {
     init(operation: String, request: [String: Any], allowScreenText: Bool = false) throws {
         guard Self.operations.contains(operation) else { throw SomaError("invalid_action", "Unknown device action") }
         kind = operation
+        if let method = request["textMethod"] {
+            guard allowScreenText, operation == "type", let method = method as? String,
+                  ["auto", "keys", "paste"].contains(method) else {
+                throw SomaError("invalid_text_method", "--method auto, keys or paste applies only to apple-native type")
+            }
+        }
         reference = try ObservationReference(request["reference"] as? String ?? "")
         let coordinateKeys = ["x", "y", "fromX", "fromY", "toX", "toY"]
         coordinate = coordinateKeys.contains { request[$0] != nil }
@@ -78,6 +84,7 @@ struct DeviceAction {
                 throw SomaError("invalid_text", "Use up to 4096 UTF-8 bytes without control keys or newlines; only replace accepts empty text")
             }
             fields["mode"] = mode; fields["text"] = text
+            fields["textMethod"] = request["textMethod"]
         }
         if operation == "press" {
             guard request["key"] as? String == "return" else { throw SomaError("invalid_key", "Use --key return") }

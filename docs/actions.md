@@ -167,3 +167,11 @@ XCTest 的命令错误经 Runner 转成响应；不再把已经返回给调用�
 当前设备协议为 `actionVersion=5`、`observationVersion=2`、`screenGuardVersion=1`、`frameStabilityVersion=1`。发布用户安装配套版本并重新 setup；源码开发者重新 build-runner，并使用新路径 connect。旧 Runner 不会静默忽略速度与停留参数。
 
 本地测试覆盖输入校验、引用失效、执行事实、画面校验和帧稳定；真机兼容性以 [README 中的实测环境](../README.zh-CN.md#前置条件)为限。历史操作记录、截图和诊断日志仅保留在本地，不作为公开运行依赖。执行前检查不构成与 App 自行变化原子隔离的事务。
+
+## 原生文本方式与显式完成
+
+仅 `apple-native` 支持 `type oN --mode insert --method auto|keys|paste`。省略方式保留原行为；`keys` 为最多 64 个 ASCII 的 US 键码，结果受活动输入法影响；`paste` 允许最多 4096 UTF-8 字节的整段文本，包括纯 ASCII。不会在方式失败后静默改用另一通道，控制字符和换行仍拒绝。
+
+粘贴回执中的 `result.pasteboard.transactionID` 标识当前剪贴板事务。外部 Agent 检查动作后截图并处理完粘贴确认框后，可执行 `text-finish oN --transaction ID`，核对所有权后恢复原剪贴板，保留媒体和键盘会话。要求当前、同设备/会话且在输入尝试结束后采集的截图（最长 30 秒）。完成结果的 `caller_confirmed` 仅记录调用方确认；`completed` 只表示剪贴板恢复并回读成功，不将原本未知的 HID 输入改写成设备确认。失败不重放恢复写入，未知结果需检查后关闭会话。
+
+详细的原生事实字段、旧宿主兼容保护和限制见[原生后端](apple-native-backend.md#explicit-text-methods-and-clipboard-completion)。
