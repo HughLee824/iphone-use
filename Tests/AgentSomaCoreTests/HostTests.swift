@@ -25,6 +25,7 @@ private final class ControlledBackend: SessionBackend {
     var finishAcknowledged = true
     private(set) var finishCount = 0
     private(set) var lastTextMethod: String?
+    private(set) var lastTextMode: String?
     let actionStarted = DispatchSemaphore(value: 0)
     let releaseAction = DispatchSemaphore(value: 0)
 
@@ -63,6 +64,7 @@ private final class ControlledBackend: SessionBackend {
     }
     func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any] {
         lastTextMethod = action.fields["textMethod"] as? String
+        lastTextMode = action.fields["mode"] as? String
         actionCount += 1
         actionStarted.signal()
         if blockAction { _ = releaseAction.wait(timeout: .now() + 5) }
@@ -80,6 +82,23 @@ private final class ControlledBackend: SessionBackend {
 }
 
 final class HostTests: XCTestCase {
+    func testNativeEditingModesReachBackendOnceAndInvalidateSource() throws {
+        let backend = ControlledBackend(); backend.nativeSend = true; backend.nativeTextFixture = true
+        let (paths, session, finished) = try host(timeout: 5, backend: backend, native: true)
+        defer { _ = try? call(paths, session: session, op: "disconnect"); wait(for: [finished], timeout: 3) }
+        _ = try call(paths, session: session, op: "observe")
+        for (index, mode) in ["replace", "append", "insert"].enumerated() {
+            let fields: [String: Any] = ["reference": "o\(index + 1)", "mode": mode, "text": "中文", "textMethod": "paste"]
+            let response = try call(paths, session: session, op: "type-with-method", fields: fields)
+            XCTAssertEqual(response["outcome"] as? String, "unknown")
+            XCTAssertEqual(backend.lastTextMode, mode)
+            XCTAssertEqual(backend.inputCount, index + 1)
+            let stale = try call(paths, session: session, op: "type-with-method", fields: fields)
+            XCTAssertEqual(stale["outcome"] as? String, "not_dispatched")
+            XCTAssertEqual(backend.inputCount, index + 1)
+        }
+    }
+
     func testExplicitTextMethodAndCompletionUseCurrentNativeObservationWithoutStoppingHost() throws {
         let backend = ControlledBackend(); backend.nativeSend = true; backend.nativeTextFixture = true
         let (paths, session, finished) = try host(timeout: 5, backend: backend, native: true)

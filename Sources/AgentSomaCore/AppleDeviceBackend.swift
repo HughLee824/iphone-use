@@ -180,7 +180,7 @@ final class AppleDeviceBackend: SessionBackend {
                 "keyboard": hid?.keyboardStatus ?? [:],
                 "textInputMethods": ["asciiHID": control.available && hid?.canType == true,
                     "unicodePasteboard": control.available && hid?.canType == true && pasteboardError == nil && (pasteboard?.available ?? true)],
-                "textMethodSelection": ["auto", "keys", "paste"], "textFinishSupported": true,
+                "textMethodSelection": ["auto", "keys", "paste"], "textModes": ["insert", "replace", "append"], "textFinishSupported": true,
                 "pasteboard": pasteboard?.status ?? ["restorePending": false],
                 "sessionClosing": closing, "hidState": hidState?.rawValue ?? "unprepared",
                 "media": health, "runnerStarted": false, "serviceTransport": config.nativeEndpointInventory == nil ? "apple-coredevice-service-socket" : "apple-paired-tunnel",
@@ -216,7 +216,7 @@ final class AppleDeviceBackend: SessionBackend {
     func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any] {
         let typing = action.kind == "type" && action.reference.node == nil
         guard typing || (["tap", "swipe"].contains(action.kind) && action.coordinate) else {
-            throw SomaError("native_action_unsupported", "Use coordinate tap/swipe, or type oN --mode insert after visually confirming focus")
+            throw SomaError("native_action_unsupported", "Use coordinate tap/swipe, or type oN after visually confirming focus")
         }
         let textInput = typing ? try NativeTextInput(text: action.fields["text"] as! String, mode: action.fields["mode"] as! String, method: action.fields["textMethod"] as? String ?? "auto") : nil
         defer { if textInput?.usesPasteboard == true { pasteboard?.endInputAttempt() } }
@@ -313,10 +313,12 @@ final class AppleDeviceBackend: SessionBackend {
             }
             do {
                 switch textInput {
-                case .keyboard(let keys): result = try hid.type(keys, checkHealth: health)
-                case .pasteboard: result = try hid.paste(checkHealth: health)
+                case .keyboard(let keys): result = try hid.type(keys, mode: action.fields["mode"] as! String, checkHealth: health)
+                case .pasteboard: result = try hid.paste(mode: action.fields["mode"] as! String, checkHealth: health)
+                case .clear: result = try hid.clearText(checkHealth: health)
                 }
                 result["textInputMethod"] = textInput.usesPasteboard ? "apple-pasteboard-hid-paste" : "ascii-hid"
+                if case .clear = textInput { result["textInputMethod"] = "hid-select-all-delete" }
                 if textInput.usesPasteboard { result["pasteboard"] = pasteboard!.status }
             } catch let failure as ActionFailure {
                 var facts = failure.result ?? [:]

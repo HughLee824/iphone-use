@@ -2,6 +2,15 @@ import Foundation
 
 enum NativeKeyboard {
     static let maximumCharacters = 64
+    // These are editing requests, not proof of focus, selection or caret position.
+    static func editingKeys(mode: String) throws -> [[UInt8]] {
+        switch mode {
+        case "insert": return []
+        case "replace": return [[0xe3, 0x04]] // Command-A: select all in the focused editor.
+        case "append": return [[0xe3, 0x51]] // Command-Down: end of document, not end of line.
+        default: throw SomaError("invalid_input_mode", "Choose insert, replace or append")
+        }
+    }
     static func keys(for text: String, mode: String) throws -> [[UInt8]] {
         guard mode == "insert" else { throw SomaError("native_text_unsupported", "Native typing supports insert only; replace is not implemented") }
         guard !text.isEmpty, text.utf8.count <= maximumCharacters else { throw SomaError("native_text_unsupported", "Native typing accepts 1...64 printable ASCII characters") }

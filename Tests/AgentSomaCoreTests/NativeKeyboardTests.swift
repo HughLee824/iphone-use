@@ -35,6 +35,66 @@ private final class KeyboardTransport: NativeTransport {
 }
 
 final class NativeKeyboardTests: XCTestCase {
+    func testEditingPrefixReleasesBeforePasteAndDoesNotCountAsText() throws {
+        for (mode, usage) in [("replace", UInt8(0x04)), ("append", UInt8(0x51))] {
+            let transport = KeyboardTransport()
+            var now = 0.0
+            let hid = NativeHIDAdapter(transport: transport, cancellation: NativeCancellation(), wait: { now += $0 }, uptime: { now })
+            try hid.prepare(); try hid.prepareKeyboard()
+            let result = try hid.paste(mode: mode)
+            let expected: [[UInt8]] = [[0xe3], [0xe3, usage], [], [0xe3], [0xe3, 0x19], []]
+            XCTAssertEqual(transport.reports.map { Array($0.prefix(31)) }, expected.map { Array(NativeKeyboard.report($0, timestamp: 0).prefix(31)) })
+            XCTAssertEqual(result["textMode"] as? String, mode)
+            XCTAssertEqual(result["editingShortcutQueued"] as? Bool, true)
+            XCTAssertEqual(result["editingEffectConfirmed"] as? Bool, false)
+            XCTAssertNil(result["charactersQueued"])
+            XCTAssertEqual(result["pasteShortcutQueued"] as? Bool, true)
+        }
+    }
+
+    func testClearUsesSelectAllDeleteWithoutPasteAndKeysModeCountsPayloadOnly() throws {
+        let transport = KeyboardTransport()
+        var now = 0.0
+        let hid = NativeHIDAdapter(transport: transport, cancellation: NativeCancellation(), wait: { now += $0 }, uptime: { now })
+        try hid.prepare(); try hid.prepareKeyboard()
+        let result = try hid.clearText()
+        let expected: [[UInt8]] = [[0xe3], [0xe3, 0x04], [], [0x2a], []]
+        XCTAssertEqual(transport.reports.map { Array($0.prefix(31)) }, expected.map { Array(NativeKeyboard.report($0, timestamp: 0).prefix(31)) })
+        XCTAssertNil(result["charactersQueued"])
+        XCTAssertNil(result["pasteShortcutQueued"])
+        XCTAssertEqual(result["deleteShortcutQueued"] as? Bool, true)
+        XCTAssertEqual(try hid.type([[4], [5]], mode: "append")["charactersQueued"] as? Int, 2)
+        let count = transport.reports.count
+        XCTAssertThrowsError(try hid.type([[4]], mode: "invalid"))
+        XCTAssertEqual(transport.reports.count, count)
+    }
+
+    func testCancellationDuringOrAfterEditingPrefixIsUnknownWithoutPayloadOrReplay() throws {
+        for reportCount in [1, 2, 3] {
+            for mode in ["replace", "append"] {
+                let transport = KeyboardTransport(), cancellation = NativeCancellation()
+                var now = 0.0
+                let hid = NativeHIDAdapter(transport: transport, cancellation: cancellation, wait: { now += $0 }, uptime: { now })
+                try hid.prepare(); try hid.prepareKeyboard()
+                transport.onSend = { if transport.reports.count == reportCount { cancellation.cancel() } }
+                XCTAssertThrowsError(try hid.paste(mode: mode)) {
+                    let failure = $0 as? ActionFailure
+                    XCTAssertEqual(failure?.possiblyExecuted, true)
+                    XCTAssertEqual(failure?.result?["editingShortcutAttempted"] as? Bool, true)
+                    XCTAssertEqual(failure?.result?["editingShortcutQueued"] as? Bool, reportCount == 3)
+                    let cleanup = failure?.result?["cleanup"] as? [String: Any]
+                    XCTAssertEqual(cleanup?["keyboardReleaseRequired"] as? Bool, reportCount != 3)
+                    if reportCount != 3 { XCTAssertEqual(cleanup?["keyboardReleaseQueued"] as? Bool, true) }
+                }
+                XCTAssertTrue(try XCTUnwrap(transport.reports.last)[1..<31].allSatisfy { $0 == 0 })
+                XCTAssertFalse(transport.reports.contains { ($0[4] & 2) != 0 }) // V never queued.
+                let count = transport.reports.count
+                XCTAssertThrowsError(try hid.paste(mode: mode))
+                XCTAssertEqual(transport.reports.count, count)
+            }
+        }
+    }
+
     func testPasteQueuesOneModifierChordAndReleaseWithoutClaimingCommittedCharacters() throws {
         let transport = KeyboardTransport()
         var now = 0.0

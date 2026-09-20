@@ -102,6 +102,18 @@ class ActionObservationCLITests(unittest.TestCase):
         self.assertEqual(requests[0]["transaction"], token)
         self.assertEqual(requests[0]["reference"], "o2")
 
+    def test_native_editing_modes_are_forwarded_once_without_replay(self):
+        for mode, text in [("replace", "替换🙂"), ("append", "追加"), ("replace", "")]:
+            with self.subTest(mode=mode, text=text):
+                code, response, requests = self.run_cli(
+                    ["type", "o1", "--mode", mode, "--method", "paste", "--text", text], lose_action=True)
+                self.assertEqual(code, 1, response)
+                self.assertEqual(response["outcome"], "unknown")
+                self.assertEqual(len(requests), 1)
+                self.assertEqual(requests[0]["op"], "type-with-method")
+                self.assertEqual(requests[0]["mode"], mode)
+                self.assertEqual(requests[0]["text"], text)
+
     def test_unknown_and_observation_failure_exit_nonzero_without_replay(self):
         for outcome, capture_ok in [("unknown", True), ("completed", False), ("unknown", False)]:
             with self.subTest(outcome=outcome, capture_ok=capture_ok):

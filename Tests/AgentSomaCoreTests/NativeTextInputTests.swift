@@ -55,7 +55,47 @@ final class NativeTextInputTests: XCTestCase {
         for text in ["", "中\n文", "中\t文", "中\u{85}", "中\u{2028}", String(repeating: "中", count: 1366), String(repeating: "a", count: 65)] {
             XCTAssertThrowsError(try NativeTextInput(text: text, mode: "insert"))
         }
-        XCTAssertThrowsError(try NativeTextInput(text: "中文", mode: "replace"))
+        XCTAssertThrowsError(try NativeTextInput(text: "中文", mode: "unknown"))
+    }
+
+    func testEditingModesValidateWholePayloadBeforeAnyShortcutAndEmptyReplaceAvoidsClipboard() throws {
+        for mode in ["insert", "replace", "append"] {
+            guard case .pasteboard(let value) = try NativeTextInput(text: "中文🙂", mode: mode) else { return XCTFail("Expected paste") }
+            XCTAssertEqual(value, "中文🙂")
+            guard case .keyboard(let keys) = try NativeTextInput(text: "Ab", mode: mode) else { return XCTFail("Expected keys") }
+            XCTAssertEqual(keys, [[225, 4], [5]])
+            XCTAssertThrowsError(try NativeTextInput(text: "中文", mode: mode, method: "keys"))
+            XCTAssertThrowsError(try NativeTextInput(text: "abc\n", mode: mode))
+            XCTAssertThrowsError(try NativeTextInput(text: String(repeating: "a", count: 4097), mode: mode, method: "paste"))
+        }
+        for method in ["auto", "keys", "paste"] {
+            let plan = try NativeTextInput(text: "", mode: "replace", method: method)
+            guard case .clear = plan else { return XCTFail("Expected no-clipboard deletion") }
+            XCTAssertFalse(plan.usesPasteboard)
+            for mode in ["insert", "append"] { XCTAssertThrowsError(try NativeTextInput(text: "", mode: mode, method: method)) }
+        }
+        XCTAssertThrowsError(try NativeTextInput(text: "", mode: "replace", method: "invalid"))
+    }
+
+    func testAppendIsNativeScreenOnlyAndAllModesKeepObservationGuard() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = ObservationCache(directory: directory), context = screenTestContext()
+        _ = try cache.store(CapturedObservation(nodes: [], metadata: ["backend": "apple-native",
+            "screenContext": try jsonObject(JSONEncoder().encode(context))], screenshot: try screenPNG()))
+        for mode in ["insert", "replace", "append"] {
+            let request: [String: Any] = ["reference": "o1", "mode": mode, "text": "abc", "fieldRect": "18,146,354,36"]
+            let action = try DeviceAction(operation: "type", request: request, allowScreenText: true)
+            XCTAssertEqual(action.fields["mode"] as? String, mode)
+            let guardValue = try XCTUnwrap(cache.resolveTarget(for: action).textGuard)
+            XCTAssertEqual(guardValue.policy.maxRegionChange, 0)
+            let changed = try screenPNG(patches: [(CGRect(x: 50, y: 160, width: 4, height: 10), [0,0,0])])
+            XCTAssertFalse(try guardValue.check(png: changed, context: context).accepted)
+        }
+        for native in [false, true] {
+            XCTAssertThrowsError(try DeviceAction(operation: "type", request: ["reference": "o1:e1", "mode": "append", "text": "abc"], allowScreenText: native))
+        }
+        XCTAssertThrowsError(try DeviceAction(operation: "type", request: ["reference": "o1", "mode": "append", "text": ""], allowScreenText: true))
     }
 
     func testReadOnlyPreflightAlwaysUsesOriginalGuardAndHasBoundedAttempts() throws {

@@ -170,13 +170,14 @@ final class NativeHIDAdapter {
         try transport.send(["featureIdentifier": Self.feature, "messageType": "Request",
             "payload": ["send": ["_0": NativeKeyboard.report(keys, timestamp: clock()), "_1": nativeUInt(keyboardID)]]], timeout: 3)
     }
-    func type(_ keySets: [[UInt8]], checkHealth: () throws -> Void = {}) throws -> [String: Any] {
+    func type(_ keySets: [[UInt8]], mode: String = "insert", checkHealth: () throws -> Void = {}) throws -> [String: Any] {
+        let editingKeys = try NativeKeyboard.editingKeys(mode: mode)
         try cancellation.check()
         guard isAvailable, keyboardReady, !keySets.isEmpty, keySets.count <= NativeKeyboard.maximumCharacters else {
             throw SomaError("native_keyboard_unavailable", "Prepare the native keyboard and observe the focused field before typing")
         }
         try checkHealth()
-        var attempted = false, completed = 0
+        var attempted = false, completed = 0, editingAttempted = false, editingQueued = false
         let started = uptime()
         func pause() throws {
             let until = uptime() + 0.025
@@ -184,10 +185,11 @@ final class NativeHIDAdapter {
             try cancellation.check(); try checkHealth()
         }
         do {
-            for keys in keySets {
+            for (index, keys) in (editingKeys + keySets).enumerated() {
                 try cancellation.check(); try checkHealth()
                 guard uptime() - started < 10 else { throw SomaError("native_input_deadline", "Native typing exceeded ten seconds") }
                 attempted = true; keysDown = true // Mark before send; a failure may follow device delivery.
+                if index < editingKeys.count { editingAttempted = true }
                 // Establish modifiers before the character. The device processes usage
                 // transitions in order; a combined Shift+character report can type unshifted.
                 let modifiers = keys.filter { (0xe0...0xe7).contains($0) }
@@ -195,23 +197,26 @@ final class NativeHIDAdapter {
                 try sendKeys(keys)
                 try pause()
                 try sendKeys([]); keysDown = false
-                completed += 1
+                if index < editingKeys.count { editingQueued = true } else { completed += 1 }
                 try pause()
             }
             return ["transportStatus": "sent", "verificationStatus": "not_checked", "charactersQueued": completed,
                     "keyboardReleaseQueued": true, "focusConfirmed": false, "layoutConfirmed": false,
+                    "textMode": mode, "editingShortcutQueued": editingQueued, "editingEffectConfirmed": false,
                     "hostStartedUptime": started, "hostCompletedUptime": uptime()]
         } catch {
             guard attempted else { throw error }
             inputUncertain = true
             throw ActionFailure(code: "native_input_uncertain", description: "Text may be partially entered: \(error). Observe; do not replay.",
                 possiblyExecuted: true, requiresObservation: true,
-                result: ["transportStatus": "uncertain", "verificationStatus": "uncertain", "charactersQueued": completed, "cleanup": release()])
+                result: ["transportStatus": "uncertain", "verificationStatus": "uncertain", "charactersQueued": completed,
+                         "textMode": mode, "editingShortcutAttempted": editingAttempted, "editingShortcutQueued": editingQueued,
+                         "editingEffectConfirmed": false, "cleanup": release()])
         }
     }
-    func paste(checkHealth: () throws -> Void = {}) throws -> [String: Any] {
+    func paste(mode: String = "insert", checkHealth: () throws -> Void = {}) throws -> [String: Any] {
         do {
-            var result = try type([[0xe3, 0x19]], checkHealth: checkHealth) // Left GUI, V; modifier precedes key.
+            var result = try type([[0xe3, 0x19]], mode: mode, checkHealth: checkHealth) // Left GUI, V; modifier precedes key.
             result.removeValue(forKey: "charactersQueued")
             result["pasteShortcutQueued"] = true
             result["textCommitConfirmed"] = false
@@ -220,6 +225,21 @@ final class NativeHIDAdapter {
             var result = failure.result ?? [:]
             result.removeValue(forKey: "charactersQueued")
             result["pasteShortcutQueued"] = "unknown"
+            throw ActionFailure(code: failure.code, description: failure.description, possiblyExecuted: failure.possiblyExecuted,
+                requiresObservation: failure.requiresObservation, result: result)
+        }
+    }
+    func clearText(checkHealth: () throws -> Void = {}) throws -> [String: Any] {
+        do {
+            var result = try type([[0x2a]], mode: "replace", checkHealth: checkHealth) // Delete selected content.
+            result.removeValue(forKey: "charactersQueued")
+            result["deleteShortcutQueued"] = true
+            result["textCommitConfirmed"] = false
+            return result
+        } catch let failure as ActionFailure {
+            var result = failure.result ?? [:]
+            result.removeValue(forKey: "charactersQueued")
+            result["deleteShortcutQueued"] = "unknown"
             throw ActionFailure(code: failure.code, description: failure.description, possiblyExecuted: failure.possiblyExecuted,
                 requiresObservation: failure.requiresObservation, result: result)
         }

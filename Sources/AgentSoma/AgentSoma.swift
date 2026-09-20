@@ -247,11 +247,11 @@ struct Swipe: ParsableCommand {
 }
 
 struct TypeText: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "type", abstract: "Insert at the existing caret, or replace a text input's entire contents.")
+    static let configuration = CommandConfiguration(commandName: "type", abstract: "Insert, replace, or append (apple-native) in a text input.")
     @OptionGroup var options: SessionOptions
     @OptionGroup var observation: ActionObservationOptions
-    @Argument(help: "Current text input reference; apple-native uses oN after visual focus confirmation (insert only). ASCII uses HID (64 characters); Unicode temporarily uses the device clipboard and one HID Paste shortcut (4096 UTF-8 bytes).") var reference: String
-    @Option(help: "insert requires existing keyboard focus; replace focuses and selects all.") var mode: String
+    @Argument(help: "Current text input reference; apple-native uses oN after visual focus confirmation for every mode. ASCII uses HID (64 characters); Unicode temporarily uses the device clipboard and one HID Paste shortcut (4096 UTF-8 bytes).") var reference: String
+    @Option(help: "insert uses the current caret/selection; replace selects all (XCTest also focuses the referenced field); native-only append moves to document end. Native modes never focus implicitly.") var mode: String
     @Option(help: "Literal text up to 4096 UTF-8 bytes; no control keys or newlines. Empty text clears in replace mode.") var text: String?
     @Option(help: "apple-native only: auto preserves ASCII keys/Unicode paste; keys sends up to 64 US-mapped ASCII characters through the active layout; paste inserts literal text via the device clipboard (up to 4096 UTF-8 bytes).") var method: String?
     @Option(help: "Native type oN only: visually selected input field x,y,width,height in screen points; strict region guard plus default whole-screen guard. Does not focus. Omit to protect the whole screen strictly.") var fieldRect: String?

@@ -72,8 +72,9 @@ struct DeviceAction {
             swipeMotion = nil
         }
         if operation == "type" {
-            guard let mode = request["mode"] as? String, ["insert", "replace"].contains(mode) else {
-                throw SomaError("invalid_input_mode", "Choose --mode insert or replace")
+            let modes = allowScreenText && reference.node == nil ? ["insert", "replace", "append"] : ["insert", "replace"]
+            guard let mode = request["mode"] as? String, modes.contains(mode) else {
+                throw SomaError("invalid_input_mode", "Choose --mode insert or replace; append requires apple-native type oN")
             }
             guard let text = request["text"] as? String, text.utf8.count <= TextInput.maximumBytes,
                   mode == "replace" || !text.isEmpty,
