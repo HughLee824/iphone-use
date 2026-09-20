@@ -35,6 +35,35 @@ private final class KeyboardTransport: NativeTransport {
 }
 
 final class NativeKeyboardTests: XCTestCase {
+    func testPasteQueuesOneModifierChordAndReleaseWithoutClaimingCommittedCharacters() throws {
+        let transport = KeyboardTransport()
+        var now = 0.0
+        let hid = NativeHIDAdapter(transport: transport, cancellation: NativeCancellation(), wait: { now += $0 }, uptime: { now })
+        try hid.prepare(); try hid.prepareKeyboard()
+        let result = try hid.paste()
+        XCTAssertEqual(transport.reports.count, 3)
+        XCTAssertEqual(transport.reports[0][29], 8) // GUI only.
+        XCTAssertEqual(transport.reports[0][4], 0)
+        XCTAssertEqual(transport.reports[1][4], 2) // V plus GUI.
+        XCTAssertTrue(transport.reports[2][1..<31].allSatisfy { $0 == 0 })
+        XCTAssertNil(result["charactersQueued"])
+        XCTAssertEqual(result["pasteShortcutQueued"] as? Bool, true)
+        XCTAssertEqual(result["textCommitConfirmed"] as? Bool, false)
+    }
+    func testCancelledPasteReleasesCommandAndCannotReplay() throws {
+        let transport = KeyboardTransport(), cancellation = NativeCancellation()
+        var now = 0.0
+        let hid = NativeHIDAdapter(transport: transport, cancellation: cancellation, wait: { now += $0; cancellation.cancel() }, uptime: { now })
+        try hid.prepare(); try hid.prepareKeyboard()
+        XCTAssertThrowsError(try hid.paste()) {
+            XCTAssertEqual(($0 as? ActionFailure)?.possiblyExecuted, true)
+            XCTAssertNil(($0 as? ActionFailure)?.result?["charactersQueued"])
+        }
+        XCTAssertEqual(transport.reports.count, 2)
+        XCTAssertTrue(transport.reports[1][1..<31].allSatisfy { $0 == 0 })
+        XCTAssertThrowsError(try hid.paste())
+        XCTAssertEqual(transport.reports.count, 2)
+    }
     func testASCIIValidationIsAtomicAndUSMappingIncludesModifiersAndPunctuation() throws {
         XCTAssertEqual(try NativeKeyboard.keys(for: "aZ0!? ", mode: "insert"), [[4], [225,29], [39], [225,30], [225,56], [44]])
         for byte in UInt8(32)...126 { XCTAssertFalse(try NativeKeyboard.keys(for: String(UnicodeScalar(byte)), mode: "insert").isEmpty) }

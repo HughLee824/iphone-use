@@ -209,6 +209,21 @@ final class NativeHIDAdapter {
                 result: ["transportStatus": "uncertain", "verificationStatus": "uncertain", "charactersQueued": completed, "cleanup": release()])
         }
     }
+    func paste(checkHealth: () throws -> Void = {}) throws -> [String: Any] {
+        do {
+            var result = try type([[0xe3, 0x19]], checkHealth: checkHealth) // Left GUI, V; modifier precedes key.
+            result.removeValue(forKey: "charactersQueued")
+            result["pasteShortcutQueued"] = true
+            result["textCommitConfirmed"] = false
+            return result
+        } catch let failure as ActionFailure {
+            var result = failure.result ?? [:]
+            result.removeValue(forKey: "charactersQueued")
+            result["pasteShortcutQueued"] = "unknown"
+            throw ActionFailure(code: failure.code, description: failure.description, possiblyExecuted: failure.possiblyExecuted,
+                requiresObservation: failure.requiresObservation, result: result)
+        }
+    }
     func closeKeyboard() -> [String: Any] {
         if let keyboardCleanup { return keyboardCleanup }
         var result: [String: Any] = ["keyboardRemoveAcknowledged": !keyboardMayExist]

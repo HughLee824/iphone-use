@@ -90,6 +90,9 @@ final class AppleDeviceBackend: SessionBackend {
     private let generation = UUID().uuidString
     private var cli: AppleDeviceCLI?
     private var deviceLock: DeviceLock?
+    private var pasteboardTransport: NativeTransport?
+    private var pasteboard: NativeTextPasteboard?
+    private var pasteboardError: String?
     private var hidTransport: NativeTransport?
     private var mediaTransport: NativeTransport?
     private var hid: NativeHIDAdapter?
@@ -175,6 +178,9 @@ final class AppleDeviceBackend: SessionBackend {
         var result: [String: Any] = ["backend": "apple-native", "sessionGeneration": generation, "deviceID": cli?.device ?? config.device,
                 "capabilities": ["screenshot": true, "tap": control.available, "ax": false, "swipe": control.available, "text": control.available && hid?.canType == true],
                 "keyboard": hid?.keyboardStatus ?? [:],
+                "textInputMethods": ["asciiHID": control.available && hid?.canType == true,
+                    "unicodePasteboard": control.available && hid?.canType == true && pasteboardError == nil && (pasteboard?.available ?? true)],
+                "pasteboard": pasteboard?.status ?? ["restorePending": false],
                 "sessionClosing": closing, "hidState": hidState?.rawValue ?? "unprepared",
                 "media": health, "runnerStarted": false, "serviceTransport": config.nativeEndpointInventory == nil ? "apple-coredevice-service-socket" : "apple-paired-tunnel",
                 "endpointDiscovery": config.nativeEndpointInventory == nil ? "apple-coredevice-service-socket" : "supplied-apple-netstat-inventory",
@@ -211,7 +217,7 @@ final class AppleDeviceBackend: SessionBackend {
         guard typing || (["tap", "swipe"].contains(action.kind) && action.coordinate) else {
             throw SomaError("native_action_unsupported", "Use coordinate tap/swipe, or type oN --mode insert after visually confirming focus")
         }
-        let keySets = typing ? try NativeKeyboard.keys(for: action.fields["text"] as! String, mode: action.fields["mode"] as! String) : nil
+        let textInput = typing ? try NativeTextInput(text: action.fields["text"] as! String, mode: action.fields["mode"] as! String) : nil
         let control = controlStatus(mediaHealth: media?.health() ?? [:])
         guard control.available, let hid, let media else {
             throw ActionFailure(code: "native_control_unavailable", description: control.message ?? "Native control is unavailable",
@@ -236,21 +242,53 @@ final class AppleDeviceBackend: SessionBackend {
             // Registration can change keyboard visibility. Capture/guard after it, before any key.
             try hid.prepareKeyboard()
         }
-        let before: CapturedObservation
-        let check: ScreenGuard.Check
+        var check: ScreenGuard.Check
+        var captures = 0
+        func preflight() throws -> ScreenGuard.Check {
+            let (value, count) = try NativeInputPreflight.check(guard: screenGuard,
+                displayID: target.context["displayID"] as? UInt64,
+                deadline: min(captured + 30, ProcessInfo.processInfo.systemUptime + 8),
+                maximumCaptures: textInput?.usesPasteboard == true ? 3 : 1) {
+                    try cancellation.check()
+                    guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped before input") }
+                    return try self.observe()
+                }
+            captures += count
+            return value
+        }
         do {
-            before = try observe()
-            guard before.metadata["displayID"] as? UInt64 == target.context["displayID"] as? UInt64,
-                  let raw = before.metadata["screenContext"] as? [String: Any] else { throw ScreenGuard.Failure.contextChanged }
-            let context = try JSONDecoder().decode(ScreenContext.self, from: jsonData(raw))
-            check = try screenGuard.check(png: before.screenshot, context: context)
-            guard check.accepted else {
-                throw ActionFailure(code: "stale_observation", description: "Screen guard rejected changed pixels before input; inspect the attached pre-input image",
-                    possiblyExecuted: false, requiresObservation: true, result: ["screenGuard": check.result], rejectedCapture: before)
+            check = try preflight()
+            if case .pasteboard(let text) = textInput {
+                do {
+                    if let pasteboardError { throw SomaError("native_pasteboard_unavailable", pasteboardError) }
+                    if pasteboard == nil {
+                        guard let tunnel else { throw SomaError("native_pasteboard_unavailable", "Native tunnel is unavailable") }
+                        let transport = try AppleServiceTransport(tunnel: tunnel, service: "com.apple.coredevice.pasteboardservice")
+                        pasteboardTransport = transport
+                        pasteboard = NativeTextPasteboard(io: AppleTextPasteboardIO(transport: transport, cancellation: cancellation))
+                    }
+                    try cancellation.check()
+                    try pasteboard!.stage(text)
+                } catch {
+                    pasteboardError = String(describing: error)
+                    throw ActionFailure(code: "native_pasteboard_unavailable", description: "Clipboard preparation failed; no paste shortcut was sent: \(error)",
+                        possiblyExecuted: false, requiresObservation: true,
+                        result: ["pasteboard": pasteboard?.status ?? [:], "recovery": NativeRecovery.resolveError.result])
+                }
+                // A clipboard operation can trigger UI. Recheck against the same
+                // source observation after staging; never replace the guard baseline.
+                check = try preflight()
+                try pasteboard!.checkOwnership()
             }
-        } catch let failure as ActionFailure { throw failure }
-        catch {
-            throw ActionFailure(code: "stale_observation", description: "Pre-input capture/guard failed: \(error)", possiblyExecuted: false, requiresObservation: true)
+        } catch let failure as ActionFailure {
+            var result = failure.result ?? [:]
+            result["preInputCaptures"] = captures + (result["preInputCaptures"] as? Int ?? 0)
+            if let pasteboard { result["pasteboard"] = pasteboard.status }
+            throw ActionFailure(code: failure.code, description: failure.description, possiblyExecuted: failure.possiblyExecuted,
+                requiresObservation: failure.requiresObservation, result: result, rejectedCapture: failure.rejectedCapture)
+        } catch {
+            throw ActionFailure(code: "stale_observation", description: "Pre-input capture/guard/clipboard check failed: \(error)",
+                possiblyExecuted: false, requiresObservation: true, result: ["pasteboard": pasteboard?.status ?? [:]])
         }
         try cancellation.check()
         guard ProcessInfo.processInfo.systemUptime - captured <= 30 else {
@@ -258,9 +296,22 @@ final class AppleDeviceBackend: SessionBackend {
         }
         guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped before input") }
         var result: [String: Any]
-        if let keySets {
-            result = try hid.type(keySets) {
+        if let textInput {
+            func health() throws {
                 guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped during typing") }
+            }
+            do {
+                switch textInput {
+                case .keyboard(let keys): result = try hid.type(keys, checkHealth: health)
+                case .pasteboard: result = try hid.paste(checkHealth: health)
+                }
+                result["textInputMethod"] = textInput.usesPasteboard ? "apple-pasteboard-hid-paste" : "ascii-hid"
+                if textInput.usesPasteboard { result["pasteboard"] = pasteboard!.status }
+            } catch let failure as ActionFailure {
+                var facts = failure.result ?? [:]
+                if textInput.usesPasteboard { facts["pasteboard"] = pasteboard!.status }
+                throw ActionFailure(code: failure.code, description: failure.description, possiblyExecuted: failure.possiblyExecuted,
+                    requiresObservation: failure.requiresObservation, result: facts)
             }
         } else if let swipe {
             result = try hid.swipe(swipe) {
@@ -272,6 +323,7 @@ final class AppleDeviceBackend: SessionBackend {
         }
         result["sourceObservationID"] = action.reference.observation
         result["screenGuard"] = check.result
+        result["preInputCaptures"] = captures
         if typing {
             let rect = screenGuard.regions[0].rect
             result["textFieldRect"] = ["x": rect.x, "y": rect.y, "width": rect.width, "height": rect.height]
@@ -284,6 +336,8 @@ final class AppleDeviceBackend: SessionBackend {
         stopped = true; cancellation.cancel()
         var result = hid?.release() ?? ["releaseRequired": false, "releaseUncertain": false]
         result.merge(hid?.closeKeyboard() ?? ["keyboardRemoveAcknowledged": true]) { _, new in new }
+        result.merge(pasteboard?.close() ?? ["pasteboardRestoreAcknowledged": true]) { _, new in new }
+        pasteboardTransport?.cancel(); pasteboardTransport = nil
         result.merge(media?.close() ?? cleanupFacts) { _, new in new }
         mediaTransport?.cancel(); hidTransport?.cancel(); hid = nil; media = nil
         result["tunnelReleaseAcknowledged"] = tunnel?.close() ?? (cleanupFacts["tunnelReleaseAcknowledged"] as? Bool ?? true)
@@ -293,6 +347,7 @@ final class AppleDeviceBackend: SessionBackend {
         result["shutdownAcknowledged"] = result["mediaStopAcknowledged"] as? Bool != false && result["releaseUncertain"] as? Bool != true
             && result["tunnelReleaseAcknowledged"] as? Bool == true
             && result["keyboardRemoveAcknowledged"] as? Bool == true
+            && result["pasteboardRestoreAcknowledged"] as? Bool == true
         result["backendStopped"] = true
         cleanupFacts = result
         return result

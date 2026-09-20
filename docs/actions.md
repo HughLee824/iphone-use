@@ -4,15 +4,19 @@
 
 ## 实验性原生文字输入
 
-`apple-native` 使用 `type oN --mode insert --text 'Ab7!?'`，绑定当前截图而非 AX 节点。先在受控页面观察、点击输入框，再用新截图确认焦点和插入位置。首版接受 1–64 个可打印 ASCII 字符，使用 US HID 映射；不切换设备布局/输入法，不自动聚焦，不支持 replace、直接传入中文、Return 或提交。
+`apple-native` 使用 `type oN --mode insert --text 'Ab7!?'`，绑定当前截图而非 AX 节点。先在受控页面观察、点击输入框，再用新截图确认焦点和插入位置。ASCII 路径接受 1–64 个可打印字符，使用 US HID 映射。包含非 ASCII 字符的整段文本（如 `中文`、` A7，测🙂`）使用原生剪贴板服务与一次自写 HID Paste，最多 4096 UTF-8 bytes；不拆成拼音，不做候选词判断。不切换设备布局/输入法，不自动聚焦，不支持 replace、换行、Return 或提交。
 
 键盘按需创建且只属于当前连接。首次注册可能收起软键盘，随后屏幕保护会拒绝旧截图并返回 `not_dispatched`；必须重新观察并决定新动作。输入前仍校验设备、会话、30 秒有效期和整屏指纹。每个字符后释放全部按键，Shift 先独立按下；取消或发送失败尝试释放且不重放文本。结果截图由外部 Agent 核对，`charactersQueued` 不代表已输入字符数，`outcome=unknown` 不自动升级为成功。
 
-`capabilities.text` 表示当前可尝试原生输入，`keyboard.prepared` 表示键盘已完成注册。设备焦点、布局、自动更正仍未由后端确认。关闭时必须按 ID 和唯一名称确认所属键盘，发送移除命令后通过关联枚举确认消失；`keyboardRemoveAcknowledged=false` 时不得宣称完整清理。以下原有节点输入与 Runner 检查描述适用于 XCTest 后端。
+`textInputMethods.asciiHID` / `unicodePasteboard` 区分当前可尝试的两条路径。`capabilities.text` 表示当前可尝试原生输入，`keyboard.prepared` 表示键盘已完成注册。设备焦点、布局、自动更正仍未由后端确认。关闭时必须按 ID 和唯一名称确认所属键盘，发送移除命令后通过关联枚举确认消失；`keyboardRemoveAcknowledged=false` 时不得宣称完整清理。以下原有节点输入与 Runner 检查描述适用于 XCTest 后端。
 
-原生坐标点击已有中文软键盘、观察并选择候选词的路线已在 Probe 验证追加“你好”。这使用 `tap`，不代表 `type --text '你好'` 已受支持；HID 批量输入 `zhongwen` 后截图选择候选“中文”也已在 Probe 验证。详见[中文输入验证](apple-native-backend.md#chinese-ime-visual-acceptance-2026-09-20)。
+此前的软键盘“你好”与 HID 拼音 `zhongwen` 选词测试只证明输入法闭环。本轮另外完成了直接 `type --text '中文'` 和中英/标点/emoji 的 Probe 验证，见[原生 Unicode 输入](apple-native-backend.md#unicode-text-input-2026-09-20)。
 
-原生 `type` 可指定 `--field-rect x,y,width,height`，由调用方在当前原始截图中选择完整输入框，以屏幕 points 表示。局部仍为零变化限制，全屏仍为 1% 变化限制；省略该参数时仍对整屏实施局部零变化保护。矩形必须在该截图范围内，不自动聚焦、不自动识别输入框，不接受 XCTest/节点引用用法。光标闪烁也可能引起局部保护拒绝；不得缩小矩形去绕开正文或光标，也不自动重试。
+Unicode 输入会读取并在内存中备份设备通用剪贴板，写入整段文本，核对内容与变化计数后发送一次 Command-V。原内容保留到会话关闭，期间测试文本继续占用剪贴板，以便系统确认框中的粘贴仍能读取它。调用方必须先处理粘贴确认框、核对结果，再关闭会话；后端不自动允许系统弹窗。`pasteShortcutQueued` 不是文字已提交的证明，API 仍返回 `unknown` 和新截图。
+
+关闭时仅在内容和身份/计数仍匹配时尝试恢复；`pasteboardRestoreAcknowledged=false` 会使整体清理不确认。协议不提供原子比较后恢复，不能与其他剪贴板写入者并发使用；宿主崩溃、断连、写入回包丢失可能导致无法恢复。原剪贴板正文不写入诊断日志或磁盘备份，不能恢复时不得宣称清理成功。
+
+原生 `type` 可指定 `--field-rect x,y,width,height`，由调用方在当前原始截图中选择完整输入框，以屏幕 points 表示。局部仍为零变化限制，全屏仍为 1% 变化限制；省略该参数时仍对整屏实施局部零变化保护。矩形必须在该截图范围内，不自动聚焦、不自动识别输入框，不接受 XCTest/节点引用用法。光标闪烁也可能引起局部保护拒绝。Unicode 路径在剪贴板写入前后各最多采集 3 帧、各最多 8 秒，始终比较原 observation 的指纹，且原观察总有效期仍为 30 秒；全屏超限立即拒绝。这里只重复只读截图，不重试输入，也不刷新比较基准。不得缩小矩形去绕开正文或光标。
 
 原生画面差异拒绝现在返回 `result.screenGuard` 的实际变化比例，并将触发拒绝的原图作为 `observation.phase=pre_input_rejection` 附带。`result.rejectedObservationID` 是该新观察，原引用失效；它不是动作后图，不提供 `afterObservationID`，动作仍为 `not_dispatched`。调用方先检查附图，再决定新动作；捕获失败/无差异比较结果的拒绝不保证带图。缓存仍只保留两个观察，关闭会话时移除，需及时保存证据。
 

@@ -184,8 +184,11 @@ NSArray<NSNumber *> *ASNativeRSDPorts(NSString *inventory, NSString *deviceAddre
     xpc_object_t flags = DictionaryValue(output, "remoteXPCVersionFlags");
     xpc_object_t features = DictionaryValue(output, "featureIdentifiers");
     NSString *echoed = StringValue(reply, "CoreDevice.invocationIdentifier");
-    NSString *expectedFeature = [name isEqual:@"com.apple.coredevice.hid.universalhidservice"]
-        ? @"com.apple.coredevice.feature.remote.universalhidservice" : @"com.apple.coredevice.feature.getmediastreamserverstatus";
+    NSString *expectedFeature = @{
+        @"com.apple.coredevice.hid.universalhidservice": @"com.apple.coredevice.feature.remote.universalhidservice",
+        @"com.apple.coredevice.displayservice": @"com.apple.coredevice.feature.getmediastreamserverstatus",
+        @"com.apple.coredevice.pasteboardservice": @"com.apple.coredevice.feature.pasteboard"
+    }[name];
     __block BOOL featureMatched = NO;
     if (features && xpc_get_type(features) == XPC_TYPE_ARRAY) xpc_array_apply(features, ^bool(size_t index, xpc_object_t value) {
         if (xpc_get_type(value) == XPC_TYPE_STRING && [expectedFeature isEqualToString:@(xpc_string_get_string_ptr(value))]) featureMatched = YES;
@@ -219,8 +222,8 @@ NSArray<NSNumber *> *ASNativeRSDPorts(NSString *inventory, NSString *deviceAddre
     [_lifecycle lock];
     @try {
         if (_closed) { if (error) *error = PairingError(@"native_tunnel_closed", @"Paired tunnel closed"); return nil; }
-        if (![@[@"com.apple.coredevice.displayservice", @"com.apple.coredevice.hid.universalhidservice"] containsObject:name]) {
-            if (error) *error = PairingError(@"native_service_unsupported", @"Service outside the native media/HID scope"); return nil;
+        if (![@[@"com.apple.coredevice.displayservice", @"com.apple.coredevice.hid.universalhidservice", @"com.apple.coredevice.pasteboardservice"] containsObject:name]) {
+            if (error) *error = PairingError(@"native_service_unsupported", @"Service outside the native media/HID/pasteboard scope"); return nil;
         }
         if (_broker) return [self openBrokerService:name error:error];
         NSDictionary *service = _peerInfo[@"Services"][name];
@@ -232,7 +235,7 @@ NSArray<NSNumber *> *ASNativeRSDPorts(NSString *inventory, NSString *deviceAddre
         unsigned long port = [rawPort respondsToSelector:@selector(integerValue)] ? [rawPort integerValue] : 0;
         if (!port || port > UINT16_MAX || [entitlement isEqual:@"AppleInternal"] || ![service[@"Properties"][@"UsesRemoteXPC"] boolValue]
             || [service[@"Properties"][@"EncryptSocketData"] boolValue] || [service[@"Properties"][@"ServiceVersion"] integerValue] != 1) {
-            if (error) *error = PairingError(@"native_service_unavailable", @"Peer did not advertise an eligible RemoteXPC media/HID endpoint"); return nil;
+            if (error) *error = PairingError(@"native_service_unavailable", @"Peer did not advertise an eligible RemoteXPC media/HID/pasteboard endpoint"); return nil;
         }
         id version = _peerInfo[@"Properties"][@"RemoteXPCVersionFlags"];
         if (![version isKindOfClass:NSNumber.class]) {
