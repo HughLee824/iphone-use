@@ -252,6 +252,7 @@ final class AppleDeviceBackend: SessionBackend {
                 displayID: target.context["displayID"] as? UInt64,
                 deadline: min(captured + 30, ProcessInfo.processInfo.systemUptime + 8),
                 maximumCaptures: textInput?.usesPasteboard == true ? 3 : 1,
+                caretGuard: typing ? target.textCaretGuard : nil,
                 record: { sample in
                     var sample = sample; sample["stage"] = stage
                     preInputChecks.append(sample)

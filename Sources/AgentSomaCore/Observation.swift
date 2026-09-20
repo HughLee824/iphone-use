@@ -157,7 +157,8 @@ final class ObservationCache {
                 guard let raw = entry.capture.metadata["screenContext"] as? [String: Any] else { throw ScreenGuard.Failure.invalidGuard }
                 let context = try JSONDecoder().decode(ScreenContext.self, from: jsonData(raw))
                 let guardValue = try ScreenGuard(png: entry.capture.screenshot, context: context, rects: [action.textRegion ?? context.screen], policy: .init())
-                return ObservedTarget(context: entry.capture.metadata, path: [], textGuard: guardValue)
+                let caretGuard = try action.textRegion.flatMap { try NativeCaretGuard(png: entry.capture.screenshot, context: context, field: $0) }
+                return ObservedTarget(context: entry.capture.metadata, path: [], textGuard: guardValue, textCaretGuard: caretGuard)
             }
             guard ["tap", "swipe"].contains(action.kind), action.coordinate else {
                 throw SomaError("native_action_unsupported", "Use tap or swipe oN with native screenshot screen-point coordinates")

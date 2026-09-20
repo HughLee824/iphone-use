@@ -24,6 +24,7 @@ enum NativeTextInput {
 // guard, with unchanged thresholds and one shared deadline for this preflight.
 enum NativeInputPreflight {
     static func check(guard screenGuard: ScreenGuard, displayID: UInt64?, deadline: TimeInterval, maximumCaptures: Int,
+                      caretGuard: NativeCaretGuard? = nil,
                       now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
                       record: ([String: Any]) -> Void = { _ in },
                       capture: () throws -> CapturedObservation) throws -> (ScreenGuard.Check, Int) {
@@ -36,7 +37,11 @@ enum NativeInputPreflight {
             guard frame.metadata["displayID"] as? UInt64 == displayID,
                   let raw = frame.metadata["screenContext"] as? [String: Any] else { throw ScreenGuard.Failure.contextChanged }
             let context = try JSONDecoder().decode(ScreenContext.self, from: jsonData(raw))
-            let check = try screenGuard.check(png: frame.screenshot, context: context)
+            var check = try screenGuard.check(png: frame.screenshot, context: context)
+            if !check.accepted, check.screenChange <= check.policy.maxScreenChange,
+               let caretGuard, try caretGuard.acceptsBlink(png: frame.screenshot, context: context) {
+                check.ignoredCaretBlink = caretGuard.caret
+            }
             let checkedAt = now()
             let inTime = checkedAt < deadline
             record(["attempt": attempt, "elapsedMs": (checkedAt - started) * 1000,
