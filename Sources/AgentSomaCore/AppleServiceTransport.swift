@@ -5,12 +5,15 @@ func nativeUInt(_ value: UInt64) -> ASNativeUnsigned { ASNativeUnsigned(value: v
 
 // These callbacks correspond to individual native RemoteXPC reply handlers, never the event channel.
 protocol NativeChannel: AnyObject {
+    var diagnostics: [String: Any] { get }
     func request(_ message: [String: Any], completion: @escaping ([String: Any]?, Error?) -> Void)
     func send(_ message: [String: Any], completion: @escaping (Error?) -> Void)
     func cancel()
 }
+extension NativeChannel { var diagnostics: [String: Any] { [:] } }
 
 final class AppleRemoteChannel: NativeChannel {
+    var diagnostics: [String: Any] { channel.diagnostics as? [String: Any] ?? [:] }
     private let channel: ASNativeChannel
     init(tunnel: ASPairedTunnel, service: String) throws { channel = try tunnel.openService(service) }
     func request(_ message: [String: Any], completion: @escaping ([String: Any]?, Error?) -> Void) {
@@ -21,14 +24,23 @@ final class AppleRemoteChannel: NativeChannel {
 }
 
 protocol NativeTransport: AnyObject {
+    var diagnostics: [String: Any] { get }
     func request(_ message: [String: Any], timeout: TimeInterval) throws -> [String: Any]
     func send(_ message: [String: Any], timeout: TimeInterval) throws
     func cancel()
 }
+extension NativeTransport { var diagnostics: [String: Any] { [:] } }
 
 // Late replies cannot satisfy a later request. Any timeout/cancel poisons this connection;
 // opening a new workflow is explicit and never replays an old request.
 final class AppleServiceTransport: NativeTransport {
+    var diagnostics: [String: Any] {
+        lock.lock(); let locallyClosed = closed; lock.unlock()
+        // Never hold the admission lock while synchronizing with the native queue.
+        var result = channel.diagnostics
+        result["locallyClosed"] = locallyClosed
+        return result
+    }
     private final class Pending {
         let ready = DispatchSemaphore(value: 0)
         var result: Result<[String: Any], Error>?

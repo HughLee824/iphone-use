@@ -49,6 +49,13 @@ private final class MediaReceiver: NativeMediaReceiver {
     func close() { closes += 1 }
 }
 
+private final class MediaTestClock {
+    private let lock = NSLock()
+    private var value = 10.0
+    func read() -> Double { lock.lock(); defer { lock.unlock() }; return value }
+    func set(_ value: Double) { lock.lock(); self.value = value; lock.unlock() }
+}
+
 private final class TouchChannel: NativeChannel {
     var reports: [Data] = []
     var cancellations = 0
@@ -684,8 +691,11 @@ final class AppleNativeTests: XCTestCase {
         XCTAssertEqual(withUnsafeMutablePointer(to: &endpoint) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
             getsockname(sender, $0, &length)
         } }, 0)
-        let receiver = try NativeRTPReceiver(deviceAddress: "::1")
+        let clock = MediaTestClock()
+        let receiver = try NativeRTPReceiver(deviceAddress: "::1", now: clock.read)
         defer { receiver.close() }
+        XCTAssertEqual(receiver.health()["healthReason"] as? String, "not_configured")
+        XCTAssertTrue(receiver.health()["lastRTPAgeSeconds"] is NSNull)
         let sourcePort = UInt16(bigEndian: endpoint.sin6_port)
         try receiver.configure(["SourcePort": sourcePort, "LocalSSRC": UInt32(123), "RemoteSSRC": UInt32(456),
             "RTCPEnabled": true, "RTCPSendInterval": 0.02, "SRTPCipherSuite": 0])
@@ -703,6 +713,30 @@ final class AppleNativeTests: XCTestCase {
         }
         XCTAssertEqual(receiver.health()["rtpPackets"] as? Int, 1)
         XCTAssertEqual(receiver.health()["healthy"] as? Bool, true)
+        XCTAssertEqual(receiver.health()["lastRTPAgeSeconds"] as? Double, 0)
+        XCTAssertEqual(receiver.health()["lastRTCPSendAgeSeconds"] as? Double, 0)
+        clock.set(15)
+        XCTAssertEqual(receiver.health()["healthy"] as? Bool, false)
+        XCTAssertEqual(receiver.health()["healthReason"] as? String, "rtp_stale")
+        XCTAssertEqual(receiver.health()["lastRTPAgeSeconds"] as? Double, 5)
+        // Peer RTCP and rejected RTP are observable but cannot refresh video health.
+        for diagnosticPacket: [UInt8] in [[0x80, 200, 0, 1, 0, 0, 0, 123],
+                                         [0x80, 100, 0, 2, 0, 0, 0, 0, 0, 0, 0, 124]] {
+            _ = diagnosticPacket.withUnsafeBytes { bytes in withUnsafePointer(to: &endpoint) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    sendto(sender, bytes.baseAddress, bytes.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in6>.size))
+                }
+            } }
+        }
+        let diagnosticDeadline = ProcessInfo.processInfo.systemUptime + 1
+        while (receiver.health()["datagramsReceived"] as? Int ?? 0) < 3 && ProcessInfo.processInfo.systemUptime < diagnosticDeadline {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        XCTAssertEqual(receiver.health()["rtcpPacketsReceived"] as? Int, 1)
+        XCTAssertEqual(receiver.health()["rejectedDatagrams"] as? Int, 1)
+        XCTAssertEqual(receiver.health()["rtpPackets"] as? Int, 1)
+        XCTAssertEqual(receiver.health()["healthReason"] as? String, "rtp_stale")
+        XCTAssertEqual(receiver.health()["lastRTCPReceiveAgeSeconds"] as? Double, 0)
         var timeout = timeval(tv_sec: 1, tv_usec: 0)
         _ = setsockopt(sender, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         var bytes = [UInt8](repeating: 0, count: 256)
@@ -712,6 +746,19 @@ final class AppleNativeTests: XCTestCase {
         XCTAssertEqual(bytes[33], 202)
         receiver.close()
         XCTAssertEqual(receiver.health()["healthy"] as? Bool, false)
+        XCTAssertEqual(receiver.health()["healthReason"] as? String, "receiver_closed")
+        XCTAssertEqual(receiver.health()["receiverOpen"] as? Bool, false)
+    }
+
+    func testTransportDiagnosticsDoNotSendRequestsOrReopenAfterCancellation() {
+        let channel = ReplyChannel()
+        let observed = AppleServiceTransport(channel: channel)
+        XCTAssertEqual(observed.diagnostics["locallyClosed"] as? Bool, false)
+        observed.cancel()
+        XCTAssertEqual(observed.diagnostics["locallyClosed"] as? Bool, true)
+        XCTAssertTrue(channel.callbacks.isEmpty)
+        XCTAssertEqual(channel.sends, 0)
+        XCTAssertEqual(channel.cancellations, 1)
     }
 
     func testInstalledAppleMediaOfferWhenExplicitlyRequested() throws {

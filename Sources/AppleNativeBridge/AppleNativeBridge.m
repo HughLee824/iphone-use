@@ -129,6 +129,7 @@ NSDictionary *ASNativeRoundTrip(NSDictionary *value, NSError **error) {
     id _connection;
     dispatch_queue_t _queue;
     NSError *_failure;
+    NSNumber *_terminalEventUptime;
 }
 - (instancetype)initWithConnectedFileDescriptor:(int)fd deviceAddress:(NSString *)address
                                    versionFlags:(uint64_t)flags error:(NSError **)error {
@@ -178,6 +179,7 @@ NSDictionary *ASNativeRoundTrip(NSDictionary *value, NSError **error) {
     fcntl(fd, F_SETFD, FD_CLOEXEC);
     fcntl(fd, F_SETFL, O_NONBLOCK);
     _queue = dispatch_queue_create("agentsoma.apple.paired-channel", DISPATCH_QUEUE_SERIAL);
+    dispatch_queue_set_specific(_queue, (__bridge const void *)self, (__bridge void *)self, NULL);
     // macOS 27 ABI: fd, queue, wire version flags, client/server mode flags. The created object owns fd.
     _connection = createFDConnection(fd, _queue, flags ?: failsafeVersion(), 0);
     if (!_connection) { close(fd); if (error) *error = Failure(@"native_connection_failed", @"RemoteXPC did not adopt the paired socket"); return nil; }
@@ -192,6 +194,7 @@ NSDictionary *ASNativeRoundTrip(NSDictionary *value, NSError **error) {
         if (!owner) return;
         [lock lock];
         if (xpc_get_type(event) == XPC_TYPE_ERROR) {
+            if (!owner->_terminalEventUptime) owner->_terminalEventUptime = @(NSProcessInfo.processInfo.systemUptime);
             owner->_failure = Failure(@"native_connection_lost", @"Paired RemoteXPC connection ended");
             if (!finished) { handshakeError = owner->_failure; finished = YES; dispatch_semaphore_signal(ready); }
         } else if (handshake && !finished) {
@@ -247,6 +250,16 @@ NSDictionary *ASNativeRoundTrip(NSDictionary *value, NSError **error) {
         if (self->_connection) { cancelConnection(self->_connection); self->_connection = nil; }
         self->_failure = Failure(@"native_connection_closed", @"Connection cancelled");
     });
+}
+- (NSDictionary *)diagnostics {
+    __block NSDictionary *result;
+    void (^snapshot)(void) = ^{
+        result = @{@"connectionPresent": @(self->_connection != nil),
+                   @"terminalEventAgeSeconds": self->_terminalEventUptime ? @(MAX(0, NSProcessInfo.processInfo.systemUptime - self->_terminalEventUptime.doubleValue)) : NSNull.null,
+                   @"errorCode": self->_failure.userInfo[@"somaCode"] ?: NSNull.null};
+    };
+    if (dispatch_get_specific((__bridge const void *)self)) snapshot(); else dispatch_sync(_queue, snapshot);
+    return result;
 }
 - (void)dealloc { if (_connection) cancelConnection(_connection); }
 @end

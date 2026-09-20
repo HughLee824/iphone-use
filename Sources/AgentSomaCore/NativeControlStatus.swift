@@ -58,10 +58,13 @@ struct NativeControlStatus {
     let code: String?
     let message: String?
     let recovery: NativeRecovery
+    var mediaFailureSnapshot: [String: Any]? = nil
     var available: Bool { code == nil }
     var result: [String: Any] {
-        ["controlAvailable": available, "controlErrorCode": code as Any? ?? NSNull(),
+        var result: [String: Any] = ["controlAvailable": available, "controlErrorCode": code as Any? ?? NSNull(),
          "controlError": message as Any? ?? NSNull(), "recovery": recovery.result]
+        if let mediaFailureSnapshot { result["media"] = mediaFailureSnapshot }
+        return result
     }
 
     static func resolve(hid: NativeHIDAdapter.State?, media: [String: Any], closing: Bool,
@@ -74,7 +77,8 @@ struct NativeControlStatus {
         guard let hid, hid != .unprepared else { return Self(code: "native_hid_unavailable", message: "No negotiated HID surface is available.", recovery: .resolveError) }
         if hid == .contactActive { return Self(code: "native_contact_active", message: "A touch contact or keyboard key is still active; wait for the original action and inspect the session.", recovery: .checkSession) }
         guard media["healthy"] as? Bool == true else {
-            return Self(code: "native_media_unhealthy", message: media["error"] as? String ?? "Media has no recent healthy RTP/RTCP flow.", recovery: .checkMediaAndObserve)
+            return Self(code: "native_media_unhealthy", message: media["error"] as? String ?? "Media has no recent healthy RTP/RTCP flow.",
+                        recovery: .checkMediaAndObserve, mediaFailureSnapshot: media)
         }
         return Self(code: nil, message: nil, recovery: .none)
     }

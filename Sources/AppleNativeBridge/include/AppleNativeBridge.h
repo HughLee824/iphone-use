@@ -16,6 +16,8 @@ NS_ASSUME_NONNULL_BEGIN
 // A barrier confirms local queue drainage, never device execution.
 - (void)send:(NSDictionary *)message completion:(void (^)(NSError * _Nullable))completion;
 - (void)cancel;
+// Local event snapshot only; makes no request and does not prove peer liveness.
+@property(nonatomic, readonly) NSDictionary *diagnostics;
 @end
 
 // An assertion granted by the logged-in user's pairing daemon owns this tunnel.

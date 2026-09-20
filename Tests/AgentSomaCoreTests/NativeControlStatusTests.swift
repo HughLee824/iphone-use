@@ -70,12 +70,19 @@ final class NativeControlStatusTests: XCTestCase {
         }
     }
     func testRejectionSnapshotCannotBeErasedByRecoveredMediaSample() {
+        let rejected = NativeControlStatus.resolve(hid: .ready,
+            media: ["healthy": false, "healthReason": "rtp_stale", "lastRTPAgeSeconds": 7.5, "rtcpReports": 10],
+            closing: false, startupCode: nil, startupError: nil)
         var response: [String: Any] = ["ok": false, "outcome": "not_dispatched",
-            "error": ["code": "native_control_unavailable"], "result": control(healthy: false).result]
+            "error": ["code": "native_control_unavailable"], "result": rejected.result]
         NativeRecovery.enrich(&response, control: control().result)
         XCTAssertEqual((response["result"] as? [String: Any])?["controlErrorCode"] as? String, "native_media_unhealthy")
         XCTAssertEqual(recovery(response)?["nextAction"] as? String, "check_media_and_observe")
         XCTAssertEqual((response["error"] as? [String: String])?["code"], "native_control_unavailable")
+        let media = (response["result"] as? [String: Any])?["media"] as? [String: Any]
+        XCTAssertEqual(media?["healthReason"] as? String, "rtp_stale")
+        XCTAssertEqual(media?["lastRTPAgeSeconds"] as? Double, 7.5)
+        XCTAssertEqual(media?["rtcpReports"] as? Int, 10)
     }
     func testClientUnavailableAddsNativeRecoveryOnlyWithoutAssumingHostExited() throws {
         for native in [false, true] {

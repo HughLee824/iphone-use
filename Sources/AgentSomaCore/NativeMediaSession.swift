@@ -27,9 +27,18 @@ final class NativeRTPReceiver: NativeMediaReceiver {
     private var received = 0
     private var reports = 0
     private var lastPacket: TimeInterval?
+    private var lastReport: TimeInterval?
+    private var lastReportAttempt: TimeInterval?
+    private var incomingReports = 0
+    private var lastIncomingReport: TimeInterval?
+    private var datagrams = 0
+    private var rejectedDatagrams = 0
+    private var reportInterval: TimeInterval?
+    private let now: () -> TimeInterval
     private var failed: String?
 
-    init(deviceAddress: String) throws {
+    init(deviceAddress: String, now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) throws {
+        self.now = now
         var destination = sockaddr_in6()
         destination.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
         destination.sin6_family = sa_family_t(AF_INET6)
@@ -82,6 +91,7 @@ final class NativeRTPReceiver: NativeMediaReceiver {
         queue.sync {
             peer.sin6_port = UInt16(sourcePort.intValue).bigEndian
             expectedSSRC = remote.uint32Value; localSSRC = local.uint32Value
+            reportInterval = interval
             let heartbeat = DispatchSource.makeTimerSource(queue: queue)
             heartbeat.schedule(deadline: .now(), repeating: interval)
             heartbeat.setEventHandler { [weak self] in self?.feedback() }
@@ -99,16 +109,22 @@ final class NativeRTPReceiver: NativeMediaReceiver {
                 if errno != EAGAIN && errno != EWOULDBLOCK { failed = "media receive failed: \(errno)" }
                 return
             }
-            guard count >= 12, bytes[0] >> 6 == 2, !(192...223).contains(bytes[1]),
+            datagrams += 1
+            guard count >= 8, bytes[0] >> 6 == 2,
                   withUnsafeBytes(of: sender.sin6_addr, { Data($0) }) == withUnsafeBytes(of: peer.sin6_addr, { Data($0) }),
-                  sender.sin6_port == peer.sin6_port, let expectedSSRC else { continue }
+                  sender.sin6_port == peer.sin6_port, let expectedSSRC else { rejectedDatagrams += 1; continue }
+            // Diagnostic only: peer RTCP is not video flow or permission to send input.
+            if (192...223).contains(bytes[1]) {
+                incomingReports += 1; lastIncomingReport = now(); continue
+            }
+            guard count >= 12 else { rejectedDatagrams += 1; continue }
             let ssrc = bytes[8..<12].reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
-            guard ssrc == expectedSSRC else { continue }
+            guard ssrc == expectedSSRC else { rejectedDatagrams += 1; continue }
             let sequence = UInt32(bytes[2]) << 8 | UInt32(bytes[3])
             let delta = Int16(bitPattern: UInt16(sequence) &- UInt16(truncatingIfNeeded: highest))
             if received == 0 { highest = sequence }
             else if delta > 0 { highest &+= UInt32(delta) }
-            received += 1; lastPacket = ProcessInfo.processInfo.systemUptime
+            received += 1; lastPacket = now()
         }
     }
     private func feedback() {
@@ -124,17 +140,32 @@ final class NativeRTPReceiver: NativeMediaReceiver {
         while sdes.count % 4 != 0 { sdes.append(0) }
         let words = UInt16(sdes.count / 4 - 1); sdes[2] = UInt8(words >> 8); sdes[3] = UInt8(words & 255)
         packet.append(sdes)
+        lastReportAttempt = now()
         let sent = packet.withUnsafeBytes { bytes in
             withUnsafePointer(to: &peer) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
                 sendto(socketFD, bytes.baseAddress, bytes.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in6>.size))
             } }
         }
-        if sent == packet.count { reports += 1 } else { failed = "RTCP send failed: \(errno)" }
+        if sent == packet.count { reports += 1; lastReport = now() } else { failed = "RTCP send failed: \(errno)" }
     }
     func health() -> [String: Any] {
         queue.sync {
-            ["rtpPackets": received, "rtcpReports": reports,
-             "healthy": failed == nil && socketFD >= 0 && reports > 0 && lastPacket.map { ProcessInfo.processInfo.systemUptime - $0 < 5 } == true,
+            let sampledAt = now()
+            func age(_ time: TimeInterval?) -> Any { time.map { max(0, sampledAt - $0) } as Any? ?? NSNull() }
+            let reason: String
+            if socketFD < 0 { reason = "receiver_closed" }
+            else if failed != nil { reason = "io_error" }
+            else if expectedSSRC == nil { reason = "not_configured" }
+            else if reports == 0 { reason = "no_rtcp_sent" }
+            else if lastPacket == nil { reason = "no_rtp_received" }
+            else if sampledAt - lastPacket! >= 5 { reason = "rtp_stale" }
+            else { reason = "recent_rtp" }
+            return ["rtpPackets": received, "rtcpReports": reports, "healthy": reason == "recent_rtp",
+             "healthReason": reason, "rtpFreshnessLimitSeconds": 5, "sampledAtUptime": sampledAt,
+             "lastRTPAgeSeconds": age(lastPacket), "lastRTCPSendAgeSeconds": age(lastReport),
+             "lastRTCPAttemptAgeSeconds": age(lastReportAttempt), "rtcpSendIntervalSeconds": reportInterval as Any? ?? NSNull(),
+             "rtcpPacketsReceived": incomingReports, "lastRTCPReceiveAgeSeconds": age(lastIncomingReport),
+             "datagramsReceived": datagrams, "rejectedDatagrams": rejectedDatagrams, "receiverOpen": socketFD >= 0,
              "error": failed as Any? ?? NSNull(), "decoded": false]
         }
     }
@@ -188,7 +219,11 @@ final class NativeMediaSession {
             try receiver.configure(config)
         } catch { _ = close(); throw error }
     }
-    func health() -> [String: Any] { receiver.health() }
+    func health() -> [String: Any] {
+        var result = receiver.health()
+        result["displayConnection"] = client.transport.diagnostics
+        return result
+    }
     private static func identifier(_ configuration: [String: Any]) throws -> UInt32 {
         guard let value = configuration["RemoteSSRC"] as? NSNumber,
               value.doubleValue >= 1, value.doubleValue <= Double(UInt32.max), value.doubleValue.rounded() == value.doubleValue else {
