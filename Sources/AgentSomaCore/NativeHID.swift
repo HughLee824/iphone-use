@@ -328,6 +328,62 @@ final class NativeHIDAdapter {
                 result: ["transportStatus": "uncertain", "verificationStatus": "uncertain", "cleanup": cleanup])
         }
     }
+    func doubleTap(_ point: (UInt16, UInt16), checkHealth: () throws -> Void = {}) throws -> [String: Any] {
+        try cancellation.check()
+        guard isAvailable else { throw SomaError("native_hid_unavailable", "Touch state is unavailable; reconnect and observe") }
+        try checkHealth()
+        let started = uptime(), deadline = started + 0.6
+        let hold = 0.06, gap = 0.10, secondDownDeadline = started + 0.30
+        var attempted = 0, queued = 0
+        var downTimes: [TimeInterval] = []
+        func facts() -> [String: Any] {
+            ["contactsAttempted": attempted, "tapPairsQueued": queued,
+             "hostDownUptimes": downTimes, "hostStartedUptime": started, "hostCompletedUptime": uptime(),
+             "pressDuration": hold, "interTapReleaseGap": gap, "maximumDownInterval": 0.30,
+             "hidX": Int(point.0), "hidY": Int(point.1), "timestampSource": "mach_absolute_time_low48"]
+        }
+        func check() throws {
+            try cancellation.check(); try checkHealth()
+            guard uptime() < deadline else { throw SomaError("native_input_deadline", "Double tap exceeded its execution deadline") }
+        }
+        func waitUntil(_ target: TimeInterval) throws {
+            while uptime() < target {
+                try check()
+                wait(min(0.005, max(0, target - uptime())))
+            }
+            try check()
+        }
+        do {
+            for index in 0..<2 {
+                try check()
+                // Never turn a delayed sequence into an unrelated second tap.
+                guard index == 0 || uptime() < secondDownDeadline else {
+                    throw SomaError("native_input_deadline", "Second contact missed the double-tap timing window")
+                }
+                contact = point // A failed send may still have delivered contact.
+                attempted += 1; downTimes.append(uptime())
+                let contactDeadline = index == 0 ? secondDownDeadline : deadline
+                try report(contact: true, point: point, timeout: max(0.001, contactDeadline - uptime()))
+                try waitUntil(uptime() + hold)
+                try report(contact: false, point: point, timeout: max(0.001, deadline - uptime()))
+                contact = nil; queued += 1
+                if index == 0 { try waitUntil(uptime() + gap) }
+            }
+            try check()
+            var result = facts()
+            result["transportStatus"] = "sent"; result["verificationStatus"] = "not_checked"
+            result["contactReleaseQueued"] = true
+            return result
+        } catch {
+            guard attempted > 0 else { throw error }
+            inputUncertain = true
+            var result = facts()
+            result["transportStatus"] = "uncertain"; result["verificationStatus"] = "uncertain"
+            result["cleanup"] = release()
+            throw ActionFailure(code: "native_input_uncertain", description: "Double tap may be partially delivered: \(error). Observe; do not replay automatically.",
+                possiblyExecuted: true, requiresObservation: true, result: result)
+        }
+    }
     func swipe(_ plan: NativeSwipePlan, checkHealth: () throws -> Void = {}) throws -> [String: Any] {
         try cancellation.check()
         guard isAvailable else { throw SomaError("native_hid_unavailable", "Touch state is unavailable; reconnect and observe") }

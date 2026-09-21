@@ -170,14 +170,14 @@ final class ObservationCache {
                 let caretGuard = try action.textRegion.flatMap { try NativeCaretGuard(png: entry.capture.screenshot, context: context, field: $0) }
                 return ObservedTarget(context: entry.capture.metadata, path: [], textGuard: guardValue, textCaretGuard: caretGuard)
             }
-            guard ["tap", "long-press", "swipe"].contains(action.kind), action.coordinate else {
+            guard ["tap", "double-tap", "long-press", "swipe"].contains(action.kind), action.coordinate else {
                 throw SomaError("native_action_unsupported", "Use tap or swipe oN with native screenshot screen-point coordinates")
             }
             return try coordinateTarget(for: action, capture: entry.capture)
         }
         guard let scope = entry.capture.metadata["scope"] as? String, ["app", "appAlert", "systemAlert"].contains(scope),
               !entry.capture.nodes.isEmpty else { throw SomaError("target_context_unknown", "Observe a known app or alert before acting") }
-        if ["tap", "long-press", "swipe"].contains(action.kind) { return try coordinateTarget(for: action, capture: entry.capture) }
+        if ["tap", "double-tap", "long-press", "swipe"].contains(action.kind) { return try coordinateTarget(for: action, capture: entry.capture) }
         var index = 0
         if !action.coordinate {
             let node = try resolveCurrent(reference)
@@ -229,7 +229,7 @@ final class ObservationCache {
         let start: CGPoint
         var end: CGPoint?
         if action.coordinate {
-            if ["tap", "long-press"].contains(action.kind) { start = CGPoint(x: action.fields["x"] as! Double, y: action.fields["y"] as! Double) }
+            if ["tap", "double-tap", "long-press"].contains(action.kind) { start = CGPoint(x: action.fields["x"] as! Double, y: action.fields["y"] as! Double) }
             else {
                 start = CGPoint(x: action.fields["fromX"] as! Double, y: action.fields["fromY"] as! Double)
                 end = CGPoint(x: action.fields["toX"] as! Double, y: action.fields["toY"] as! Double)
@@ -237,7 +237,7 @@ final class ObservationCache {
         } else {
             guard try resolveCurrent(action.reference).enabled else { throw SomaError("target_disabled", "The observed element is disabled") }
             let rect = try visibleRect(action.reference)
-            if ["tap", "long-press"].contains(action.kind) { start = CGPoint(x: rect.midX, y: rect.midY) }
+            if ["tap", "double-tap", "long-press"].contains(action.kind) { start = CGPoint(x: rect.midX, y: rect.midY) }
             else {
                 let direction = action.fields["direction"] as! String
                 let vertical = ["up", "down"].contains(direction)

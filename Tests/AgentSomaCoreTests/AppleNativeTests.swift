@@ -318,6 +318,95 @@ final class AppleNativeTests: XCTestCase {
         XCTAssertEqual((payload["_1"] as? ASNativeUnsigned)?.value, 987)
         XCTAssertEqual(hid.release()["releaseRequired"] as? Bool, false)
     }
+    func testDoubleTapQueuesTwoTimedPairsAtOnePoint() throws {
+        let transport = ScriptedTransport(); var now = 10.0, sentAt: [Double] = []
+        transport.onSend = { _ in sentAt.append(now) }
+        let hid = NativeHIDAdapter(transport: transport, cancellation: NativeCancellation(), wait: { now += $0 }, uptime: { now })
+        try hid.prepare()
+        let result = try hid.doubleTap((123, 456))
+        let values = reports(transport)
+        XCTAssertEqual(values.map { $0[3] }, [0xc2, 2, 0xc2, 2])
+        XCTAssertTrue(values.allSatisfy { Array($0[4...7]) == [123, 0, 200, 1] })
+        XCTAssertEqual(sentAt[1] - sentAt[0], 0.06, accuracy: 0.001)
+        XCTAssertEqual(sentAt[2] - sentAt[1], 0.10, accuracy: 0.001)
+        XCTAssertEqual(sentAt[3] - sentAt[2], 0.06, accuracy: 0.001)
+        XCTAssertEqual(result["tapPairsQueued"] as? Int, 2)
+        XCTAssertEqual(result["verificationStatus"] as? String, "not_checked")
+        XCTAssertEqual(hid.release()["releaseRequired"] as? Bool, false)
+    }
+
+    func testDoubleTapCancellationAtEachPhaseReleasesWithoutSecondAttemptOrReplay() throws {
+        for cancelAfter in 0...4 {
+            let transport = ScriptedTransport(), cancel = NativeCancellation(); var now = 0.0
+            let hid = NativeHIDAdapter(transport: transport, cancellation: cancel, wait: { now += $0 }, uptime: { now })
+            try hid.prepare()
+            if cancelAfter == 0 { cancel.cancel() }
+            transport.onSend = { _ in if transport.sends.count == cancelAfter { cancel.cancel() } }
+            XCTAssertThrowsError(try hid.doubleTap((12, 34))) {
+                if cancelAfter > 0 { XCTAssertEqual(($0 as? ActionFailure)?.possiblyExecuted, true) }
+            }
+            let values = reports(transport)
+            XCTAssertEqual(values.filter { $0[3] == 0xc2 }.count, cancelAfter == 0 ? 0 : cancelAfter <= 2 ? 1 : 2)
+            if cancelAfter > 0 { XCTAssertEqual(values.last?[3], 2) }
+            let count = values.count
+            XCTAssertThrowsError(try hid.doubleTap((12, 34))); XCTAssertEqual(reports(transport).count, count)
+        }
+    }
+
+    func testDoubleTapSendFailureAtEachReportRemainsUnknownAndReleases() throws {
+        for failAt in 1...4 {
+            let transport = ScriptedTransport(); var now = 0.0
+            let hid = NativeHIDAdapter(transport: transport, cancellation: NativeCancellation(), wait: { now += $0 }, uptime: { now })
+            try hid.prepare()
+            transport.onSend = { _ in
+                if transport.sends.count == failAt { throw TransportError(description: "test lost write", possiblySent: true) }
+            }
+            XCTAssertThrowsError(try hid.doubleTap((12, 34))) {
+                XCTAssertEqual(($0 as? ActionFailure)?.possiblyExecuted, true)
+                XCTAssertEqual(($0 as? ActionFailure)?.result?["tapPairsQueued"] as? Int, failAt <= 2 ? 0 : 1)
+            }
+            XCTAssertEqual(reports(transport).last?[3], 2)
+            let count = reports(transport).count
+            XCTAssertThrowsError(try hid.doubleTap((12, 34))); XCTAssertEqual(reports(transport).count, count)
+        }
+    }
+
+    func testDoubleTapDelayOrMediaLossBetweenContactsNeverSendsSecondContact() throws {
+        for delay in [false, true] {
+            let transport = ScriptedTransport(); var now = 0.0
+            let hid = NativeHIDAdapter(transport: transport, cancellation: NativeCancellation(), wait: { now += $0 }, uptime: { now })
+            try hid.prepare()
+            transport.onSend = { _ in if delay && transport.sends.count == 2 { now += 0.31 } }
+            XCTAssertThrowsError(try hid.doubleTap((12, 34)) {
+                if !delay && transport.sends.count == 2 { throw SomaError("native_media_unhealthy", "test") }
+            }) { XCTAssertEqual(($0 as? ActionFailure)?.possiblyExecuted, true) }
+            XCTAssertEqual(reports(transport).map { $0[3] }, [0xc2, 2])
+            XCTAssertFalse(hid.isAvailable)
+        }
+    }
+
+    func testDoubleTapObservationGuardsAndRotationMapping() throws {
+        for (rotation, orientation, width, height) in [("rot0", 1, 390, 844), ("rot90", 4, 844, 390), ("rot270", 3, 844, 390)] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let cache = ObservationCache(directory: directory)
+            let screen = ScreenRect(CGRect(x: 0, y: 0, width: width, height: height))
+            let context = ScreenContext(screen: screen, scope: screen, orientation: orientation, keyboardCount: 0)
+            let png = try screenPNG(width: width, height: height)
+            let capture = CapturedObservation(nodes: [], metadata: ["backend": "apple-native", "screenContext": try jsonObject(JSONEncoder().encode(context))], screenshot: png)
+            _ = try cache.store(capture)
+            let action = try DeviceAction(operation: "double-tap", request: ["reference": "o1", "x": 100, "y": 150], allowScreenText: true)
+            let gesture = try XCTUnwrap(cache.resolveTarget(for: action).gesture)
+            try gesture.validate(kind: "double-tap")
+            let mapped = try NativeCoordinateMapper.map(gesture.start, screen: screen, rotation: rotation)
+            XCTAssertNotEqual(mapped.0, mapped.1)
+            let changed = try screenPNG(width: width, height: height, patches: [(CGRect(x: 90, y: 140, width: 20, height: 20), [0,0,0])])
+            XCTAssertFalse(try gesture.screenGuard.check(png: changed, context: context).accepted)
+            _ = try cache.store(capture)
+            XCTAssertThrowsError(try cache.resolveTarget(for: action))
+        }
+    }
+
     func testLongPressHoldsSingleContactAndChecksHealth() throws {
         let transport = ScriptedTransport(), cancel = NativeCancellation()
         var now = 10.0, checks = 0

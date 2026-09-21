@@ -91,6 +91,14 @@ class ActionObservationCLITests(unittest.TestCase):
                     self.assertEqual(requests[0]["duration"], 1.2)
                     self.assertEqual((requests[0]["x"], requests[0]["y"]), (100, 200))
 
+    def test_native_double_tap_lost_reply_is_not_two_cli_taps(self):
+        code, response, requests = self.run_cli(
+            ["double-tap", "o1", "--x", "100", "--y", "200", "--observe"], lose_action=True)
+        self.assertEqual(code, 1)
+        self.assertEqual(response["action"]["outcome"], "unknown")
+        self.assertEqual([r["op"] for r in requests], ["double-tap", "observe"])
+        self.assertEqual((requests[0]["x"], requests[0]["y"]), (100, 200))
+
     def test_without_flag_preserves_original_response(self):
         code, response, requests = self.run_cli(["tap", "o1:e11"])
         self.assertEqual(code, 0, response)

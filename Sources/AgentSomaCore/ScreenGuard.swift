@@ -182,7 +182,7 @@ struct CoordinateGesture: Codable {
     func validate(kind: String) throws {
         try screenGuard.validate()
         guard [start.x, start.y].allSatisfy(\.isFinite), screenGuard.context.scope.cgRect.contains(start),
-              (["tap", "long-press"].contains(kind) && end == nil && motion == nil)
+              (["tap", "double-tap", "long-press"].contains(kind) && end == nil && motion == nil)
                 || (kind == "swipe" && end != nil && motion?.valid == true && withinMotionBudget) else { throw ScreenGuard.Failure.invalidGuard }
         if let end {
             guard [end.x, end.y].allSatisfy(\.isFinite), screenGuard.context.scope.cgRect.contains(end),

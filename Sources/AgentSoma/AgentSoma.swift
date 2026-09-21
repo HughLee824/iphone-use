@@ -15,7 +15,7 @@ struct SessionOptions: ParsableArguments {
 struct AgentSoma: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "agentsoma", abstract: "Eyes and hands for agents operating a real iPhone.", version: RunnerSetup.releaseVersion,
-        subcommands: [Setup.self, BuildRunner.self, Devices.self, Connect.self, Status.self, Apps.self, Open.self, Observe.self, Inspect.self, Tap.self, LongPress.self, Swipe.self, Home.self, TypeText.self, TextPrepare.self, TextFinish.self, Press.self, Disconnect.self, Host.self])
+        subcommands: [Setup.self, BuildRunner.self, Devices.self, Connect.self, Status.self, Apps.self, Open.self, Observe.self, Inspect.self, Tap.self, DoubleTap.self, LongPress.self, Swipe.self, Home.self, TypeText.self, TextPrepare.self, TextFinish.self, Press.self, Disconnect.self, Host.self])
     @OptionGroup var options: SessionOptions
 }
 
@@ -207,6 +207,22 @@ struct Tap: ParsableCommand {
         fields["reference"] = reference
         fields["x"] = x; fields["y"] = y
         try outputAction(session: session, observe: observation.observe) { try SessionClient.call(session: session, operation: "tap", fields: fields) }
+    }
+}
+
+struct DoubleTap: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "double-tap", abstract: "Double tap one screenshot point with backend-controlled timing (apple-native).")
+    @OptionGroup var options: SessionOptions
+    @OptionGroup var observation: ActionObservationOptions
+    @OptionGroup var screenGuard: ScreenGuardOptions
+    @Argument(help: "Current screenshot observation ID.") var reference: String
+    @Option(help: "Horizontal screen point coordinate.") var x: Double
+    @Option(help: "Vertical screen point coordinate.") var y: Double
+    mutating func run() throws {
+        let session = try options.requiredSession()
+        var fields = screenGuard.fields
+        fields["reference"] = reference; fields["x"] = x; fields["y"] = y
+        try outputAction(session: session, observe: observation.observe) { try SessionClient.call(session: session, operation: "double-tap", fields: fields) }
     }
 }
 

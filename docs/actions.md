@@ -196,3 +196,12 @@ XCTest 的命令错误经 Runner 转成响应；不再把已经返回给调用�
 这些名称表示 HID 键盘操作，不承诺业务效果：Backspace 的删除单位、方向键的光标位置、Tab 的焦点切换、Escape 的取消行为均由前台 App/IME 决定。回执保留 `key`、`keyReportQueued`、`keyboardReleaseQueued`、`keyEffectConfirmed=false`；本地发送完成仍是 unknown，需检查结果截图。Shift+Tab 先单独按下 Shift，再按 Tab，最后释放全部按键；取消或失败沿用同通道释放和不重放契约。
 
 原生 `type` 和 `press` 可用于原生竖屏显示器的竖屏及左右横屏。无需旋转按键 usage；坐标输入框使用当前截图的屏幕点。文字模式、剪贴板所有权与恢复、设备/会话/30秒观察绑定、方向和截图保护保持不变。先使用 `text-prepare` 建立键盘，再观察并确认焦点；旋转后必须重新观察。具体真机验收范围见[原生后端记录](apple-native-backend.md)。
+
+
+## 原生双击
+
+`agentsoma --session SESSION double-tap oN --x X --y Y --observe` 在当前截图的一点执行两次按下/释放，仅用于 `apple-native`。坐标为原 PNG 对应的屏幕点，支持竖屏和左右横屏；沿用 tap 的触点邻域、全屏检查及观察/设备/会话绑定。没有元素双击、任意连点次数或间隔配置；现有 XCTest 路径不变。
+
+整个序列属于一个动作，发送前做一次截图预检，两次点击之间不采集截图。每次按下后保持至少 60ms、第一次释放后等待至少 100ms；第二次按下必须在动作起始 300ms 内开始，整个序列受 600ms 执行期限约束。宿主调度和传输可能增加间隔；错过窗口就停止，不把迟到的第二次点击补发成独立点击。持续检查取消和媒体健康，失败时沿用同通道触点释放。
+
+一旦尝试发送第一次触控，后续错误都可能已产生单击或双击效果，返回 unknown，不能自动重放。`contactsAttempted`、`tapPairsQueued`、`hostDownUptimes` 只表示宿主发送事实，不确认设备识别。成功排队也仍需视觉检查新截图。双击选词、缩放等语义由 App 决定。

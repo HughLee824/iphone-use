@@ -18,6 +18,17 @@ final class DeviceActionTests: XCTestCase {
         XCTAssertThrowsError(try DeviceAction(operation: "tap", request: request.merging(["duration": 1]) { _, new in new }))
     }
 
+    func testDoubleTapRequiresNativeFiniteScreenshotCoordinates() throws {
+        let request: [String: Any] = ["reference": "o1", "x": 40, "y": 80]
+        XCTAssertNoThrow(try DeviceAction(operation: "double-tap", request: request, allowScreenText: true))
+        XCTAssertThrowsError(try DeviceAction(operation: "double-tap", request: request))
+        for invalid: [String: Any] in [["reference": "o1:e1"], ["reference": "o1:e1", "x": 40, "y": 80],
+            ["reference": "o1", "x": 40], ["reference": "o1", "x": Double.nan, "y": 80],
+            request.merging(["duration": 1]) { _, new in new }, request.merging(["velocity": 100]) { _, new in new }] {
+            XCTAssertThrowsError(try DeviceAction(operation: "double-tap", request: invalid, allowScreenText: true))
+        }
+    }
+
     func testInputModesUnicodeAndControlKeys() throws {
         for mode in ["insert", "replace"] {
             let action = try DeviceAction(operation: "type", request: ["reference": "o1:e27", "mode": mode, "text": "北京👩‍💻e\u{301}"])

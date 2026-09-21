@@ -257,3 +257,10 @@ Open the ordinary Probe's **Keyboard workflow**, prepare the native keyboard, th
 Verify Tab and Shift+Tab change the Probe's active editor and their respective counters, then Escape ends editing without changing text. These are explicit Probe app shortcuts, not a promise of global iOS focus traversal or cancel behavior. Re-focus visibly before subsequent text.
 
 Select Left/Right using the visible scene buttons. For each direction, inspect the new PNG, choose the complete current field rectangle and send one `type ... --mode replace --method paste --text '横屏中文🙂' --observe`. Check the entire field/value label and focus, then finish the actual clipboard transaction with the current inspected observation. Never count queue completion or status=0 as insertion. Observe again before a new direction/action; keep the existing guard/TTL and record any rejection. Close only this session and verify keyboard removal, scoped media stop, clipboard restoration, tunnel release and host exit.
+
+
+## Native double tap
+
+Open the ordinary Probe's **Double tap workflow**. Inspect a fresh PNG, choose the teal target's center in current screen points and send one `double-tap oN --x X --y Y --observe`. Require Double to increase exactly once and Single to stay unchanged. Then separately inspect the standard selectable UIKit text view, double tap the visible word `bravo`, and inspect its actual highlight plus `Selected: bravo` and UTF-16 range. The text view must not implement selection through a custom double-tap handler.
+
+Repeat the target recognition check in Left and Right using the visible Probe scene buttons, taking a new observation and coordinates after each rotation. Distinguish equal-sized directions using capture metadata. End in Portrait. Record rejected preflights and partial/unknown submissions; do not blindly retry. Host tests cover timed report sequence, cancellation, late second-contact prevention and failed sends; they are not physical fault-injection evidence. Verify scoped media/tunnel cleanup and actual host exit.
