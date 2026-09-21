@@ -11,7 +11,36 @@ final class NativeTextInputTests: XCTestCase {
         for method in ["keys", "auto"] { XCTAssertThrowsError(try NativeTextInput(text: text, mode: "insert", method: method)) }
         XCTAssertThrowsError(try NativeTextInput(text: "中文", mode: "insert", method: "keys"))
         XCTAssertThrowsError(try NativeTextInput(text: "abc", mode: "insert", method: "invalid"))
-        XCTAssertThrowsError(try NativeTextInput(text: "abc\n", mode: "insert", method: "paste"))
+        XCTAssertThrowsError(try NativeTextInput(text: "abc\t", mode: "insert", method: "paste"))
+    }
+
+    func testMultilinePastePreservesBytesAndNeverSynthesizesReturn() throws {
+        for text in ["one\ntwo\n", "第一行🙂\n\n末行", "one\r\ntwo", "one\rtwo"] {
+            for mode in ["insert", "replace", "append"] {
+                for method in ["auto", "paste"] {
+                    let action = try DeviceAction(operation: "type", request: ["reference": "o1", "mode": mode,
+                        "text": text, "textMethod": method], allowScreenText: true)
+                    let payload = try XCTUnwrap(action.fields["text"] as? String)
+                    guard case .pasteboard(let value) = try NativeTextInput(text: payload, mode: mode, method: method) else {
+                        return XCTFail("Line breaks must never generate keyboard Return reports")
+                    }
+                    XCTAssertEqual(Array(value.utf8), Array(text.utf8))
+                }
+                XCTAssertThrowsError(try NativeTextInput(text: text, mode: mode, method: "keys"))
+                XCTAssertThrowsError(try DeviceAction(operation: "type", request: ["reference": "o1", "mode": mode,
+                    "text": text, "textMethod": "keys"], allowScreenText: true))
+            }
+            XCTAssertNoThrow(try DeviceAction(operation: "type", request: ["reference": "o1", "mode": "insert", "text": text], allowScreenText: true))
+            XCTAssertThrowsError(try DeviceAction(operation: "type", request: ["reference": "o1:e1", "mode": "insert", "text": text]))
+        }
+        for text in ["a\n\u{0}", "a\n\t", "a\r\u{1b}", "a\n\u{7f}", "a\n\u{2028}"] {
+            XCTAssertThrowsError(try NativeTextInput(text: text, mode: "insert", method: "paste"))
+            XCTAssertThrowsError(try DeviceAction(operation: "type", request: ["reference": "o1", "mode": "insert", "text": text], allowScreenText: true))
+        }
+        let limit = String(repeating: "a", count: 4095) + "\n"
+        guard case .pasteboard(let value) = try NativeTextInput(text: limit, mode: "insert") else { return XCTFail("Expected paste") }
+        XCTAssertEqual(value.utf8.count, 4096)
+        XCTAssertThrowsError(try NativeTextInput(text: limit + "a", mode: "insert"))
     }
 
     func testMethodSurvivesActionAndObservationResolutionAndRejectsRunner() throws {
@@ -52,7 +81,7 @@ final class NativeTextInputTests: XCTestCase {
         }
         guard case .keyboard(let keys) = try NativeTextInput(text: "Ab7!?", mode: "insert") else { return XCTFail("ASCII changed") }
         XCTAssertEqual(keys, try NativeKeyboard.keys(for: "Ab7!?", mode: "insert"))
-        for text in ["", "中\n文", "中\t文", "中\u{85}", "中\u{2028}", String(repeating: "中", count: 1366), String(repeating: "a", count: 65)] {
+        for text in ["", "中\t文", "中\u{85}", "中\u{2028}", String(repeating: "中", count: 1366), String(repeating: "a", count: 65)] {
             XCTAssertThrowsError(try NativeTextInput(text: text, mode: "insert"))
         }
         XCTAssertThrowsError(try NativeTextInput(text: "中文", mode: "unknown"))
@@ -65,7 +94,7 @@ final class NativeTextInputTests: XCTestCase {
             guard case .keyboard(let keys) = try NativeTextInput(text: "Ab", mode: mode) else { return XCTFail("Expected keys") }
             XCTAssertEqual(keys, [[225, 4], [5]])
             XCTAssertThrowsError(try NativeTextInput(text: "中文", mode: mode, method: "keys"))
-            XCTAssertThrowsError(try NativeTextInput(text: "abc\n", mode: mode))
+            XCTAssertThrowsError(try NativeTextInput(text: "abc\t", mode: mode))
             XCTAssertThrowsError(try NativeTextInput(text: String(repeating: "a", count: 4097), mode: mode, method: "paste"))
         }
         for method in ["auto", "keys", "paste"] {

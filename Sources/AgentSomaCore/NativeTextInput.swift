@@ -12,9 +12,11 @@ enum NativeTextInput {
         guard !text.isEmpty, text.utf8.count <= TextInput.maximumBytes,
               text.unicodeScalars.allSatisfy({
                   let value = $0.value
+                  if method != "keys" && (value == 10 || value == 13) { return true }
                   return value >= 32 && !(127...159).contains(value) && value != 0x2028 && value != 0x2029 && !(0xF700...0xF8FF).contains(value)
-              }) else { throw SomaError("native_text_unsupported", "Use 1...4096 UTF-8 bytes without control keys or newlines") }
-        if method == "keys" || (method == "auto" && text.utf8.allSatisfy({ $0 < 128 })) { self = .keyboard(try NativeKeyboard.keys(for: text, mode: "insert")) }
+              }) else { throw SomaError("native_text_unsupported", "Use 1...4096 UTF-8 bytes without control keys; LF/CR require auto or paste") }
+        // Even ASCII line breaks are pasted literally, never sent as Return.
+        if method == "keys" || (method == "auto" && text.utf8.allSatisfy({ (32...126).contains($0) })) { self = .keyboard(try NativeKeyboard.keys(for: text, mode: "insert")) }
         else { self = .pasteboard(text) }
     }
     var usesPasteboard: Bool { if case .pasteboard = self { return true }; return false }

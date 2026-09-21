@@ -173,7 +173,7 @@ Long-press menus, drag-and-drop behavior, arbitrary-app keyboard/Chinese input, 
 
 ## Unicode text input (2026-09-20)
 
-`type oN --mode insert --text '中文'` now accepts a Unicode payload through Apple's paired `com.apple.coredevice.pasteboardservice` and one self-written HID Command-V chord. Mixed text is transferred as one exact UTF-8 payload; the backend does not transliterate, select IME candidates or infer focus. ASCII retains the existing US key mapping/64-character limit. Unicode payloads accept up to 4096 UTF-8 bytes, without control keys or newlines. The original screenshot, complete optional `--field-rect`, device/session, portrait and 30-second age checks still apply.
+`type oN --mode insert --text '中文'` now accepts a Unicode payload through Apple's paired `com.apple.coredevice.pasteboardservice` and one self-written HID Command-V chord. Mixed text is transferred as one exact UTF-8 payload; the backend does not transliterate, select IME candidates or infer focus. ASCII retains the existing US key mapping/64-character limit. Unicode or multiline payloads accept up to 4096 UTF-8 bytes. Auto/paste preserve LF/CR/CRLF as literal clipboard text; keys and other control characters remain unsupported. The original screenshot, complete optional `--field-rect`, device/session, portrait and 30-second age checks still apply.
 
 The pasteboard channel is opened lazily on the same granted tunnel; its broker reply must advertise the pasteboard feature. Correlated `PULL`/`SET` requests use the existing native transport. There is no pasteboard CLI subprocess or host-system clipboard in the implementation. `SET_REPLY` can omit flavor data: a separate `allResolved` PULL verifies exact contents, ordered types, nonce and change count. The original ordered items/flavors are kept only in memory (up to 64 items/64 flavors per item/16 MiB materialized data). Unresolved or unsupported content is rejected, not discarded. Clipboard-service errors do not interpolate private reply contents into logs.
 
@@ -538,3 +538,20 @@ These checks establish fixed-orientation, quiescent-start recording and control 
 **Open rotation issue:** after the Left recording, an attempted Left→Right transition retained Apple `rot90` metadata. Later Probe text showed UIKit 3 (Right) while metadata still said `rot90`, and an intended Portrait-button tap incremented D instead. Input was stopped when that mismatch became visible. After explicit scoped disconnect/reconnect, both the new metadata (`rot270`) and Probe agreed; subsequent fixed-Right recording/tap and return to Portrait succeeded. The triggering timing and whether this behavior predates recording refresh are not established. Earlier rotation acceptance must not be treated as covering this sequence; same-session continuous rotation after recording remains unaccepted. Do not replay inputs or compensate coordinates when orientation evidence disagrees.
 
 Host verification: 244 Swift tests executed (243 passed, one existing opt-in skip), 37 Python tests passed; Release build passed. New tests cover same-geometry owned refresh, lost-stop no-retry, input readiness, foreign geometry refusal, opposite transforms surviving actual HEVC mux/decode and exact frame extraction, and unsupported orientation. Both device control sessions acknowledged scoped media/receiver/tunnel cleanup and host exit was independently checked. No source change was made after those checks other than documentation. No release or remote push.
+
+
+## Native multiline paste (2026-09-21)
+
+Native `type` now accepts LF/CR/CRLF in auto/paste for insert, replace and append. The existing clipboard transaction carries the complete string unchanged; even ASCII multiline payloads choose paste. No Return reports, line-by-line typing or newline normalization are added. Explicit keys and XCTest retain newline rejection; other unsupported controls and the 4096-byte limit remain. `--stdin` already preserves literal input, including a trailing newline.
+
+Controlled ordinary UIKit Probe checks on macOS 27.0 (26A428), Xcode 27.0 (27A266a), wired iPhone 12 Pro / iOS 27.0 verified:
+
+| Mode / method | Visible resulting text (escaped LF) | UTF-8 / scalars / selection UTF-16 | Observation |
+| --- | --- | --- | --- |
+| replace / paste | `第一行🙂\n\n第三行\n` | 25 / 10 / 11,0 | o6 |
+| append / auto, ASCII payload | `头🙂尾Append\nlast` | 21 / 14 / 15,0 | o9 |
+| insert / auto, replacing selected emoji | `头\n插入🙂\n结束尾` | 24 / 9 / 9,0 | o14 |
+
+Each fixture started with `头🙂尾`; replace/insert selected the emoji, append selected the first character. Each result showed exactly one edit and retained active focus. Complete rendered text and counts were compared externally against the supplied payload. The Probe's built-in single-line expected fixtures were not changed, so their `NOT MATCHED` label is expected here; this is not an automated byte-for-byte device assertion. All dispatched input outcomes remained unknown, with no replay. Two insert attempts expired before dispatch; fresh inspected observations were required. All three clipboard restores were acknowledged/read back, scoped media/keyboard/tunnel cleanup succeeded, and host exit was independently confirmed.
+
+Host validation: 245 Swift tests executed (244 passed, one existing opt-in skip), 37 Python tests passed, Release build succeeded with existing recording API deprecation warnings. Tests cover LF/CR/CRLF exact bytes, all modes, ASCII routing, keys/Runner rejection, other controls and byte limits. Physical checks cover LF only; CR/CRLF handling by target editors, single-line fields, web/custom editors and submission semantics are not established by these Probe results. Private evidence: `.local/research/apple-native-multiline-20260921/RESULT.md` and `acceptance/`.

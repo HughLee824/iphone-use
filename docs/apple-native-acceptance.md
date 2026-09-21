@@ -305,3 +305,10 @@ Follow-up diagnosis isolated quiescent-stream startup and missing MP4 track orie
 
 
 Fixed-direction quiescent-start checks subsequently passed for Left (Debug) and Right (Release), with upright full-decode movies and independently inspected A/B counter changes. Portrait Release and concurrent-start refusal also passed. See [implementation and precise limits](apple-native-backend.md#landscape-recording-startup-and-presentation-2026-09-21). Static-tail wall-time coverage remains incomplete. A same-session Left→Right sequence exposed disagreement between Apple direction metadata and the Probe, including an unintended D hit; that sequence is not accepted. Stop input on visible direction disagreement and explicitly close/reconnect before new inspection. Do not replace these limits with a blanket landscape/rotation pass.
+
+
+## Native multiline text
+
+Use the ordinary Text Probe, prepare the keyboard, and load the visible replace/append/insert fixtures. Inspect focus, selection and the complete field before each action. Pass a literal UTF-8 multiline file through `--stdin`; use Unicode/emoji/blank/trailing lines for replace, pure ASCII multiline with auto for append, and Unicode multiline over a selected range for insert. Compare the complete resulting text, UTF-8/scalar counts, selection and edit count against the expected result. A fixture's existing single-line `NOT MATCHED` label does not validate or invalidate a different test payload. Inspect each result before `text-finish`, require clipboard restoration, and verify owned cleanup and actual host exit.
+
+Completed on 2026-09-21: private `apple-native-multiline-20260921/acceptance/observations/o6,o9,o14` show the three intended LF results and one edit each. Two stale-observation refusals dispatched no input. Host tests establish CR/CRLF payload preservation; those editor behaviors were not physically tested. See [results and limits](apple-native-backend.md#native-multiline-paste-2026-09-21).
