@@ -1,6 +1,6 @@
 # Experimental Apple native backend
 
-The opt-in `apple-native` backend uses Apple `devicectl`, the paired-device XPC service, system RemoteXPC, AVConference, and AgentSoma's Swift/Objective-C code. It never starts a Runner or falls back to XCTest. `xctest` remains the default release backend; Apple's ArgumentParser dependency is unchanged.
+The `apple-native` backend (standard mode) uses Apple `devicectl`, the paired-device XPC service, system RemoteXPC, AVConference, and AgentSoma's Swift/Objective-C code. It never starts a Runner or falls back to XCTest. Published releases retain their existing default; this checkout now selects standard/Runner using the [mode configuration contract](control-modes.md); Apple's ArgumentParser dependency is unchanged.
 
 **Current acceptance: the screenshot → coordinate → self-written HID → screenshot loop works on the controlled iPhone under macOS/iOS 27.** Both debug and release builds now connect without an endpoint inventory, including with Device Hub and Xcode exited and the tunnel initially disconnected. New independent-session screenshots visually confirmed Probe target hits `6 → 7 → 8`; scoped media stop and pairing assertion release were acknowledged. This is controlled Probe acceptance, not general app/device compatibility; the landscape extension is recorded below.
 
@@ -15,7 +15,7 @@ Reproducible host, media/lifecycle, visual-tap and fault-injection procedures: [
 ```sh
 swift build
 .build/debug/agentsoma devices
-.build/debug/agentsoma connect --backend apple-native --device "$DEVICE_ID"
+.build/debug/agentsoma connect --mode standard --device "$DEVICE_ID"
 .build/debug/agentsoma --session "$SESSION" observe
 .build/debug/agentsoma --session "$SESSION" tap o1 --x 195 --y 298
 .build/debug/agentsoma --session "$SESSION" disconnect

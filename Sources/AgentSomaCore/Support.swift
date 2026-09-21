@@ -52,6 +52,12 @@ struct HostConfiguration: Codable {
     let idleTimeoutSeconds: TimeInterval
     var backend: String? = nil
     var nativeEndpointInventory: String? = nil
+    var modeSource: String? = nil
+
+    var modeSelection: ModeSelection {
+        ModeSelection(mode: backend == "apple-native" ? .standard : .runner,
+                      source: modeSource ?? "legacy_session")
+    }
 }
 
 public struct SessionPaths {

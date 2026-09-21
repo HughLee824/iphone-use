@@ -15,7 +15,7 @@ struct SessionOptions: ParsableArguments {
 struct AgentSoma: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "agentsoma", abstract: "Eyes and hands for agents operating a real iPhone.", version: RunnerSetup.releaseVersion,
-        subcommands: [Setup.self, BuildRunner.self, Devices.self, Connect.self, Status.self, Apps.self, Open.self, Terminate.self, Relaunch.self, Observe.self, Inspect.self, Tap.self, DoubleTap.self, Pinch.self, LongPress.self, Swipe.self, Home.self, TypeText.self, TextPrepare.self, TextFinish.self, Press.self, RecordStart.self, RecordStop.self, Disconnect.self, Host.self])
+        subcommands: [Configuration.self, Setup.self, BuildRunner.self, Devices.self, Connect.self, Status.self, Apps.self, Open.self, Terminate.self, Relaunch.self, Observe.self, Inspect.self, Tap.self, DoubleTap.self, Pinch.self, LongPress.self, Swipe.self, Home.self, TypeText.self, TextPrepare.self, TextFinish.self, Press.self, RecordStart.self, RecordStop.self, Disconnect.self, Host.self])
     @OptionGroup var options: SessionOptions
 }
 
@@ -59,25 +59,52 @@ struct BuildRunner: ParsableCommand {
 struct Connect: ParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Start a device session using the selected backend.")
     @Option(help: "Connected iPhone UDID or CoreDevice identifier.") var device: String
-    @Option(help: "Developer override: explicit signed .xctestrun. Release users run setup once, then omit this option.") var xctestrun: String?
+    @Option(help: "Runner source workflow: explicit signed .xctestrun. Packaged Runner users run setup once, then omit this option.") var xctestrun: String?
     @Option(help: "Idle duration, such as 30m, 60m or 10s.") var idleTimeout = "30m"
-    @Option(help: "xctest (default) or experimental apple-native. Native readiness reports control availability explicitly.") var backend = "xctest"
+    @Option(help: "standard (screenshot/HID) or runner (XCTest). Omit to use ~/.agentsoma/config.json.") var mode: String?
+    @Option(help: "Compatibility option: apple-native = standard; xctest = runner. Conflicting options are rejected.") var backend: String?
     @Option(help: "Diagnostic override: a recent Apple netstat -anvl -p tcp file selects direct RSD discovery. Native connections normally use CoreDevice service sockets.") var nativeEndpointInventory: String?
 
     mutating func run() throws {
         try output {
-            guard ["xctest", "apple-native"].contains(backend) else { throw ValidationError("Use --backend xctest or apple-native") }
-            if backend == "apple-native" {
-                guard xctestrun == nil else { throw ValidationError("--xctestrun is not used by apple-native") }
-                return try SessionClient.connectNative(device: device, idleTimeout: IdleTimeout(idleTimeout), endpointInventory: nativeEndpointInventory)
+            let timeout = try IdleTimeout(idleTimeout)
+            let selection = try ModeConfiguration().select(mode: mode, backend: backend, xctestrun: xctestrun,
+                                                           nativeEndpointInventory: nativeEndpointInventory)
+            if selection.mode == .standard {
+                return try SessionClient.connectNative(device: device, idleTimeout: timeout, endpointInventory: nativeEndpointInventory, modeSource: selection.source)
             }
-            guard nativeEndpointInventory == nil else { throw ValidationError("--native-endpoint-inventory requires --backend apple-native") }
             if let xctestrun {
                 return try SessionClient.connect(device: device,
                     xctestrun: URL(fileURLWithPath: xctestrun).standardizedFileURL,
-                    idleTimeout: IdleTimeout(idleTimeout))
+                    idleTimeout: timeout, modeSource: selection.source)
             }
-            return try RunnerSetup.connect(device: device, idleTimeout: IdleTimeout(idleTimeout))
+            return try RunnerSetup.connect(device: device, idleTimeout: timeout, modeSource: selection.source)
+        }
+    }
+}
+
+struct Configuration: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "config", abstract: "Read or set defaults for new device sessions.",
+                                                     subcommands: [Get.self, Set.self])
+    struct Get: ParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Read the effective default mode without creating configuration or connecting a device.")
+        @Argument(help: "Configuration key: mode.") var key: String
+        mutating func run() throws {
+            try output {
+                guard key == "mode" else { throw ValidationError("Supported configuration key: mode") }
+                return ["ok": true, "result": try ModeConfiguration().get()]
+            }
+        }
+    }
+    struct Set: ParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Save the mode for future sessions; existing sessions keep their backend.")
+        @Argument(help: "Configuration key: mode.") var key: String
+        @Argument(help: "standard or runner.") var value: String
+        mutating func run() throws {
+            try output {
+                guard key == "mode" else { throw ValidationError("Supported configuration key: mode") }
+                return ["ok": true, "result": try ModeConfiguration().set(mode: value)]
+            }
         }
     }
 }
@@ -116,7 +143,7 @@ struct Apps: ParsableCommand {
 }
 
 struct Status: ParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Check the session and Runner without renewing idle time.")
+    static let configuration = CommandConfiguration(abstract: "Check the selected session backend without renewing idle time.")
     @OptionGroup var options: SessionOptions
     mutating func run() throws {
         let session = try options.requiredSession()

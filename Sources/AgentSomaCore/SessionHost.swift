@@ -72,7 +72,13 @@ final class SessionHost {
         } catch { _ = backend.stop(); throw error }
     }
 
-    private func receive(_ request: [String: Any], reply: @escaping JSONServer.Reply) {
+    private func receive(_ request: [String: Any], reply originalReply: @escaping JSONServer.Reply) {
+        // Session identity comes from the immutable host configuration, never current user defaults.
+        let reply: JSONServer.Reply = { [config] response, completion in
+            var response = response
+            response.merge(config.modeSelection.result) { _, selected in selected }
+            originalReply(response, completion)
+        }
         let id = request["id"] as? String ?? ""
         let requestedOperation = request["op"] as? String ?? ""
         let operation = requestedOperation == "type-with-method" ? "type" : requestedOperation
@@ -169,7 +175,11 @@ final class SessionHost {
             var effective = appAction
             do {
                 switch operation {
-                case "status": response["result"] = try backend.status()
+                case "status":
+                    var status = try backend.status()
+                    status.merge(config.modeSelection.result) { _, selected in selected }
+                    status["support"] = config.modeSelection.mode.support
+                    response["result"] = status
                 case "apps":
                     response["result"] = try backend.apps().page(query: request["query"] as? String, offset: request["offset"] as! Int)
                     effective = true

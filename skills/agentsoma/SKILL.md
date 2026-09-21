@@ -11,7 +11,7 @@ Use the local `agentsoma` CLI for iPhone observation and input. The calling agen
 
 Workflow version: **0.1.3**. The public package path requires **AgentSoma CLI 0.1.0 or later**. The plugin contains instructions, not the CLI or a signed Runner.
 
-Before the first device command in a new task, run `sh scripts/preflight.sh` using the absolute path resolved relative to **this SKILL.md**, not the user's working directory. This read-only check verifies CLI version and full Xcode, and reports whether action `--observe` is available. If the CLI is missing, follow the [first-task guide](https://github.com/HughLee824/AgentSoma/blob/main/docs/first-task.md): `brew install HughLee824/tap/agentsoma`. Restart the client after PATH changes. Device trust, Developer Mode, and signing still need setup; the check does not prove a phone is ready.
+Before the first device command in a new task, run `sh scripts/preflight.sh` using the absolute path resolved relative to **this SKILL.md**, not the user's working directory. This read-only check verifies CLI version and full Xcode, and reports whether action `--observe` is available. If the CLI is missing, follow the [first-task guide](https://github.com/HughLee824/AgentSoma/blob/main/docs/first-task.md): `brew install HughLee824/tap/agentsoma`. Restart the client after PATH changes. Device trust and Developer Mode still need setup; Runner mode additionally needs signing; the check does not prove a phone is ready.
 
 For an **explicitly chosen source workflow** with a supplied signed `.xctestrun`, pass `--source` to the preflight so an unversioned `development` CLI can be checked. Do not silently switch a release user to a development build. Resolve the installed skill's actual base directory rather than assuming the client cache layout; a local marketplace can expose its source directory.
 
@@ -22,6 +22,14 @@ For an **explicitly chosen source workflow** with a supplied signed `.xctestrun`
 - Follow `setup_required` / `setup_update_required` with the indicated `agentsoma setup --device DEVICE_ID`, using existing signing configuration, then connect again. Use a supplied signed `.xctestrun` for an explicitly chosen source workflow. Do not rebuild Runner or search signing directories for every task.
 - A `coredevice_initialization_timeout` does not establish a disconnected phone. Follow its diagnostic: compare read-only device discovery once in an approved host execution context before repeating commands or restarting services. Keep the execution environment consistent once it works. Recover CLI discovery or connection errors through the CLI and its diagnostics; switching to desktop computer-use discovery does not resolve iPhone access.
 - If the same connection error remains after one diagnostic comparison and the device state is unchanged, stop retrying. Request the missing USB connection, unlock, trust, or stated permission and wait for new evidence. Do not run `setup` to repair an unavailable device tunnel unless the CLI specifically requires setup. Report the block and continue independent work; do not add timed connect loops.
+
+## Respect the selected control mode
+
+On a CLI whose `connect --help` lists `--mode`, use `connect --device DEVICE_ID` to honor the saved default in `~/.agentsoma/config.json`. Pass `--mode standard` or `--mode runner` only for the user's explicit choice; do not change `config set mode` without authorization. Existing `--backend apple-native|xctest` is a compatibility option. A supplied signed `--xctestrun` implies Runner. Older released CLIs retain their documented Runner workflow; do not send them unsupported mode/config options.
+
+Read `mode`, `backend`, `modeSource` and `result.support` from connection/status when available. Standard means screenshots and HID; it requires the supported Apple toolchain/device environment but no Runner signing or installation. Runner means XCTest with available element data. Support describes implemented command forms, not live readiness: check standard-mode `controlAvailable`, capabilities and recovery; read actual observations for element availability. Do not infer support from the mode name alone. Unsupported actions and native connection failures must never start the other backend. Follow setup instructions only for the explicitly selected Runner route.
+
+Keep the selected backend for the lifetime of the session. Configuration changes apply to new connections. Switching requires an explicitly requested close, owned cleanup, a new connection and a fresh observation; never migrate old references or replay an unknown action. The agent plans and verifies; AgentSoma reports access and execution facts. Feature parity is a future goal, not permission to mix routes.
 
 ## Keep command completion visible
 
@@ -35,8 +43,8 @@ There are separate identities: the AgentSoma device session, the execution tool'
 
 ## Observe, act, verify
 
-1. Open the discovered app, then `observe`. Read the returned PNG with the available image tool and combine it with the AX text. Screenshot coordinates are pixels; action coordinates are `screen_points`.
-2. If a target is omitted from compact output, use `inspect oN --query TEXT` or inspect a known subtree. This searches captured data only; `source_missing=true` cannot be repaired by paging the same snapshot. Use the screenshot to resolve ambiguous matches and geometry.
+1. Open the discovered app, then `observe`. Read the returned PNG with the available image tool; combine it with captured element text when available. Standard mode has no element tree. Screenshot coordinates are pixels; action coordinates are `screen_points`.
+2. When an element snapshot exists and a target is omitted from compact output, use `inspect oN --query TEXT` or inspect a known subtree. This searches captured data only; `source_missing=true` cannot be repaired by paging the same snapshot. Use the screenshot to resolve ambiguous matches and geometry.
 3. Perform one selected action with a current reference. Keep screen-guard defaults; `--max-screen-change` measures changes **before input**, relative to the observation, not the size of the expected animation or scroll. Change it only after understanding a concrete guard rejection.
 4. After `completed` or `unknown`, observe again before another input. `completed` describes input completion, not task success. `unknown` may already have changed the app: inspect the result before deciding any further action, and do not automatically replay it. A `not_dispatched` error may still require a fresh observation; follow `requiresObservation` and reference validity.
 

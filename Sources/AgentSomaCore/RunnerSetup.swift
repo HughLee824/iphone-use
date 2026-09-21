@@ -79,7 +79,7 @@ public enum RunnerSetup {
                 "verified": ["connection", "observation-capture", "disconnect"]]
     }
 
-    public static func connect(device: String, idleTimeout: IdleTimeout) throws -> [String: Any] {
+    public static func connect(device: String, idleTimeout: IdleTimeout, modeSource: String = "explicit_runner") throws -> [String: Any] {
         let package = try RunnerPackage.installed()
         let root = stateDirectory
         // Resolve CoreDevice aliases to the same durable device identity used by setup.
@@ -91,7 +91,7 @@ public enum RunnerSetup {
         let record = try readRecord(device: udid, root: root)
         try validate(record, package: package, root: root)
         var response = try SessionClient.connect(device: udid,
-            xctestrun: root.appendingPathComponent("prepared/\(record.directory)/Runner.xctestrun"), idleTimeout: idleTimeout)
+            xctestrun: root.appendingPathComponent("prepared/\(record.directory)/Runner.xctestrun"), idleTimeout: idleTimeout, modeSource: modeSource)
         response["runner"] = ["releaseVersion": package.manifest.releaseVersion, "runnerVersion": record.runnerVersion, "bundleId": record.bundleID]
         return response
     }
@@ -152,6 +152,30 @@ public enum RunnerSetup {
               (try? RunnerPackage.inventory(root.appendingPathComponent("prepared/\(record.directory)"))) == record.files else {
             throw SomaError("setup_state_invalid", "Prepared Runner files are missing or changed; run setup again")
         }
+    }
+
+    /// Local-only migration: certificates or Xcode alone never select Runner.
+    static func hasValidLegacyConfiguration(root: URL = stateDirectory,
+                                            package: () throws -> RunnerPackage = { try RunnerPackage.installed() }) throws -> Bool {
+        let devices = root.appendingPathComponent("devices")
+        guard FileManager.default.fileExists(atPath: devices.path) else { return false }
+        let records = try FileManager.default.contentsOfDirectory(at: devices, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "json" }
+        guard !records.isEmpty else { return false }
+        do {
+            let package = try package()
+            let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+            for path in records {
+                guard let data = try? Data(contentsOf: path),
+                      let record = try? decoder.decode(PreparedRunner.self, from: data),
+                      path.lastPathComponent == "\(RunnerPackage.hash(Data(record.device.utf8))).json",
+                      (try? validate(record, package: package, root: root)) != nil else { continue }
+                return true
+            }
+        } catch {
+            throw SomaError("mode_selection_required", "Existing Runner setup cannot be validated: \(error). Choose with config set mode runner or config set mode standard")
+        }
+        throw SomaError("mode_selection_required", "Existing Runner records are expired, incomplete or incompatible. Choose with config set mode runner or config set mode standard; no automatic switch")
     }
 
     static func readRecord(device: String, root: URL) throws -> PreparedRunner {

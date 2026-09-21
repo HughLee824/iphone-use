@@ -19,6 +19,12 @@ AgentSoma 是一个 macOS CLI，让外部 agent 能够发现 App、读取截图�
 
 [网站](https://agentsoma.dev) · [首个 iPhone 任务](docs/first-task.md) · [客户端插件](docs/plugins.md) · [命令概览](#命令概览) · [文档导航](#文档导航)
 
+## 控制模式（当前源码，尚未发布）
+
+当前源码提供 **standard**（截图 + 原生 HID）和 **runner**（XCTest）两种模式。用 `agentsoma config set mode standard` 或 `runner` 设置默认，再运行 `agentsoma connect --device "$DEVICE"`；单次覆盖使用 `--mode standard|runner`。偏好保存在 `~/.agentsoma/config.json`，原有 `--backend` 和签名 `--xctestrun` 用法保持兼容。新用户默认 standard，有效的旧 Runner 配置迁移为 runner；修改偏好不会改变已有会话。
+
+标准模式目前仍要求已记录的 macOS/Xcode/iOS 27 环境、配对、Developer Mode 和解锁，但不需要 Runner 签名。Runner 后续逐步对齐功能，当前以会话返回的支持能力和就绪状态为准。详见[模式配置、迁移与 Agent 规则](docs/control-modes.md)。下方安装与签名引导描述已有 **Runner** 发布流程，不是标准模式的前置步骤。
+
 ## 为什么选择 AgentSoma？
 
 - **同时观察画面与界面结构。** 观察返回 PNG 路径、紧凑的辅助功能（AX）文本和元素引用，可用 `inspect` 展开或搜索缓存快照。

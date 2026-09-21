@@ -1,5 +1,8 @@
 # Your first iPhone task
 
+> This guide describes the published Runner workflow. This checkout also adds standard (screenshot/HID) mode and `~/.agentsoma/config.json`; see [control modes](control-modes.md) before configuring a source build. These mode-management changes are not yet released. Standard mode does not require Runner signing/setup.
+
+
 Start at the [AgentSoma website](https://agentsoma.dev). This guide follows the public **Homebrew → client plugin → device setup → first task** path. It works outside the AgentSoma source checkout.
 
 [中文安装](install.md) · [中文插件指南](plugins.md) · [Troubleshooting](#when-something-stops)

@@ -179,6 +179,37 @@ final class RunnerSetupTests: XCTestCase {
         assertError("setup_state_invalid") { try RunnerSetup.validate(missing, package: package, root: root) }
     }
 
+    func testModeMigrationRequiresAnIntactUnexpiredMatchingRunner() throws {
+        let root = try temporaryDirectory()
+        XCTAssertFalse(try RunnerSetup.hasValidLegacyConfiguration(root: root, package: {
+            XCTFail("Fresh users do not need a Runner package")
+            throw SomaError("unexpected", "No package")
+        }))
+        let packageRoot = root.appendingPathComponent("package")
+        try makePackage(at: packageRoot)
+        let package = try RunnerPackage(directory: packageRoot)
+        let id = UUID().uuidString
+        let prepared = root.appendingPathComponent("prepared/\(id)")
+        try FileManager.default.createDirectory(at: prepared.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: packageRoot, to: prepared)
+        let files = try RunnerPackage.inventory(prepared)
+        func record(expires: Date) -> PreparedRunner {
+            PreparedRunner(formatVersion: 1, device: "fixture-device", directory: id, packageDigest: package.digest,
+                runnerVersion: package.manifest.runnerVersion, bundleID: "com.example.runner", team: "fixture",
+                identity: "fixture", profileDigest: "fixture", profileExpires: expires, files: files)
+        }
+        try RunnerSetup.writeRecord(record(expires: Date().addingTimeInterval(86400)), root: root)
+        XCTAssertTrue(try RunnerSetup.hasValidLegacyConfiguration(root: root, package: { package }))
+        try RunnerSetup.writeRecord(record(expires: .distantPast), root: root)
+        assertError("mode_selection_required") { _ = try RunnerSetup.hasValidLegacyConfiguration(root: root, package: { package }) }
+        try RunnerSetup.writeRecord(record(expires: Date().addingTimeInterval(86400)), root: root)
+        try Data("changed".utf8).write(to: prepared.appendingPathComponent("Runner.xctestrun"))
+        assertError("mode_selection_required") { _ = try RunnerSetup.hasValidLegacyConfiguration(root: root, package: { package }) }
+        assertError("mode_selection_required") {
+            _ = try RunnerSetup.hasValidLegacyConfiguration(root: root, package: { throw SomaError("runner_package_missing", "Fixture") })
+        }
+    }
+
     private func temporaryDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("runner setup \(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

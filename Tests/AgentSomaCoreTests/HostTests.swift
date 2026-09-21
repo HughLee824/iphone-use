@@ -459,6 +459,29 @@ final class HostTests: XCTestCase {
         return try JSONTransport.exchange(endpoint: .unix(path: paths.socket), request: request, timeout: 5)
     }
 
+    func testHostReportsFixedModeForStatusActionsRejectionsAndDisconnect() throws {
+        for native in [true, false] {
+            let backend = ControlledBackend()
+            let (paths, session, finished) = try host(timeout: 5, backend: backend, native: native)
+            let expectedMode = native ? "standard" : "runner"
+            let expectedBackend = native ? "apple-native" : "xctest"
+            let status = try call(paths, session: session, op: "status")
+            XCTAssertEqual((status["result"] as? [String: Any])?["mode"] as? String, expectedMode)
+            let support = (status["result"] as? [String: Any])?["support"] as? [String: Any]
+            XCTAssertEqual((support?["operations"] as? [String])?.contains("record-start"), native)
+            XCTAssertEqual(support?["textModes"] as? [String], native ? ["insert", "replace", "append"] : ["insert", "replace"])
+            let observed = try call(paths, session: session, op: "observe")
+            let rejected = try call(paths, session: session, op: "not-an-operation")
+            let disconnected = try call(paths, session: session, op: "disconnect")
+            for response in [status, observed, rejected, disconnected] {
+                XCTAssertEqual(response["mode"] as? String, expectedMode)
+                XCTAssertEqual(response["backend"] as? String, expectedBackend)
+                XCTAssertEqual(response["modeSource"] as? String, "legacy_session")
+            }
+            wait(for: [finished], timeout: 3)
+        }
+    }
+
     func testUnixIPCReuseDisconnectAndSocketRemoval() throws {
         let backend = ControlledBackend()
         let (paths, session, finished) = try host(timeout: 5, backend: backend)

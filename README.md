@@ -13,11 +13,17 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Swift](https://img.shields.io/badge/Swift-5.9%2B-F05138.svg)](Package.swift)
 
-AgentSoma is a macOS CLI that lets an external agent discover apps, read screenshots and accessibility data, and interact with a connected iPhone. Your agent handles natural language, planning, and judging results; AgentSoma provides device observations and actions through a persistent XCTest session.
+AgentSoma is a macOS CLI that lets an external agent discover apps, read screenshots and accessibility data, and interact with a connected iPhone. Your agent handles natural language, planning, and judging results; AgentSoma provides device observations and actions through a persistent device session.
 
 An agent needs local command execution and the ability to read PNG files. The device control path runs locally on your Mac and iPhone.
 
 [Website](https://agentsoma.dev) · [First iPhone task](docs/first-task.md) · [Client plugins](docs/plugins.md) · [Commands](#commands) · [Documentation](#documentation)
+
+## Control modes (unreleased checkout)
+
+This checkout supports **standard** (screenshot + native HID) and **runner** (XCTest). Choose with `agentsoma config set mode standard` or `runner`, then `agentsoma connect --device "$DEVICE"`; override one connection with `--mode standard|runner`. Preferences live in `~/.agentsoma/config.json`. Existing `--backend` and signed `--xctestrun` usage remain compatible. New users default to standard; valid legacy Runner setup migrates to runner. An active session never changes backend when preferences change.
+
+Standard currently requires the documented macOS/Xcode/iOS 27 environment, pairing, Developer Mode and unlock, but no Runner signing. Runner feature parity is planned; consult the returned support/readiness fields. See [mode selection, migration and Agent rules](docs/control-modes.md). The installation and signing walkthrough below describes the existing **Runner** release workflow; it is not a prerequisite for standard mode.
 
 ## Why AgentSoma?
 
@@ -57,7 +63,7 @@ agentsoma --help
 agentsoma devices
 ```
 
-Complete the [source signing setup](docs/onboarding.md#源码开发入口) in Xcode, then fill in your team ID and the device ID returned by `devices`:
+For Runner mode, complete the [source signing setup](docs/onboarding.md#源码开发入口) in Xcode, then fill in your team ID and the device ID returned by `devices`:
 
 ```sh
 export APPLE_TEAM_ID="YOUR_TEAM_ID"
