@@ -24,6 +24,7 @@ private final class ControlledBackend: SessionBackend {
     var nativeTextFixture = false
     var finishAcknowledged = true
     private(set) var finishCount = 0
+    private(set) var prepareCount = 0
     private(set) var lastTextMethod: String?
     private(set) var lastTextMode: String?
     let actionStarted = DispatchSemaphore(value: 0)
@@ -62,6 +63,10 @@ private final class ControlledBackend: SessionBackend {
         finishCount += 1
         return ["pasteboardRestoreAcknowledged": finishAcknowledged, "transactionID": transaction]
     }
+    func prepareText() throws -> [String: Any] {
+        prepareCount += 1
+        return ["keyboardPrepared": true, "inputReportsSent": 0]
+    }
     func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any] {
         lastTextMethod = action.fields["textMethod"] as? String
         lastTextMode = action.fields["mode"] as? String
@@ -82,6 +87,49 @@ private final class ControlledBackend: SessionBackend {
 }
 
 final class HostTests: XCTestCase {
+    func testNativePreparationCapturesNewSourceThenReturnRemainsUnknownWithoutReplay() throws {
+        let backend = ControlledBackend(); backend.nativeSend = true; backend.nativeTextFixture = true
+        let (paths, session, finished) = try host(timeout: 5, backend: backend, native: true)
+        defer { _ = try? call(paths, session: session, op: "disconnect"); wait(for: [finished], timeout: 3) }
+        _ = try call(paths, session: session, op: "observe")
+        let prepared = try call(paths, session: session, op: "text-prepare")
+        XCTAssertEqual(prepared["outcome"] as? String, "completed")
+        XCTAssertEqual((prepared["result"] as? [String: Any])?["afterObservationID"] as? String, "o2")
+        XCTAssertEqual(backend.prepareCount, 1)
+        XCTAssertEqual(backend.inputCount, 0)
+        let stale = try call(paths, session: session, op: "press", fields: ["reference": "o1", "key": "return"])
+        XCTAssertEqual(stale["outcome"] as? String, "not_dispatched")
+        XCTAssertEqual(backend.inputCount, 0)
+        let pressed = try call(paths, session: session, op: "press", fields: ["reference": "o2", "key": "return"])
+        XCTAssertEqual(pressed["outcome"] as? String, "unknown")
+        XCTAssertEqual((pressed["result"] as? [String: Any])?["afterObservationID"] as? String, "o3")
+        XCTAssertEqual(backend.inputCount, 1)
+        _ = try call(paths, session: session, op: "press", fields: ["reference": "o2", "key": "return"])
+        XCTAssertEqual(backend.inputCount, 1)
+    }
+
+    func testPreparationPreservesFactsOnCaptureFailureAndIsNativeOnly() throws {
+        for native in [true, false] {
+            let backend = ControlledBackend(); backend.nativeTextFixture = native
+            let (paths, session, finished) = try host(timeout: 5, backend: backend, native: native)
+            defer { _ = try? call(paths, session: session, op: "disconnect"); wait(for: [finished], timeout: 3) }
+            _ = try call(paths, session: session, op: "observe")
+            backend.failObservation = true
+            let response = try call(paths, session: session, op: "text-prepare")
+            XCTAssertEqual(backend.prepareCount, native ? 1 : 0)
+            XCTAssertEqual(backend.inputCount, 0)
+            if native {
+                XCTAssertEqual((response["result"] as? [String: Any])?["keyboardPrepared"] as? Bool, true)
+                XCTAssertEqual(response["ok"] as? Bool, false)
+                XCTAssertEqual(response["outcome"] as? String, "completed")
+                XCTAssertEqual((response["observation"] as? [String: Any])?["ok"] as? Bool, false)
+                let stale = try call(paths, session: session, op: "press", fields: ["reference": "o1", "key": "return"])
+                XCTAssertEqual(stale["outcome"] as? String, "not_dispatched")
+            } else {
+                XCTAssertEqual((response["error"] as? [String: Any])?["code"] as? String, "native_action_unsupported")
+            }
+        }
+    }
     func testNativeEditingModesReachBackendOnceAndInvalidateSource() throws {
         let backend = ControlledBackend(); backend.nativeSend = true; backend.nativeTextFixture = true
         let (paths, session, finished) = try host(timeout: 5, backend: backend, native: true)

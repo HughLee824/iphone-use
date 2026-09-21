@@ -13,10 +13,14 @@ protocol SessionBackend: AnyObject {
     func stop() -> [String: Any]
     func cancelCurrent()
     func finishText(transaction: String, observation: [String: Any]) throws -> [String: Any]
+    func prepareText() throws -> [String: Any]
 }
 
 extension SessionBackend {
     func cancelCurrent() {}
+    func prepareText() throws -> [String: Any] {
+        throw SomaError("native_action_unsupported", "text-prepare applies only to apple-native")
+    }
     func finishText(transaction: String, observation: [String: Any]) throws -> [String: Any] {
         throw SomaError("native_action_unsupported", "text-finish applies only to apple-native")
     }

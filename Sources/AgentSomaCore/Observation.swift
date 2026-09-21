@@ -152,8 +152,10 @@ final class ObservationCache {
             throw SomaError("stale_reference", "Observe again before using this reference for an action")
         }
         if entry.capture.metadata["backend"] as? String == "apple-native" {
-            if action.kind == "type", action.reference.node == nil {
-                _ = try NativeTextInput(text: action.fields["text"] as! String, mode: action.fields["mode"] as! String, method: action.fields["textMethod"] as? String ?? "auto")
+            if ["type", "press"].contains(action.kind), action.reference.node == nil {
+                if action.kind == "type" {
+                    _ = try NativeTextInput(text: action.fields["text"] as! String, mode: action.fields["mode"] as! String, method: action.fields["textMethod"] as? String ?? "auto")
+                }
                 guard let raw = entry.capture.metadata["screenContext"] as? [String: Any] else { throw ScreenGuard.Failure.invalidGuard }
                 let context = try JSONDecoder().decode(ScreenContext.self, from: jsonData(raw))
                 let guardValue = try ScreenGuard(png: entry.capture.screenshot, context: context, rects: [action.textRegion ?? context.screen], policy: .init())

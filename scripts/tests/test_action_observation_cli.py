@@ -114,6 +114,23 @@ class ActionObservationCLITests(unittest.TestCase):
                 self.assertEqual(requests[0]["mode"], mode)
                 self.assertEqual(requests[0]["text"], text)
 
+    def test_native_preparation_and_return_field_are_forwarded_once(self):
+        code, response, requests = self.run_cli(["text-prepare"])
+        self.assertEqual(code, 0, response)
+        self.assertEqual([request["op"] for request in requests], ["text-prepare"])
+        self.assertNotIn("reference", requests[0])
+        code, response, requests = self.run_cli(["text-prepare"], lose_action=True)
+        self.assertEqual(code, 1, response)
+        self.assertEqual(response["outcome"], "unknown")
+        self.assertEqual(len(requests), 1)
+        code, response, requests = self.run_cli(
+            ["press", "o2", "--key", "return", "--field-rect", "18,146,354,48"], lose_action=True)
+        self.assertEqual(code, 1, response)
+        self.assertEqual(response["outcome"], "unknown")
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(requests[0]["key"], "return")
+        self.assertEqual(requests[0]["fieldRect"], "18,146,354,48")
+
     def test_unknown_and_observation_failure_exit_nonzero_without_replay(self):
         for outcome, capture_ok in [("unknown", True), ("completed", False), ("unknown", False)]:
             with self.subTest(outcome=outcome, capture_ok=capture_ok):

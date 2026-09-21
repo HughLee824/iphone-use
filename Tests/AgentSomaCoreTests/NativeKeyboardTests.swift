@@ -35,6 +35,42 @@ private final class KeyboardTransport: NativeTransport {
 }
 
 final class NativeKeyboardTests: XCTestCase {
+    func testExplicitPreparationIsIdempotentAndReturnSendsOnlyKeyAndRelease() throws {
+        let transport = KeyboardTransport()
+        let keyboard = NativeHIDAdapter(transport: transport, cancellation: NativeCancellation(), wait: { _ in })
+        try keyboard.prepare(); try keyboard.prepareKeyboard(); try keyboard.prepareKeyboard()
+        XCTAssertEqual(transport.services.count, 2)
+        XCTAssertTrue(transport.reports.isEmpty)
+        let result = try keyboard.pressReturn()
+        XCTAssertEqual(transport.reports.count, 2)
+        XCTAssertEqual(transport.reports[0][6], 1) // Usage 0x28: bit zero in byte 6.
+        XCTAssertTrue(transport.reports[1][1...30].allSatisfy { $0 == 0 })
+        XCTAssertEqual(result["keyReportQueued"] as? Bool, true)
+        XCTAssertEqual(result["key"] as? String, "return")
+        XCTAssertNil(result["charactersQueued"])
+        XCTAssertEqual(keyboard.closeKeyboard()["keyboardRemoveAcknowledged"] as? Bool, true)
+        XCTAssertEqual(transport.removals.count, 1)
+    }
+
+    func testNativeReturnProtectsCurrentCompleteFieldAndRejectsRunnerScreenReference() throws {
+        let request: [String: Any] = ["reference": "o1", "key": "return", "fieldRect": "18,146,354,36"]
+        XCTAssertThrowsError(try DeviceAction(operation: "press", request: request))
+        var invalid = request; invalid["key"] = "tab"
+        XCTAssertThrowsError(try DeviceAction(operation: "press", request: invalid, allowScreenText: true))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = ObservationCache(directory: directory), context = screenTestContext()
+        let capture = CapturedObservation(nodes: [], metadata: ["backend": "apple-native",
+            "screenContext": try jsonObject(JSONEncoder().encode(context))], screenshot: try screenPNG())
+        _ = try cache.store(capture)
+        let action = try DeviceAction(operation: "press", request: request, allowScreenText: true)
+        let guardValue = try XCTUnwrap(cache.resolveTarget(for: action).textGuard)
+        XCTAssertEqual(guardValue.regions.map(\.rect), [action.textRegion!])
+        let changed = try screenPNG(patches: [(CGRect(x: 50, y: 160, width: 4, height: 10), [0,0,0])])
+        XCTAssertFalse(try guardValue.check(png: changed, context: context).accepted)
+        _ = try cache.store(capture)
+        XCTAssertThrowsError(try cache.resolveTarget(for: action))
+    }
     func testEditingPrefixReleasesBeforePasteAndDoesNotCountAsText() throws {
         for (mode, usage) in [("replace", UInt8(0x04)), ("append", UInt8(0x51))] {
             let transport = KeyboardTransport()

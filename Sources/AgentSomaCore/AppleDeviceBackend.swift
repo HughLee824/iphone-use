@@ -176,11 +176,13 @@ final class AppleDeviceBackend: SessionBackend {
         let control = NativeControlStatus.resolve(hid: hidState, media: health, closing: closing,
                                                    startupCode: controlErrorCode, startupError: controlError)
         var result: [String: Any] = ["backend": "apple-native", "sessionGeneration": generation, "deviceID": cli?.device ?? config.device,
-                "capabilities": ["screenshot": true, "tap": control.available, "ax": false, "swipe": control.available, "text": control.available && hid?.canType == true],
+                "capabilities": ["screenshot": true, "tap": control.available, "ax": false, "swipe": control.available,
+                    "text": control.available && hid?.canType == true, "press": control.available && hid?.canType == true],
                 "keyboard": hid?.keyboardStatus ?? [:],
                 "textInputMethods": ["asciiHID": control.available && hid?.canType == true,
                     "unicodePasteboard": control.available && hid?.canType == true && pasteboardError == nil && (pasteboard?.available ?? true)],
                 "textMethodSelection": ["auto", "keys", "paste"], "textModes": ["insert", "replace", "append"], "textFinishSupported": true,
+                "textPrepareSupported": true, "pressKeys": ["return"],
                 "pasteboard": pasteboard?.status ?? ["restorePending": false],
                 "sessionClosing": closing, "hidState": hidState?.rawValue ?? "unprepared",
                 "media": health, "runnerStarted": false, "serviceTransport": config.nativeEndpointInventory == nil ? "apple-coredevice-service-socket" : "apple-paired-tunnel",
@@ -215,8 +217,10 @@ final class AppleDeviceBackend: SessionBackend {
     }
     func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any] {
         let typing = action.kind == "type" && action.reference.node == nil
-        guard typing || (["tap", "swipe"].contains(action.kind) && action.coordinate) else {
-            throw SomaError("native_action_unsupported", "Use coordinate tap/swipe, or type oN after visually confirming focus")
+        let pressing = action.kind == "press" && action.reference.node == nil
+        let keyboardAction = typing || pressing
+        guard keyboardAction || (["tap", "swipe"].contains(action.kind) && action.coordinate) else {
+            throw SomaError("native_action_unsupported", "Use coordinate tap/swipe, or type/press oN after visually confirming focus")
         }
         let textInput = typing ? try NativeTextInput(text: action.fields["text"] as! String, mode: action.fields["mode"] as! String, method: action.fields["textMethod"] as? String ?? "auto") : nil
         defer { if textInput?.usesPasteboard == true { pasteboard?.endInputAttempt() } }
@@ -229,7 +233,7 @@ final class AppleDeviceBackend: SessionBackend {
               target.context["sessionGeneration"] as? String == generation,
               let captured = target.context["captureStartedUptime"] as? Double,
               ProcessInfo.processInfo.systemUptime - captured <= 30,
-              let screenGuard = typing ? target.textGuard : target.gesture?.screenGuard else {
+              let screenGuard = keyboardAction ? target.textGuard : target.gesture?.screenGuard else {
             throw ActionFailure(code: "stale_observation", description: "Observe this device/session again before input", possiblyExecuted: false, requiresObservation: true)
         }
         // Rotation formulas have host tests but lack device acceptance. Fail closed for now.
@@ -238,7 +242,7 @@ final class AppleDeviceBackend: SessionBackend {
         }
         if let gesture = target.gesture { try gesture.validate(kind: action.kind) }
         let swipe = action.kind == "swipe" ? try NativeSwipePlan(gesture: target.gesture!) : nil
-        if typing {
+        if keyboardAction {
             try screenGuard.validate()
             guard screenGuard.regions.map(\.rect) == [action.textRegion ?? screenGuard.context.screen] else { throw ScreenGuard.Failure.invalidGuard }
             // Registration can change keyboard visibility. Capture/guard after it, before any key.
@@ -252,7 +256,7 @@ final class AppleDeviceBackend: SessionBackend {
                 displayID: target.context["displayID"] as? UInt64,
                 deadline: min(captured + 30, ProcessInfo.processInfo.systemUptime + 8),
                 maximumCaptures: textInput?.usesPasteboard == true ? 3 : 1,
-                caretGuard: typing ? target.textCaretGuard : nil,
+                caretGuard: keyboardAction ? target.textCaretGuard : nil,
                 record: { sample in
                     var sample = sample; sample["stage"] = stage
                     preInputChecks.append(sample)
@@ -327,6 +331,10 @@ final class AppleDeviceBackend: SessionBackend {
                 throw ActionFailure(code: failure.code, description: failure.description, possiblyExecuted: failure.possiblyExecuted,
                     requiresObservation: failure.requiresObservation, result: facts)
             }
+        } else if pressing {
+            result = try hid.pressReturn {
+                guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped during Return") }
+            }
         } else if let swipe {
             result = try hid.swipe(swipe) {
                 guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped during swipe") }
@@ -339,13 +347,33 @@ final class AppleDeviceBackend: SessionBackend {
         result["screenGuard"] = check.result
         result["preInputCaptures"] = captures
         result["preInputChecks"] = preInputChecks
-        if typing {
+        if keyboardAction {
             let rect = screenGuard.regions[0].rect
             result["textFieldRect"] = ["x": rect.x, "y": rect.y, "width": rect.width, "height": rect.height]
         }
         return result
     }
     func cancelCurrent() { cancellation.cancel() }
+    func prepareText() throws -> [String: Any] {
+        try cancellation.check()
+        let control = controlStatus(mediaHealth: media?.health() ?? [:])
+        guard control.available, let hid else {
+            throw ActionFailure(code: "native_control_unavailable", description: control.message ?? "Native control is unavailable",
+                                possiblyExecuted: false, requiresObservation: false, result: control.result)
+        }
+        let alreadyPrepared = hid.keyboardStatus["prepared"] as? Bool == true
+        do { try hid.prepareKeyboard() }
+        catch {
+            // Unlike a typing preflight, registration is this command's operation.
+            // A possibly-created service is therefore an unknown preparation result.
+            throw ActionFailure(code: (error as? ActionFailure)?.code ?? (error as? SomaError)?.code ?? "native_keyboard_unavailable",
+                description: String(describing: error), possiblyExecuted: hid.keyboardStatus["serviceMayExist"] as? Bool == true,
+                requiresObservation: true, result: ["keyboardPrepared": false, "keyboard": hid.keyboardStatus,
+                    "inputReportsSent": 0, "clipboardAccessed": false, "recovery": NativeRecovery.resolveError.result])
+        }
+        return ["keyboardPrepared": true, "alreadyPrepared": alreadyPrepared, "keyboard": hid.keyboardStatus,
+                "inputReportsSent": 0, "focusConfirmed": false, "clipboardAccessed": false]
+    }
     func finishText(transaction: String, observation: [String: Any]) throws -> [String: Any] {
         try cancellation.check()
         let now = ProcessInfo.processInfo.systemUptime

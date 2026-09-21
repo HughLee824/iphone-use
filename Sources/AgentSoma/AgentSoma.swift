@@ -15,7 +15,7 @@ struct SessionOptions: ParsableArguments {
 struct AgentSoma: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "agentsoma", abstract: "Eyes and hands for agents operating a real iPhone.", version: RunnerSetup.releaseVersion,
-        subcommands: [Setup.self, BuildRunner.self, Devices.self, Connect.self, Status.self, Apps.self, Open.self, Observe.self, Inspect.self, Tap.self, Swipe.self, TypeText.self, TextFinish.self, Press.self, Disconnect.self, Host.self])
+        subcommands: [Setup.self, BuildRunner.self, Devices.self, Connect.self, Status.self, Apps.self, Open.self, Observe.self, Inspect.self, Tap.self, Swipe.self, TypeText.self, TextPrepare.self, TextFinish.self, Press.self, Disconnect.self, Host.self])
     @OptionGroup var options: SessionOptions
 }
 
@@ -280,6 +280,15 @@ struct TypeText: ParsableCommand {
     }
 }
 
+struct TextPrepare: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "text-prepare", abstract: "Prepare this native session's keyboard without input or clipboard access, then capture a new screenshot. Inspect it before typing or Return.")
+    @OptionGroup var options: SessionOptions
+    mutating func run() throws {
+        let session = try options.requiredSession()
+        try output { try SessionClient.call(session: session, operation: "text-prepare") }
+    }
+}
+
 struct TextFinish: ParsableCommand {
     static let configuration = CommandConfiguration(commandName: "text-finish", abstract: "After visually verifying native text input and resolving any paste dialog, restore this transaction's clipboard backup without disconnecting.")
     @OptionGroup var options: SessionOptions
@@ -296,10 +305,13 @@ struct Press: ParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Send an explicit Return to a text input with existing keyboard focus.")
     @OptionGroup var options: SessionOptions
     @OptionGroup var observation: ActionObservationOptions
-    @Argument(help: "Current text input reference; this command does not tap to focus.") var reference: String
+    @Argument(help: "Current text input reference, or native screenshot oN after visually confirming focus. Does not tap to focus; Return can submit, search, or insert a newline depending on the app.") var reference: String
     @Option(help: "Key to send; currently only return is supported.") var key: String
+    @Option(help: "Native press oN only: complete focused field x,y,width,height in screen points, with the same protection as native type.") var fieldRect: String?
     mutating func run() throws {
         let session = try options.requiredSession()
-        try outputAction(session: session, observe: observation.observe) { try SessionClient.call(session: session, operation: "press", fields: ["reference": reference, "key": key]) }
+        var fields: [String: Any] = ["reference": reference, "key": key]
+        if let fieldRect { fields["fieldRect"] = fieldRect }
+        try outputAction(session: session, observe: observation.observe) { try SessionClient.call(session: session, operation: "press", fields: fields) }
     }
 }

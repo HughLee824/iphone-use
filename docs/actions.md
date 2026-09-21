@@ -4,7 +4,13 @@
 
 ## 实验性原生文字输入
 
-`apple-native` 使用 `type oN --mode insert|replace|append --text 'Ab7!?'`，绑定当前截图而非 AX 节点。所有模式都要求先在受控页面观察、点击输入框，再用新截图确认焦点。`insert` 使用当前光标/选区；`replace` 先发送 Command-A 全选；`append` 先发送 Command-Down 请求移动到全文末尾。后两者不读取或重构原文，也不声明已经确认选区或末尾定位。ASCII 路径接受 1–64 个可打印字符，使用 US HID 映射。包含非 ASCII 字符的整段文本（如 `中文`、` A7，测🙂`）使用原生剪贴板服务与一次自写 HID Paste，最多 4096 UTF-8 bytes；不拆成拼音，不做候选词判断。不切换设备布局/输入法，不自动聚焦，不支持换行、Return 或提交。只有 `replace` 接受空文本，使用全选后 Delete，不读写剪贴板；即使显式指定 paste，空文本也不创建粘贴事务。
+推荐先执行 `agentsoma --session "$SESSION" text-prepare`：显式注册本会话的自有键盘，使旧观察失效并附带新截图。该操作不要求输入框引用、不聚焦、不发送按键、不访问剪贴板。检查新图后，再点击目标字段并用新观察确认焦点。已准备的键盘不会重复创建；每次显式 prepare 仍返回新图。原有 type 的按需准备行为保留，未显式准备时仍可能因软键盘收起而拒绝旧截图。
+
+`text-prepare` 的 `keyboardPrepared` 和 `inputReportsSent=0` 描述服务准备事实，不证明焦点；截图失败时命令返回非零并保留准备结果，需要另行 observe。注册结果不确定时保留键盘状态和清理要求，不自动重复注册。仅适用于 apple-native，旧宿主拒绝未知命令。
+
+原生 `press oN --key return --field-rect x,y,width,height --observe` 现支持向已确认焦点发送独立 Return。完整字段、当前 observationID、全屏保护、方向、30 秒有效期及有界光标例外与 type 相同；省略字段矩形时保护整个屏幕。不聚焦、不访问剪贴板、不自动完成待恢复的粘贴事务。调用方先核对输入结果并 text-finish，再决定是否发送 Return。Return 由 App 解释，可能搜索、完成、换行或提交；`keyReportQueued` 仅是本地发送事实，`keyEffectConfirmed=false`，结果仍为 unknown，必须检查新图。type 的正文继续拒绝换行和控制字符，不隐式附加 Return。XCTest 仍使用原有 `press oN:eN --key return`。
+
+`apple-native` 使用 `type oN --mode insert|replace|append --text 'Ab7!?'`，绑定当前截图而非 AX 节点。所有模式都要求先在受控页面观察、点击输入框，再用新截图确认焦点。`insert` 使用当前光标/选区；`replace` 先发送 Command-A 全选；`append` 先发送 Command-Down 请求移动到全文末尾。后两者不读取或重构原文，也不声明已经确认选区或末尾定位。ASCII 路径接受 1–64 个可打印字符，使用 US HID 映射。包含非 ASCII 字符的整段文本（如 `中文`、` A7，测🙂`）使用原生剪贴板服务与一次自写 HID Paste，最多 4096 UTF-8 bytes；不拆成拼音，不做候选词判断。不切换设备布局/输入法，不自动聚焦，正文不支持换行或控制键，Return 必须通过上述独立 press 操作。只有 `replace` 接受空文本，使用全选后 Delete，不读写剪贴板；即使显式指定 paste，空文本也不创建粘贴事务。
 
 全选/末尾定位与后续文本共用一次有界 HID 序列，每个组合键后释放，再发送下一步。`textMode` 记录意图，`editingShortcutQueued` 只证明本地发送队列完成，`editingEffectConfirmed=false` 不宣称设备完成了定位。取消或通道错误即使发生在定位之后、正文之前，也返回可能执行的不确定结果，不自动重放。所有模式沿用完整字段保护，因此新增模式本身不解决光标闪烁拒绝。普通 UIKit 控件的验收不能代替网页、自定义编辑器或其他快捷键处理器的兼容验证。
 

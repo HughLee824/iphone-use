@@ -101,7 +101,7 @@ public enum SessionClient {
             let uncertain = (error as? TransportError)?.possiblySent ?? false
             var response: [String: Any] = ["id": id, "session": session, "ok": false,
                 "error": ["code": "session_unavailable", "message": String(describing: error)]]
-            if ["open", "text-finish", "type-with-method"].contains(operation) || DeviceAction.operations.contains(operation) {
+            if ["open", "text-finish", "text-prepare", "type-with-method"].contains(operation) || DeviceAction.operations.contains(operation) {
                 response["outcome"] = uncertain ? "unknown" : "not_dispatched"
             }
             if let data = try? Data(contentsOf: paths.config),

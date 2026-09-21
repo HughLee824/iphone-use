@@ -40,7 +40,7 @@ struct DeviceAction {
                 guard let value = Self.number(request[key]) else { throw SomaError("invalid_coordinates", "Supply every coordinate as a finite number of screen points") }
                 fields[key] = value
             }
-        } else if reference.node == nil && !(allowScreenText && operation == "type") {
+        } else if reference.node == nil && !(allowScreenText && ["type", "press"].contains(operation)) {
             throw SomaError("element_required", "Use an element reference such as o1:e2")
         }
         if operation == "swipe", coordinate {
@@ -92,9 +92,9 @@ struct DeviceAction {
             fields["key"] = "return"
         }
         if let raw = request["fieldRect"] {
-            guard allowScreenText, operation == "type", reference.node == nil,
+            guard allowScreenText, ["type", "press"].contains(operation), reference.node == nil,
                   let value = raw as? String else {
-                throw SomaError("invalid_text_region", "--field-rect applies only to native type oN")
+                throw SomaError("invalid_text_region", "--field-rect applies only to native type or press oN")
             }
             let parts = value.split(separator: ",", omittingEmptySubsequences: false)
             let numbers = parts.compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }

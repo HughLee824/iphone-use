@@ -83,7 +83,7 @@ final class SessionHost {
             reply(response, {})
         }
         guard request["version"] as? Int == 1, request["session"] as? String == config.session,
-              !id.isEmpty, (["status", "apps", "open", "observe", "inspect", "disconnect", "text-finish"] + DeviceAction.operations).contains(operation) else {
+              !id.isEmpty, (["status", "apps", "open", "observe", "inspect", "disconnect", "text-finish", "text-prepare"] + DeviceAction.operations).contains(operation) else {
             reject("invalid_request", "Invalid session request")
             return
         }
@@ -103,6 +103,10 @@ final class SessionHost {
         }
         var reference: ObservationReference?
         var action: DeviceAction?
+        if operation == "text-prepare", config.backend != "apple-native" {
+            reject("native_action_unsupported", "text-prepare applies only to apple-native")
+            return
+        }
         if requestedOperation == "type-with-method", request["textMethod"] == nil {
             reject("invalid_text_method", "Explicit native text requests require a method")
             return
@@ -167,6 +171,15 @@ final class SessionHost {
                     response["result"] = try observations.inspect(reference!, offset: request["offset"] as! Int,
                                                                   query: request["query"] as? String)
                     effective = true
+                case "text-prepare":
+                    // Registration can change keyboard visibility. Consume old references
+                    // and capture afterward even when the owned keyboard already exists.
+                    previousObservation = observations.beginAction()
+                    effective = true
+                    response["result"] = try backend.prepareText()
+                    observations.finishAction(previous: previousObservation, dispatched: true)
+                    response["outcome"] = "completed"
+                    response["requiresObservation"] = true
                 case "text-finish":
                     let metadata = try observations.resolveTextConfirmation(reference!)
                     let result = try backend.finishText(transaction: request["transaction"] as! String, observation: metadata)
@@ -203,7 +216,7 @@ final class SessionHost {
                 let failure = error as? ActionFailure
                 if let result = failure?.result { response["result"] = result }
                 let uncertain = failure?.possiblyExecuted ?? (error as? TransportError)?.possiblySent ?? false
-                if operation == "open" || action != nil || operation == "text-finish" {
+                if operation == "open" || action != nil || operation == "text-finish" || operation == "text-prepare" {
                     observations.finishAction(previous: previousObservation, dispatched: uncertain)
                     if failure?.requiresObservation == true { observations.invalidate("target_changed") }
                     response["outcome"] = uncertain ? "unknown" : "not_dispatched"
@@ -227,7 +240,7 @@ final class SessionHost {
             }
             // Native actions always return a new observation while still holding the device
             // work queue. Capture failure preserves the action's execution facts.
-            if config.backend == "apple-native", operation == "open" || action != nil || operation == "text-finish",
+            if config.backend == "apple-native", operation == "open" || action != nil || operation == "text-finish" || operation == "text-prepare",
                response["outcome"] as? String != "not_dispatched" {
                 observations.invalidate("post_action_capture")
                 do {
@@ -238,12 +251,18 @@ final class SessionHost {
                     response["result"] = result
                 } catch {
                     response["observation"] = ["ok": false, "error": String(describing: error)]
+                    if operation == "text-prepare" {
+                        // Preparation completed, but there is no usable input baseline.
+                        response["ok"] = false
+                        response["error"] = ["code": "native_prepare_observation_failed",
+                            "message": "Keyboard preparation completed but screenshot capture failed; observe before input: \(error)"]
+                    }
                 }
             }
-            if config.backend == "apple-native", operation == "open" || action != nil || (operation == "observe" && response["ok"] as? Bool == false) {
+            if config.backend == "apple-native", operation == "open" || action != nil || operation == "text-prepare" || (operation == "observe" && response["ok"] as? Bool == false) {
                 NativeRecovery.enrich(&response, control: try? backend.status())
             }
-            if config.backend == "apple-native", operation == "open" || action != nil || operation == "text-finish" {
+            if config.backend == "apple-native", operation == "open" || action != nil || operation == "text-finish" || operation == "text-prepare" {
                 var result = response["result"] as? [String: Any] ?? [:]
                 result["actionID"] = id
                 result["sourceObservationID"] = action?.reference.observation ?? reference?.observation
