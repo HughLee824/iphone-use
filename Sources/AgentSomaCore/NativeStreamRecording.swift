@@ -30,11 +30,11 @@ final class NativeStreamRecording {
         var firstFrameAt: Double?
         var startupDroppedUnits = 0
         var failure: Error?
-        init(root: URL, duration: Double, receiver: NativeRecordingSource, mediaID: String, rotation: String, configuration: [String: Any], clock: Int32) {
+        init(root: URL, duration: Double, receiver: NativeRecordingSource, mediaID: String, orientation: NativeVideoOrientation, configuration: [String: Any], clock: Int32) {
             self.duration = duration; self.receiver = receiver; self.mediaID = mediaID
-            self.configuration = configuration; self.rotation = rotation
+            self.configuration = configuration; self.rotation = orientation.rawValue
             directory = root.appendingPathComponent(id)
-            writer = NativeVideoWriter(url: directory.appendingPathComponent("screen.mp4"), timescale: clock)
+            writer = NativeVideoWriter(url: directory.appendingPathComponent("screen.mp4"), timescale: clock, orientation: orientation)
         }
     }
     private let queue = DispatchQueue(label: "agentsoma.native.recording.stream")
@@ -60,11 +60,14 @@ final class NativeStreamRecording {
             guard !closed else { throw SomaError("recording_closed", "Recording owner closed") }
             guard current == nil || current?.result != nil else { throw SomaError("recording_busy", "A recording is already active") }
             _ = try NativeRecordingOptions.duration(["duration": duration])
+            guard let orientation = NativeVideoOrientation(rawValue: rotation) else {
+                throw SomaError("native_recording_orientation_unsupported", "Unverified video orientation")
+            }
             let config = receiver.recordingConfiguration()
             guard Self.supports(config), let clock = config["RTPClockRate"] as? Int32 else {
                 throw SomaError("native_recording_format_unavailable", "Need the observed single-layer HEVC payload and a clock confirmed by sender reports")
             }
-            let job = Job(root: root, duration: duration, receiver: receiver, mediaID: mediaID, rotation: rotation, configuration: config, clock: clock)
+            let job = Job(root: root, duration: duration, receiver: receiver, mediaID: mediaID, orientation: orientation, configuration: config, clock: clock)
             try SessionPaths.secureDirectory(root); try SessionPaths.secureDirectory(job.directory)
             jobs[job.id] = job; current = job
             pendingLock.lock(); overflow = false; pendingLock.unlock()

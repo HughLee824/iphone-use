@@ -871,6 +871,61 @@ final class AppleNativeTests: XCTestCase {
         XCTAssertThrowsError(try binding.ensureDisplay(boundDisplay("rot0"), mayReplace: true))
     }
 
+    func testRecordingRefreshReplacesOnlyOwnedStreamWithUnchangedGeometry() throws {
+        let transport = ScriptedTransport(); mediaScript(transport)
+        var receivers: [MediaReceiver] = []
+        let binding = NativeDisplayMediaSession(makeSession: {
+            let receiver = MediaReceiver(); receivers.append(receiver); return self.media(transport, receiver)
+        }, startSession: { session, display in
+            try session.start(displayID: display.id, deviceAddress: "::1", offer: Data()) { _ in }
+        })
+        let display = try boundDisplay("rot90")
+        try binding.ensureDisplay(display, mayReplace: true)
+        let initial = binding.health()["mediaSessionID"] as? String
+        XCTAssertThrowsError(try binding.refreshForRecording(boundDisplay("rot270"), mayReplace: true))
+        XCTAssertEqual(receivers.count, 1)
+        try binding.refreshForRecording(display, mayReplace: true)
+        XCTAssertEqual(receivers.map(\.closes), [1, 0])
+        XCTAssertNotEqual(binding.health()["mediaSessionID"] as? String, initial)
+        XCTAssertEqual(binding.health()["recordingRefreshCount"] as? Int, 1)
+        XCTAssertEqual(binding.health()["displayRefreshCount"] as? Int, 0)
+        XCTAssertTrue(binding.matchesDisplay(display))
+        let stops = transport.requests.filter { ($0["CoreDevice.featureIdentifier"] as? String)?.hasSuffix("stopmediastream") == true }
+        XCTAssertEqual(stops.count, 1)
+        XCTAssertEqual((stops[0]["CoreDevice.input"] as? [String: Any])?["stopAll"] as? Bool, false)
+        try binding.ensureDisplay(display, mayReplace: true)
+        XCTAssertEqual(receivers.count, 2)
+        let requestCount = transport.requests.count
+        XCTAssertThrowsError(try binding.refreshForRecording(display, mayReplace: false))
+        XCTAssertEqual(transport.requests.count, requestCount)
+        XCTAssertEqual(binding.close()["mediaStopAcknowledged"] as? Bool, true)
+    }
+
+    func testRecordingRefreshDoesNotRetryUnconfirmedStop() throws {
+        let transport = ScriptedTransport(); mediaScript(transport)
+        var made = 0
+        let binding = NativeDisplayMediaSession(makeSession: {
+            made += 1; return self.media(transport, MediaReceiver())
+        }, startSession: { session, display in
+            try session.start(displayID: display.id, deviceAddress: "::1", offer: Data()) { _ in }
+        })
+        let display = try boundDisplay("rot270")
+        try binding.ensureDisplay(display, mayReplace: true)
+        let original = transport.onRequest!
+        transport.onRequest = { request in
+            if (request["CoreDevice.featureIdentifier"] as? String)?.hasSuffix("stopmediastream") == true {
+                throw TransportError(description: "lost stop reply", possiblySent: true)
+            }
+            return try original(request)
+        }
+        XCTAssertThrowsError(try binding.refreshForRecording(display, mayReplace: true))
+        let count = transport.requests.count
+        XCTAssertThrowsError(try binding.refreshForRecording(display, mayReplace: true))
+        XCTAssertEqual(transport.requests.count, count); XCTAssertEqual(made, 1)
+        XCTAssertFalse(binding.health()["healthy"] as! Bool)
+        XCTAssertEqual(binding.close()["mediaStopAcknowledged"] as? Bool, false)
+    }
+
     func testDisplayMediaUnconfirmedStopLatchesWithoutReplacementOrRetry() throws {
         let transport = ScriptedTransport(); mediaScript(transport)
         var made = 0

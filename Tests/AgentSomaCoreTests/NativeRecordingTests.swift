@@ -41,19 +41,19 @@ final class NativeRecordingTests: XCTestCase {
         let url = root.appendingPathComponent("fixture.mp4")
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [AVVideoCodecKey: AVVideoCodecType.hevc,
-            AVVideoWidthKey: 64, AVVideoHeightKey: 64,
+            AVVideoWidthKey: 64, AVVideoHeightKey: 96,
             AVVideoCompressionPropertiesKey: [AVVideoAllowFrameReorderingKey: false, AVVideoMaxKeyFrameIntervalKey: 10]])
-        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey as String: 64, kCVPixelBufferHeightKey as String: 64])
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey as String: 64, kCVPixelBufferHeightKey as String: 96])
         writer.add(input); XCTAssertTrue(writer.startWriting()); writer.startSession(atSourceTime: .zero)
         for frame in 0..<20 {
             let deadline = Date().addingTimeInterval(2)
             while !input.isReadyForMoreMediaData, Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
             XCTAssertTrue(input.isReadyForMoreMediaData)
             var buffer: CVPixelBuffer?
-            XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 64, 64, kCVPixelFormatType_32BGRA, nil, &buffer), kCVReturnSuccess)
+            XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 64, 96, kCVPixelFormatType_32BGRA, nil, &buffer), kCVReturnSuccess)
             let pixels = try XCTUnwrap(buffer)
             CVPixelBufferLockBaseAddress(pixels, [])
-            memset(CVPixelBufferGetBaseAddress(pixels), Int32(frame * 10), CVPixelBufferGetBytesPerRow(pixels) * 64)
+            memset(CVPixelBufferGetBaseAddress(pixels), Int32(frame * 10), CVPixelBufferGetBytesPerRow(pixels) * 96)
             CVPixelBufferUnlockBaseAddress(pixels, [])
             XCTAssertTrue(adaptor.append(pixels, withPresentationTime: CMTime(value: Int64(frame), timescale: 10)))
         }
@@ -129,6 +129,37 @@ final class NativeRecordingTests: XCTestCase {
         try Data(contentsOf: url).prefix(100).write(to: broken)
         XCTAssertThrowsError(try NativeRecordingValidation.inspect(broken))
     }
+    func testLandscapeTrackTransformSurvivesMuxAndExactFrameExtraction() throws {
+        let dir = try root(), units = try fixture(dir)
+        for orientation in [NativeVideoOrientation.left, .right] {
+            let url = dir.appendingPathComponent("\(orientation.rawValue).mp4")
+            let writer = NativeVideoWriter(url: url, timescale: 24000, orientation: orientation)
+            for unit in units { try writer.append(unit) }
+            try writer.finish()
+            let facts = try NativeRecordingValidation.inspect(url)
+            XCTAssertEqual(facts["decodedFrames"] as? Int, 20)
+            XCTAssertEqual(facts["width"] as? Int, 64)
+            XCTAssertEqual(facts["height"] as? Int, 96)
+            XCTAssertEqual(facts["displayWidth"] as? Int, 96)
+            XCTAssertEqual(facts["displayHeight"] as? Int, 64)
+            let asset = AVURLAsset(url: url)
+            let transform = try XCTUnwrap(asset.tracks(withMediaType: .video).first).preferredTransform
+            let corner = CGPoint(x: 0, y: 0).applying(transform)
+            XCTAssertEqual(corner, orientation == .left ? CGPoint(x: 96, y: 0) : CGPoint(x: 0, y: 64))
+            XCTAssertEqual(CGPoint(x: 64, y: 96).applying(transform),
+                           orientation == .left ? CGPoint(x: 0, y: 64) : CGPoint(x: 96, y: 0))
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.requestedTimeToleranceBefore = .zero; generator.requestedTimeToleranceAfter = .zero
+            let image = try generator.copyCGImage(at: CMTime(value: 1, timescale: 1), actualTime: nil)
+            XCTAssertEqual(image.width, 96); XCTAssertEqual(image.height, 64)
+        }
+        let source = RecordingSource(), recorder = NativeStreamRecording(root: dir.appendingPathComponent("unsupported"))
+        defer { _ = recorder.close() }
+        XCTAssertThrowsError(try recorder.start(duration: 3, receiver: source, mediaID: "owned", rotation: "rot180"))
+        XCTAssertFalse(source.attached)
+    }
+
     func testOwnedStopCannotStopNewRecordingAndCloseDetachesSink() throws {
         let dir = try root(), units = try fixture(dir), source = RecordingSource()
         let recorder = NativeStreamRecording(root: dir.appendingPathComponent("owned"))

@@ -467,8 +467,9 @@ final class AppleDeviceBackend: SessionBackend {
     func startRecording(duration: Double) throws -> [String: Any] {
         guard let cli, let recording, !stopped else { throw SomaError("backend_unavailable", "Native backend not started") }
         try cancellation.check()
-        guard let receiver = media?.recordingReceiver, let mediaID = media?.health()["mediaSessionID"] as? String,
-              media?.health()["healthy"] as? Bool == true, hid?.state == .ready else {
+        _ = try NativeRecordingOptions.duration(["duration": duration])
+        guard !recording.isActive else { throw SomaError("recording_busy", "A recording is already active") }
+        guard let media, media.health()["healthy"] as? Bool == true, hid?.state == .ready else {
             throw SomaError("native_recording_unavailable", "Need a healthy owned native media session and ready HID")
         }
         guard try cli.read(["device", "info", "lockState"])["passcodeRequired"] as? Bool == false else {
@@ -476,11 +477,22 @@ final class AppleDeviceBackend: SessionBackend {
         }
         let display = try cli.display()
         guard display.backlightOn else { throw SomaError("capture_unavailable", "Wake the display before recording") }
-        guard media?.matchesDisplay(display) == true else { throw SomaError("stale_observation", "Observe the changed display before starting recording") }
+        guard media.matchesDisplay(display) else { throw SomaError("stale_observation", "Observe the changed display before starting recording") }
+        guard display.nativeRotation == "rot0", NativeVideoOrientation(rawValue: display.rotation) != nil else {
+            throw SomaError("native_recording_orientation_unsupported", "Recording requires verified native portrait display axes")
+        }
+        // SessionHost invalidates observations before this explicit command.
+        // Reuse the paired transport and ready HID; replace only our own stream.
+        try media.refreshForRecording(display, mayReplace: hid?.state == .ready)
+        guard let receiver = media.recordingReceiver, let mediaID = media.health()["mediaSessionID"] as? String else {
+            throw SomaError("native_recording_unavailable", "Fresh owned recording stream unavailable")
+        }
         let deadline = ProcessInfo.processInfo.systemUptime + 3
         while receiver.recordingConfiguration()["RTPClockRate"] == nil, ProcessInfo.processInfo.systemUptime < deadline {
             try cancellation.check(); Thread.sleep(forTimeInterval: 0.05)
         }
+        try cancellation.check()
+        guard try cli.display() == display else { throw SomaError("capture_context_changed", "Display changed while preparing recording; observe again") }
         return try recording.start(duration: duration, receiver: receiver, mediaID: mediaID, rotation: display.rotation)
     }
     func stopRecording(id: String) throws -> [String: Any] {

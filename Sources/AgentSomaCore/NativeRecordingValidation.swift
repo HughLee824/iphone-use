@@ -55,7 +55,11 @@ enum NativeRecordingValidation {
         guard reader.status == .completed, count > 0, width > 0, height > 0 else {
             throw reader.error ?? SomaError("recording_invalid", "Video did not decode completely")
         }
+        let transform = track.preferredTransform
+        let presented = CGRect(x: 0, y: 0, width: width, height: height).applying(transform)
         return ["durationSeconds": seconds, "decodedFrames": count, "firstFrameSeconds": first,
-                "lastFrameSeconds": last, "width": width, "height": height, "bytes": bytes]
+                "lastFrameSeconds": last, "width": width, "height": height, "bytes": bytes,
+                "displayWidth": Int(presented.width.rounded()), "displayHeight": Int(presented.height.rounded()),
+                "trackTransform": [transform.a, transform.b, transform.c, transform.d, transform.tx, transform.ty]]
     }
 }

@@ -1,11 +1,24 @@
 import Foundation
 import AVFoundation
 
+enum NativeVideoOrientation: String {
+    case portrait = "rot0", left = "rot90", right = "rot270"
+
+    func transform(width: CGFloat, height: CGFloat) -> CGAffineTransform {
+        switch self {
+        case .portrait: return .identity
+        case .left: return CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: height, ty: 0)
+        case .right: return CGAffineTransform(a: 0, b: -1, c: 1, d: 0, tx: 0, ty: width)
+        }
+    }
+}
+
 // Compressed HEVC passthrough. No encoder, pixel rotation or synthetic frames.
 // Used on the recording queue, never the socket's RTP/RTCP queue.
 final class NativeVideoWriter {
     private let url: URL
     let timescale: Int32
+    private let orientation: NativeVideoOrientation
     private var parameterSets: [Int: Data] = [:]
     private var format: CMVideoFormatDescription?
     private var writer: AVAssetWriter?
@@ -16,7 +29,9 @@ final class NativeVideoWriter {
     private(set) var frames = 0
     var hasFrame: Bool { pending != nil }
 
-    init(url: URL, timescale: Int32) { self.url = url; self.timescale = timescale }
+    init(url: URL, timescale: Int32, orientation: NativeVideoOrientation = .portrait) {
+        self.url = url; self.timescale = timescale; self.orientation = orientation
+    }
 
     func append(_ unit: NativeVideoAccessUnit) throws {
         for nal in unit.nals {
@@ -42,6 +57,8 @@ final class NativeVideoWriter {
             guard status == noErr, let description else { throw SomaError("recording_format_invalid", "Cannot create HEVC format (\(status))") }
             let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
             let input = AVAssetWriterInput(mediaType: .video, outputSettings: nil, sourceFormatHint: description)
+            let dimensions = CMVideoFormatDescriptionGetDimensions(description)
+            input.transform = orientation.transform(width: CGFloat(dimensions.width), height: CGFloat(dimensions.height))
             input.expectsMediaDataInRealTime = true
             guard writer.canAdd(input) else { throw SomaError("recording_writer_failed", "Cannot add HEVC track") }
             writer.add(input)
