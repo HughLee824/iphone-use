@@ -15,7 +15,7 @@ struct SessionOptions: ParsableArguments {
 struct AgentSoma: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "agentsoma", abstract: "Eyes and hands for agents operating a real iPhone.", version: RunnerSetup.releaseVersion,
-        subcommands: [Setup.self, BuildRunner.self, Devices.self, Connect.self, Status.self, Apps.self, Open.self, Observe.self, Inspect.self, Tap.self, DoubleTap.self, Pinch.self, LongPress.self, Swipe.self, Home.self, TypeText.self, TextPrepare.self, TextFinish.self, Press.self, Disconnect.self, Host.self])
+        subcommands: [Setup.self, BuildRunner.self, Devices.self, Connect.self, Status.self, Apps.self, Open.self, Observe.self, Inspect.self, Tap.self, DoubleTap.self, Pinch.self, LongPress.self, Swipe.self, Home.self, TypeText.self, TextPrepare.self, TextFinish.self, Press.self, RecordStart.self, RecordStop.self, Disconnect.self, Host.self])
     @OptionGroup var options: SessionOptions
 }
 
@@ -379,5 +379,26 @@ struct Press: ParsableCommand {
         var fields: [String: Any] = ["reference": reference, "key": key]
         if let fieldRect { fields["fieldRect"] = fieldRect }
         try outputAction(session: session, observe: observation.observe) { try SessionClient.call(session: session, operation: "press", fields: fields) }
+    }
+}
+
+
+struct RecordStart: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "record-start", abstract: "Start an owned native screen recording; status reports completion and the MP4 path.")
+    @OptionGroup var options: SessionOptions
+    @Option(help: "Automatic stop after 1–300 seconds (default 60); record-stop may end it earlier.") var duration: Double = 60
+    mutating func run() throws {
+        let session = try options.requiredSession()
+        try output { try SessionClient.call(session: session, operation: "record-start", fields: ["duration": duration]) }
+    }
+}
+
+struct RecordStop: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "record-stop", abstract: "Stop only the specified recording, save and validate its MP4; never replay a start.")
+    @OptionGroup var options: SessionOptions
+    @Argument(help: "Recording ID returned by record-start or status.") var recordingID: String
+    mutating func run() throws {
+        let session = try options.requiredSession()
+        try output { try SessionClient.call(session: session, operation: "record-stop", fields: ["recordingID": recordingID]) }
     }
 }

@@ -111,6 +111,8 @@ final class AppleDeviceBackend: SessionBackend {
     private var controlErrorCode: String?
     private var cleanupFacts: [String: Any] = [:]
     private var stopped = false
+    private var recording: NativeScreenRecording?
+    private var recordingSupported = false
 
     private let makeHID: (NativeTransport, NativeCancellation) -> NativeHIDAdapter
 
@@ -122,6 +124,7 @@ final class AppleDeviceBackend: SessionBackend {
     }
     func start() throws -> [String: Any] {
         let details = try CoreDevice.read(["device", "info", "details", "--device", config.device])
+        recordingSupported = NativeScreenRecording.supported(by: details)
         guard let hardware = details["hardwareProperties"] as? [String: Any], hardware["reality"] as? String == "physical",
               let udid = hardware["udid"] as? String,
               let properties = details["deviceProperties"] as? [String: Any], properties["developerModeStatus"] as? String == "enabled",
@@ -132,6 +135,7 @@ final class AppleDeviceBackend: SessionBackend {
         }
         deviceLock = try DeviceLock(root: paths.directory.deletingLastPathComponent(), device: udid)
         cli = AppleDeviceCLI(device: udid, cancellation: cancellation)
+        recording = NativeScreenRecording(root: paths.directory.appendingPathComponent("recordings"), device: udid)
         do {
             guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 27,
                   (properties["osVersionNumber"] as? String)?.hasPrefix("27.") == true else {
@@ -191,7 +195,12 @@ final class AppleDeviceBackend: SessionBackend {
         let control = NativeControlStatus.resolve(hid: hidState, media: health, closing: closing,
                                                    startupCode: controlErrorCode, startupError: controlError)
         var result: [String: Any] = ["backend": "apple-native", "sessionGeneration": generation, "deviceID": cli?.device ?? config.device,
-                "capabilities": ["screenshot": true, "tap": control.available, "ax": false, "swipe": control.available,
+                "recording": recording?.status() ?? ["state": "idle"],
+                "recordingSupport": ["supported": recordingSupported, "source": "apple_device_capabilities",
+                    "featureIdentifier": "com.apple.coredevice.feature.screenrecording",
+                    "errorCode": recordingSupported ? NSNull() : "native_recording_unsupported" as Any,
+                    "coexistenceValidation": "unverified_on_supported_device"],
+                "capabilities": ["recording": recordingSupported, "screenshot": true, "tap": control.available, "ax": false, "swipe": control.available,
                     "pinch": control.available, "doubleTap": control.available, "longPress": control.available, "home": control.available && buttonError == nil,
                     "text": control.available && hid?.canType == true, "press": control.available && hid?.canType == true],
                 "systemButtons": ["servicePrepared": buttonTransport != nil, "error": buttonError as Any? ?? NSNull()],
@@ -235,6 +244,9 @@ final class AppleDeviceBackend: SessionBackend {
             // Startup failure remains observation-only. Once control is started,
             // a failed display rebind cannot silently return an unsafe image.
             if self.controlError == nil {
+                if self.recording?.isActive == true, self.media?.matchesDisplay(display) == false {
+                    throw SomaError("recording_display_changed", "Stop the recording before rebinding control media after a display change; no input was sent")
+                }
                 try self.media?.ensureDisplay(display, mayReplace: self.hid?.state == .ready)
             }
         }
@@ -453,10 +465,27 @@ final class AppleDeviceBackend: SessionBackend {
         guard let pasteboard else { throw SomaError("no_text_transaction", "No clipboard text transaction exists in this session") }
         return try pasteboard.finish(transaction: transaction, observedAt: captured)
     }
+    func startRecording(duration: Double) throws -> [String: Any] {
+        guard let cli, let recording, !stopped else { throw SomaError("backend_unavailable", "Native backend not started") }
+        try cancellation.check()
+        guard recordingSupported else {
+            throw SomaError("native_recording_unsupported", "Apple device capabilities do not advertise Screen Recording; no recording process was started")
+        }
+        guard try cli.read(["device", "info", "lockState"])["passcodeRequired"] as? Bool == false else {
+            throw SomaError("device_locked", "Unlock the device before recording")
+        }
+        guard try cli.display().backlightOn else { throw SomaError("capture_unavailable", "Wake the display before recording") }
+        return try recording.start(duration: duration)
+    }
+    func stopRecording(id: String) throws -> [String: Any] {
+        guard let recording else { throw SomaError("backend_unavailable", "Native backend not started") }
+        return try recording.stop(id: id)
+    }
     func stop() -> [String: Any] {
         if stopped { return cleanupFacts }
         stopped = true; cancellation.cancel()
         var result = hid?.release() ?? ["releaseRequired": false, "releaseUncertain": false]
+        result.merge(recording?.close() ?? ["recordingProcessExited": true]) { _, new in new }
         result.merge(hid?.closeKeyboard() ?? ["keyboardRemoveAcknowledged": true]) { _, new in new }
         result.merge(pasteboard?.close() ?? ["pasteboardRestoreAcknowledged": true]) { _, new in new }
         pasteboardTransport?.cancel(); pasteboardTransport = nil
@@ -470,6 +499,7 @@ final class AppleDeviceBackend: SessionBackend {
             && result["tunnelReleaseAcknowledged"] as? Bool == true
             && result["keyboardRemoveAcknowledged"] as? Bool == true
             && result["pasteboardRestoreAcknowledged"] as? Bool == true
+            && result["recordingProcessExited"] as? Bool == true
         result["backendStopped"] = true
         cleanupFacts = result
         return result

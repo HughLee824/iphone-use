@@ -28,6 +28,8 @@ final class NativeDisplayMediaSession {
         self.makeSession = makeSession; self.startSession = startSession
     }
 
+    func matchesDisplay(_ display: NativeDisplay) -> Bool { geometry == Geometry(display) }
+
     func ensureDisplay(_ display: NativeDisplay, mayReplace: Bool) throws {
         guard !closed, failure == nil else {
             throw SomaError("native_media_display_refresh_failed", failure ?? "Media binding is closed; reconnect explicitly")

@@ -25,6 +25,8 @@ private final class ControlledBackend: SessionBackend {
     var finishAcknowledged = true
     private(set) var finishCount = 0
     private(set) var prepareCount = 0
+    private(set) var recordingStarts = 0
+    private(set) var recordingStops = 0
     private(set) var lastTextMethod: String?
     private(set) var lastTextMode: String?
     let actionStarted = DispatchSemaphore(value: 0)
@@ -63,6 +65,14 @@ private final class ControlledBackend: SessionBackend {
         finishCount += 1
         return ["pasteboardRestoreAcknowledged": finishAcknowledged, "transactionID": transaction]
     }
+    func startRecording(duration: Double) throws -> [String: Any] {
+        recordingStarts += 1
+        return ["state": "starting_or_recording", "recordingID": "00000000-0000-0000-0000-000000000001"]
+    }
+    func stopRecording(id: String) throws -> [String: Any] {
+        recordingStops += 1
+        return ["state": "completed", "recordingID": id, "fileValidated": true]
+    }
     func prepareText() throws -> [String: Any] {
         prepareCount += 1
         return ["keyboardPrepared": true, "inputReportsSent": 0]
@@ -87,6 +97,31 @@ private final class ControlledBackend: SessionBackend {
 }
 
 final class HostTests: XCTestCase {
+    func testRecordingAdmissionAndObservationInvalidation() throws {
+        for native in [false, true] {
+            let backend = ControlledBackend()
+            let (paths, session, finished) = try host(timeout: 5, backend: backend, native: native)
+            defer { _ = try? call(paths, session: session, op: "disconnect"); wait(for: [finished], timeout: 3) }
+            _ = try call(paths, session: session, op: "observe")
+            let invalid = try call(paths, session: session, op: "record-start", fields: ["duration": 0])
+            XCTAssertEqual(invalid["ok"] as? Bool, false)
+            XCTAssertEqual(backend.recordingStarts, 0)
+            let started = try call(paths, session: session, op: "record-start", fields: ["duration": 5])
+            XCTAssertEqual(started["ok"] as? Bool, native)
+            XCTAssertEqual(backend.recordingStarts, native ? 1 : 0)
+            if native {
+                let stale = try call(paths, session: session, op: "tap", fields: ["reference": "o1:e11"])
+                XCTAssertEqual(stale["outcome"] as? String, "not_dispatched")
+                XCTAssertEqual(backend.inputCount, 0)
+            }
+            let invalidStop = try call(paths, session: session, op: "record-stop", fields: ["recordingID": "bad"])
+            XCTAssertEqual(invalidStop["ok"] as? Bool, false)
+            let stopped = try call(paths, session: session, op: "record-stop", fields: ["recordingID": "00000000-0000-0000-0000-000000000001"])
+            XCTAssertEqual(stopped["ok"] as? Bool, native)
+            XCTAssertEqual(backend.recordingStops, native ? 1 : 0)
+        }
+    }
+
     func testNativePreparationCapturesNewSourceThenReturnRemainsUnknownWithoutReplay() throws {
         let backend = ControlledBackend(); backend.nativeSend = true; backend.nativeTextFixture = true
         let (paths, session, finished) = try host(timeout: 5, backend: backend, native: true)

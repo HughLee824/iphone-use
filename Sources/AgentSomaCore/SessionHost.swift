@@ -83,7 +83,7 @@ final class SessionHost {
             reply(response, {})
         }
         guard request["version"] as? Int == 1, request["session"] as? String == config.session,
-              !id.isEmpty, (["status", "apps", "open", "observe", "inspect", "disconnect", "text-finish", "text-prepare"] + DeviceAction.operations).contains(operation) else {
+              !id.isEmpty, (["status", "apps", "open", "observe", "inspect", "disconnect", "text-finish", "text-prepare", "record-start", "record-stop"] + DeviceAction.operations).contains(operation) else {
             reject("invalid_request", "Invalid session request")
             return
         }
@@ -100,6 +100,15 @@ final class SessionHost {
                 reject("invalid_app_query", "Use a text query and a nonnegative offset")
                 return
             }
+        }
+        if operation == "record-start" || operation == "record-stop" {
+            do {
+                guard config.backend == "apple-native" else { throw SomaError("native_action_unsupported", "Recording applies only to apple-native") }
+                if operation == "record-start" { _ = try NativeScreenRecording.duration(request) }
+                else if UUID(uuidString: request["recordingID"] as? String ?? "") == nil {
+                    throw SomaError("invalid_recording_id", "Use the recording ID returned by record-start or status")
+                }
+            } catch { reject((error as? SomaError)?.code ?? "invalid_request", String(describing: error)); return }
         }
         var reference: ObservationReference?
         var action: DeviceAction?
@@ -171,6 +180,21 @@ final class SessionHost {
                     response["result"] = try observations.inspect(reference!, offset: request["offset"] as! Int,
                                                                   query: request["query"] as? String)
                     effective = true
+                case "record-start":
+                    observations.invalidate("recording_started")
+                    response["requiresObservation"] = true
+                    response["result"] = try backend.startRecording(duration: NativeScreenRecording.duration(request))
+                    effective = true
+                case "record-stop":
+                    observations.invalidate("recording_stopped")
+                    response["requiresObservation"] = true
+                    let result = try backend.stopRecording(id: request["recordingID"] as! String)
+                    response["result"] = result
+                    response["ok"] = result["state"] as? String == "completed"
+                    if response["ok"] as? Bool != true {
+                        response["error"] = result["error"] ?? ["code": "recording_incomplete", "message": "Recording has not completed; inspect status. Do not restart automatically."]
+                    }
+                    effective = true
                 case "text-prepare":
                     // Registration can change keyboard visibility. Consume old references
                     // and capture afterward even when the owned keyboard already exists.
@@ -216,6 +240,9 @@ final class SessionHost {
                 let failure = error as? ActionFailure
                 if let result = failure?.result { response["result"] = result }
                 let uncertain = failure?.possiblyExecuted ?? (error as? TransportError)?.possiblySent ?? false
+                if operation == "record-start" || operation == "record-stop" {
+                    response["outcome"] = uncertain ? "unknown" : "not_dispatched"
+                }
                 if operation == "open" || action != nil || operation == "text-finish" || operation == "text-prepare" {
                     observations.finishAction(previous: previousObservation, dispatched: uncertain)
                     if failure?.requiresObservation == true { observations.invalidate("target_changed") }
