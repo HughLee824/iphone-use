@@ -536,7 +536,7 @@ private final class DoubleTapProbeController: UIViewController, UITextViewDelega
 
 private final class PinchProbeController: UIViewController, UIScrollViewDelegate {
     private let controls = UIStackView(), facts = UILabel(), scroll = UIScrollView(), canvas = UIView()
-    private var began = 0, ended = 0, peakTouches = 0
+    private var began = 0, ended = 0, cancelled = 0, peakTouches = 0
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .allButUpsideDown }
     override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation { .portrait }
     override func viewDidLoad() {
@@ -579,11 +579,17 @@ private final class PinchProbeController: UIViewController, UIScrollViewDelegate
     @objc private func pinchChanged(_ gesture: UIPinchGestureRecognizer) {
         peakTouches = max(peakTouches, gesture.numberOfTouches)
         if gesture.state == .began { began += 1 }
-        if gesture.state == .ended || gesture.state == .cancelled { ended += 1 }
+        if gesture.state == .ended { ended += 1 }
+        if gesture.state == .cancelled { cancelled += 1 }
         refresh()
+        if gesture.state == .ended || gesture.state == .cancelled {
+            // UIKit still exposes the ending touches inside its action callback.
+            // Read the recognizer again after reset; do not manufacture an active count of zero.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in self?.refresh() }
+        }
     }
     private func refresh() {
-        facts.text = String(format: "Zoom %.3f / UIKit %d\nPinch began %d / ended %d\nPeak touches %d / active %d", Double(scroll.zoomScale),
-            view.window?.windowScene?.interfaceOrientation.rawValue ?? 0, began, ended, peakTouches, scroll.pinchGestureRecognizer?.numberOfTouches ?? 0)
+        facts.text = String(format: "Zoom %.3f / UIKit %d\nBegan %d / ended %d / cancelled %d\nPeak touches %d / active %d", Double(scroll.zoomScale),
+            view.window?.windowScene?.interfaceOrientation.rawValue ?? 0, began, ended, cancelled, peakTouches, scroll.pinchGestureRecognizer?.numberOfTouches ?? 0)
     }
 }
