@@ -153,11 +153,37 @@ struct SwipeMotion: Codable, Equatable {
     }
 }
 
+// Distances are the separation of two fingers along the current screenshot's X axis.
+// They describe input geometry, not the scale that an app will apply.
+struct PinchMotion: Codable {
+    let fromDistance: Double
+    let toDistance: Double
+    let duration: TimeInterval
+    var valid: Bool {
+        [fromDistance, toDistance, duration].allSatisfy(\.isFinite)
+            && fromDistance >= 20 && toDistance >= 20
+            && abs(fromDistance - toDistance) >= 1 && (0.1...5).contains(duration)
+    }
+    func points(center: CGPoint, ending: Bool) -> [CGPoint] {
+        let half = (ending ? toDistance : fromDistance) / 2
+        return [CGPoint(x: center.x - half, y: center.y), CGPoint(x: center.x + half, y: center.y)]
+    }
+    func regions(center: CGPoint, screen: CGRect) -> [ScreenRect] {
+        zip(points(center: center, ending: false), points(center: center, ending: true)).map { start, end in
+            ScreenRect(CGRect(x: min(start.x, end.x) - 32, y: start.y - 32,
+                              width: abs(end.x - start.x) + 64, height: 64).intersection(screen))
+        }
+    }
+    var result: [String: Any] { ["fromDistance": fromDistance, "toDistance": toDistance,
+        "duration": duration, "axis": "screenshot_horizontal", "distanceUnit": "screen_points"] }
+}
+
 struct CoordinateGesture: Codable {
     let start: CGPoint
     let end: CGPoint?
     let screenGuard: ScreenGuard
     var motion: SwipeMotion? = nil
+    var pinch: PinchMotion? = nil
 
     var withinMotionBudget: Bool {
         guard let end, let motion else { return true }
@@ -181,7 +207,18 @@ struct CoordinateGesture: Codable {
 
     func validate(kind: String) throws {
         try screenGuard.validate()
-        guard [start.x, start.y].allSatisfy(\.isFinite), screenGuard.context.scope.cgRect.contains(start),
+        if kind == "pinch" {
+            guard let pinch, pinch.valid, end == nil, motion == nil,
+                  [start.x, start.y].allSatisfy(\.isFinite),
+                  (pinch.points(center: start, ending: false) + pinch.points(center: start, ending: true))
+                    .allSatisfy({ $0.x.isFinite && $0.y.isFinite && screenGuard.context.scope.cgRect.contains($0) }) else {
+                throw ScreenGuard.Failure.invalidGuard
+            }
+            let required = pinch.regions(center: start, screen: screenGuard.context.screen.cgRect)
+            guard screenGuard.regions.prefix(2).map(\.rect) == required else { throw ScreenGuard.Failure.invalidGuard }
+            return
+        }
+        guard pinch == nil, [start.x, start.y].allSatisfy(\.isFinite), screenGuard.context.scope.cgRect.contains(start),
               (["tap", "double-tap", "long-press"].contains(kind) && end == nil && motion == nil)
                 || (kind == "swipe" && end != nil && motion?.valid == true && withinMotionBudget) else { throw ScreenGuard.Failure.invalidGuard }
         if let end {

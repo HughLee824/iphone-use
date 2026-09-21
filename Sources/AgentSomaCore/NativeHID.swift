@@ -86,6 +86,7 @@ final class NativeHIDAdapter {
     private let uptime: () -> TimeInterval
     private var surface: UInt64?
     private var contact: (UInt16, UInt16)?
+    private var pinchContacts: [(UInt16, UInt16)]?
     private(set) var releaseUncertain = false
     private var inputUncertain = false
     private let keyboardID = UInt64(1) << 32 | UInt64.random(in: 1...UInt64(UInt32.max))
@@ -103,7 +104,7 @@ final class NativeHIDAdapter {
         if releaseUncertain { return .releaseUncertain }
         if inputUncertain { return .inputUncertain }
         if cancellation.isCancelled { return .cancelled }
-        if contact != nil || keysDown || homeDown { return .contactActive }
+        if contact != nil || pinchContacts != nil || keysDown || homeDown { return .contactActive }
         return surface == nil ? .unprepared : .ready
     }
     var isAvailable: Bool { state == .ready }
@@ -446,6 +447,64 @@ final class NativeHIDAdapter {
                          "motion": plan.motion.result, "moveReportsQueued": moves])
         }
     }
+    private func pinchReport(contact: Bool, points: [(UInt16, UInt16)], timeout: TimeInterval) throws {
+        guard let surface else { throw SomaError("native_hid_unavailable", "Touchscreen has not been negotiated") }
+        try transport.send(["featureIdentifier": Self.feature, "messageType": "Request",
+            "payload": ["send": ["_0": NativePinchReport.make(contact: contact, points: points, timestamp: clock()),
+                                   "_1": nativeUInt(surface)]]], timeout: timeout)
+    }
+    func pinch(_ plan: NativePinchPlan, checkHealth: () throws -> Void = {}) throws -> [String: Any] {
+        try cancellation.check()
+        guard isAvailable else { throw SomaError("native_hid_unavailable", "Touch state is unavailable; reconnect and observe") }
+        try checkHealth()
+        let started = uptime(), deadline = started + 6
+        var attempted = false, moves = 0
+        func check() throws {
+            try cancellation.check(); try checkHealth()
+            guard uptime() < deadline else { throw SomaError("native_input_deadline", "Pinch exceeded six seconds") }
+        }
+        func waitUntil(_ target: TimeInterval) throws {
+            while uptime() < target {
+                try check(); wait(min(0.005, max(0, target - uptime())))
+            }
+            try check()
+        }
+        func move(_ points: [(UInt16, UInt16)]) throws {
+            try check()
+            // A send failure can follow delivery. Retain both identities/positions for release.
+            pinchContacts = points; attempted = true
+            try pinchReport(contact: true, points: points, timeout: min(3, max(0.001, deadline - uptime())))
+        }
+        do {
+            try move(plan.start)
+            try waitUntil(uptime() + 0.06)
+            let moving = uptime(), interval = NativeSwipePlan.sampleInterval
+            var next = min(interval, plan.motion.duration)
+            while true {
+                try waitUntil(moving + next)
+                let fraction = uptime() >= moving + plan.motion.duration ? 1 : min(1, (uptime() - moving) / plan.motion.duration)
+                try move(plan.points(at: fraction)); moves += 1
+                if fraction >= 1 { break }
+                next = min(plan.motion.duration, max(next + interval, (floor((uptime() - moving) / interval) + 1) * interval))
+            }
+            try waitUntil(uptime() + 0.06)
+            try pinchReport(contact: false, points: plan.end, timeout: min(3, max(0.001, deadline - uptime())))
+            pinchContacts = nil
+            try check()
+            return ["transportStatus": "sent", "verificationStatus": "not_checked", "contactReleaseQueued": true,
+                "contactCount": 2, "motion": plan.motion.result, "moveReportsQueued": moves,
+                "hostStartedUptime": started, "hostCompletedUptime": uptime(),
+                "timestampSource": "mach_absolute_time", "hidStart": plan.start.map { [Int($0.0), Int($0.1)] },
+                "hidEnd": plan.end.map { [Int($0.0), Int($0.1)] }]
+        } catch {
+            guard attempted else { throw error }
+            inputUncertain = true
+            throw ActionFailure(code: "native_input_uncertain", description: "Pinch may be partially delivered: \(error). Observe; do not replay.",
+                possiblyExecuted: true, requiresObservation: true,
+                result: ["transportStatus": "uncertain", "verificationStatus": "uncertain", "contactCount": 2,
+                    "motion": plan.motion.result, "moveReportsQueued": moves, "cleanup": release()])
+        }
+    }
     // System button events use the separate, paired CoreDevice Indigo service.
     // Queuing the event does not establish that SpringBoard handled it.
     private func homeEvent(state: UInt64) throws {
@@ -495,6 +554,21 @@ final class NativeHIDAdapter {
             keysDown = false
             do { try sendKeys([]); keyboardFacts["keyboardReleaseQueued"] = true }
             catch { releaseUncertain = true; keyboardFacts["keyboardReleaseQueued"] = false; keyboardFacts["keyboardReleaseError"] = String(describing: error) }
+        }
+        if let points = pinchContacts {
+            pinchContacts = nil
+            // One frame releases both contacts on the exact existing connection, even when cancelled.
+            keyboardFacts["releaseRequired"] = true
+            keyboardFacts["contactsToRelease"] = 2
+            do {
+                try pinchReport(contact: false, points: points, timeout: 3)
+                keyboardFacts["releaseQueued"] = true
+            } catch {
+                releaseUncertain = true; keyboardFacts["releaseQueued"] = false
+                keyboardFacts["error"] = String(describing: error)
+            }
+            keyboardFacts["releaseUncertain"] = releaseUncertain
+            return keyboardFacts
         }
         guard let point = contact else { return keyboardFacts.merging(["releaseRequired": false, "releaseUncertain": releaseUncertain]) { _, new in new } }
         contact = nil

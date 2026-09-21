@@ -75,6 +75,12 @@ private final class TextProbeController: UIViewController, UITextViewDelegate {
         let unfocus = UIButton(type: .system); unfocus.setTitle("End editing (no submit)", for: .normal)
         unfocus.addAction(UIAction { [weak self] _ in self?.input.resignFirstResponder() }, for: .touchUpInside)
         stack.addArrangedSubview(unfocus)
+        let pinch = UIButton(type: .system); pinch.setTitle("Pinch workflow", for: .normal)
+        pinch.addAction(UIAction { [weak self] _ in
+            let controller = PinchProbeController(); controller.modalPresentationStyle = .fullScreen
+            self?.present(controller, animated: true)
+        }, for: .touchUpInside)
+        stack.addArrangedSubview(pinch)
         let doubleTap = UIButton(type: .system); doubleTap.setTitle("Double tap workflow", for: .normal)
         doubleTap.addAction(UIAction { [weak self] _ in
             let controller = DoubleTapProbeController(); controller.modalPresentationStyle = .fullScreen
@@ -524,5 +530,60 @@ private final class DoubleTapProbeController: UIViewController, UITextViewDelega
         let selected = range.location <= value.length && range.length <= value.length - range.location ? value.substring(with: range) : ""
         facts.text = "Double \(doubles) / Single \(singles) / UIKit \(view.window?.windowScene?.interfaceOrientation.rawValue ?? 0)\n" +
             "Selection UTF16: \(range.location),\(range.length)\nSelected: \(selected)"
+    }
+}
+
+
+private final class PinchProbeController: UIViewController, UIScrollViewDelegate {
+    private let controls = UIStackView(), facts = UILabel(), scroll = UIScrollView(), canvas = UIView()
+    private var began = 0, ended = 0, peakTouches = 0
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .allButUpsideDown }
+    override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation { .portrait }
+    override func viewDidLoad() {
+        super.viewDidLoad(); view.backgroundColor = .systemBackground
+        controls.distribution = .fillEqually; view.addSubview(controls)
+        for (name, mask) in [("Portrait", UIInterfaceOrientationMask.portrait), ("Left", .landscapeLeft), ("Right", .landscapeRight)] {
+            let button = UIButton(type: .system); button.setTitle(name, for: .normal)
+            button.addAction(UIAction { [weak self] _ in
+                self?.setNeedsUpdateOfSupportedInterfaceOrientations()
+                self?.view.window?.windowScene?.requestGeometryUpdate(.iOS(interfaceOrientations: mask))
+            }, for: .touchUpInside); controls.addArrangedSubview(button)
+        }
+        let close = UIButton(type: .system); close.setTitle("Close", for: .normal)
+        close.addAction(UIAction { [weak self] _ in self?.dismiss(animated: true) }, for: .touchUpInside); controls.addArrangedSubview(close)
+        facts.font = .monospacedSystemFont(ofSize: 13, weight: .regular); facts.numberOfLines = 0; view.addSubview(facts)
+        scroll.delegate = self; scroll.minimumZoomScale = 0.5; scroll.maximumZoomScale = 4
+        scroll.bouncesZoom = false; scroll.backgroundColor = .secondarySystemBackground
+        scroll.contentInsetAdjustmentBehavior = .never; view.addSubview(scroll)
+        canvas.frame = CGRect(x: 0, y: 0, width: 600, height: 600); scroll.addSubview(canvas); scroll.contentSize = canvas.bounds.size
+        for row in 0..<6 { for column in 0..<6 {
+            let label = UILabel(frame: CGRect(x: column * 100, y: row * 100, width: 98, height: 98))
+            label.text = "\(row),\(column)"; label.textAlignment = .center; label.font = .monospacedSystemFont(ofSize: 22, weight: .medium)
+            label.backgroundColor = (row + column) % 2 == 0 ? .systemTeal : .systemYellow
+            canvas.addSubview(label)
+        } }
+        // Observe the standard UIScrollView recognizer. UIKit alone applies zoom.
+        scroll.pinchGestureRecognizer?.addTarget(self, action: #selector(pinchChanged(_:)))
+        refresh()
+    }
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        let area = view.safeAreaLayoutGuide.layoutFrame.insetBy(dx: 12, dy: 4)
+        controls.frame = CGRect(x: area.minX, y: area.minY, width: area.width, height: 34)
+        facts.frame = CGRect(x: area.minX, y: area.minY + 38, width: area.width, height: 66)
+        scroll.frame = CGRect(x: area.minX, y: area.minY + 110, width: area.width, height: max(80, area.height - 110))
+        refresh()
+    }
+    func viewForZooming(in scrollView: UIScrollView) -> UIView? { canvas }
+    func scrollViewDidZoom(_ scrollView: UIScrollView) { refresh() }
+    @objc private func pinchChanged(_ gesture: UIPinchGestureRecognizer) {
+        peakTouches = max(peakTouches, gesture.numberOfTouches)
+        if gesture.state == .began { began += 1 }
+        if gesture.state == .ended || gesture.state == .cancelled { ended += 1 }
+        refresh()
+    }
+    private func refresh() {
+        facts.text = String(format: "Zoom %.3f / UIKit %d\nPinch began %d / ended %d\nPeak touches %d / active %d", Double(scroll.zoomScale),
+            view.window?.windowScene?.interfaceOrientation.rawValue ?? 0, began, ended, peakTouches, scroll.pinchGestureRecognizer?.numberOfTouches ?? 0)
     }
 }

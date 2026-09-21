@@ -99,6 +99,16 @@ class ActionObservationCLITests(unittest.TestCase):
         self.assertEqual([r["op"] for r in requests], ["double-tap", "observe"])
         self.assertEqual((requests[0]["x"], requests[0]["y"]), (100, 200))
 
+    def test_native_pinch_lost_reply_preserves_geometry_without_replay(self):
+        code, response, requests = self.run_cli(
+            ["pinch", "o1", "--x", "195", "--y", "300", "--from-distance", "80",
+             "--to-distance", "200", "--duration", "0.5", "--observe"], lose_action=True)
+        self.assertEqual(code, 1)
+        self.assertEqual(response["action"]["outcome"], "unknown")
+        self.assertEqual([r["op"] for r in requests], ["pinch", "observe"])
+        self.assertEqual([requests[0][key] for key in ["x", "y", "fromDistance", "toDistance", "duration"]],
+                         [195, 300, 80, 200, 0.5])
+
     def test_without_flag_preserves_original_response(self):
         code, response, requests = self.run_cli(["tap", "o1:e11"])
         self.assertEqual(code, 0, response)

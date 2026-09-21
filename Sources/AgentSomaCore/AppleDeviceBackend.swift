@@ -185,7 +185,7 @@ final class AppleDeviceBackend: SessionBackend {
                                                    startupCode: controlErrorCode, startupError: controlError)
         var result: [String: Any] = ["backend": "apple-native", "sessionGeneration": generation, "deviceID": cli?.device ?? config.device,
                 "capabilities": ["screenshot": true, "tap": control.available, "ax": false, "swipe": control.available,
-                    "doubleTap": control.available, "longPress": control.available, "home": control.available && buttonError == nil,
+                    "pinch": control.available, "doubleTap": control.available, "longPress": control.available, "home": control.available && buttonError == nil,
                     "text": control.available && hid?.canType == true, "press": control.available && hid?.canType == true],
                 "systemButtons": ["servicePrepared": buttonTransport != nil, "error": buttonError as Any? ?? NSNull()],
                 "keyboard": hid?.keyboardStatus ?? [:],
@@ -230,8 +230,8 @@ final class AppleDeviceBackend: SessionBackend {
         let pressing = action.kind == "press" && action.reference.node == nil
         let keyboardAction = typing || pressing
         let homeAction = action.kind == "home"
-        guard keyboardAction || homeAction || (["tap", "double-tap", "long-press", "swipe"].contains(action.kind) && action.coordinate) else {
-            throw SomaError("native_action_unsupported", "Use coordinate tap/double-tap/long-press/swipe, home oN, or type/press oN after visually confirming focus")
+        guard keyboardAction || homeAction || (["tap", "double-tap", "long-press", "pinch", "swipe"].contains(action.kind) && action.coordinate) else {
+            throw SomaError("native_action_unsupported", "Use coordinate tap/double-tap/long-press/pinch/swipe, home oN, or type/press oN after visually confirming focus")
         }
         let textInput = typing ? try NativeTextInput(text: action.fields["text"] as! String, mode: action.fields["mode"] as! String, method: action.fields["textMethod"] as? String ?? "auto") : nil
         defer { if textInput?.usesPasteboard == true { pasteboard?.endInputAttempt() } }
@@ -253,6 +253,7 @@ final class AppleDeviceBackend: SessionBackend {
         }
         if let gesture = target.gesture { try gesture.validate(kind: action.kind) }
         let swipe = action.kind == "swipe" ? try NativeSwipePlan(gesture: target.gesture!, rotation: rotation) : nil
+        let pinch = action.kind == "pinch" ? try NativePinchPlan(gesture: target.gesture!, rotation: rotation) : nil
         if keyboardAction {
             try screenGuard.validate()
             guard screenGuard.regions.map(\.rect) == [action.textRegion ?? screenGuard.context.screen] else { throw ScreenGuard.Failure.invalidGuard }
@@ -372,6 +373,10 @@ final class AppleDeviceBackend: SessionBackend {
             let point = try NativeCoordinateMapper.map(target.gesture!.start, screen: screenGuard.context.screen, rotation: rotation)
             result = try hid.doubleTap(point) {
                 guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped during double tap") }
+            }
+        } else if let pinch {
+            result = try hid.pinch(pinch) {
+                guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped during pinch") }
             }
         } else if let swipe {
             result = try hid.swipe(swipe) {

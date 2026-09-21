@@ -170,14 +170,14 @@ final class ObservationCache {
                 let caretGuard = try action.textRegion.flatMap { try NativeCaretGuard(png: entry.capture.screenshot, context: context, field: $0) }
                 return ObservedTarget(context: entry.capture.metadata, path: [], textGuard: guardValue, textCaretGuard: caretGuard)
             }
-            guard ["tap", "double-tap", "long-press", "swipe"].contains(action.kind), action.coordinate else {
+            guard ["tap", "double-tap", "long-press", "pinch", "swipe"].contains(action.kind), action.coordinate else {
                 throw SomaError("native_action_unsupported", "Use tap or swipe oN with native screenshot screen-point coordinates")
             }
             return try coordinateTarget(for: action, capture: entry.capture)
         }
         guard let scope = entry.capture.metadata["scope"] as? String, ["app", "appAlert", "systemAlert"].contains(scope),
               !entry.capture.nodes.isEmpty else { throw SomaError("target_context_unknown", "Observe a known app or alert before acting") }
-        if ["tap", "double-tap", "long-press", "swipe"].contains(action.kind) { return try coordinateTarget(for: action, capture: entry.capture) }
+        if ["tap", "double-tap", "long-press", "pinch", "swipe"].contains(action.kind) { return try coordinateTarget(for: action, capture: entry.capture) }
         var index = 0
         if !action.coordinate {
             let node = try resolveCurrent(reference)
@@ -229,7 +229,7 @@ final class ObservationCache {
         let start: CGPoint
         var end: CGPoint?
         if action.coordinate {
-            if ["tap", "double-tap", "long-press"].contains(action.kind) { start = CGPoint(x: action.fields["x"] as! Double, y: action.fields["y"] as! Double) }
+            if ["tap", "double-tap", "long-press", "pinch"].contains(action.kind) { start = CGPoint(x: action.fields["x"] as! Double, y: action.fields["y"] as! Double) }
             else {
                 start = CGPoint(x: action.fields["fromX"] as! Double, y: action.fields["fromY"] as! Double)
                 end = CGPoint(x: action.fields["toX"] as! Double, y: action.fields["toY"] as! Double)
@@ -237,7 +237,7 @@ final class ObservationCache {
         } else {
             guard try resolveCurrent(action.reference).enabled else { throw SomaError("target_disabled", "The observed element is disabled") }
             let rect = try visibleRect(action.reference)
-            if ["tap", "double-tap", "long-press"].contains(action.kind) { start = CGPoint(x: rect.midX, y: rect.midY) }
+            if ["tap", "double-tap", "long-press", "pinch"].contains(action.kind) { start = CGPoint(x: rect.midX, y: rect.midY) }
             else {
                 let direction = action.fields["direction"] as! String
                 let vertical = ["up", "down"].contains(direction)
@@ -252,7 +252,14 @@ final class ObservationCache {
         guard context.scope.cgRect.contains(start), end.map({ context.scope.cgRect.contains($0) }) ?? true else {
             throw SomaError("invalid_screen_point", "Gesture coordinates must stay inside the observed app or alert")
         }
-        var rects = CoordinateGesture.actionRegions(start: start, end: end, screen: context.screen.cgRect)
+        if let pinch = action.pinchMotion {
+            guard (pinch.points(center: start, ending: false) + pinch.points(center: start, ending: true))
+                .allSatisfy({ $0.x.isFinite && $0.y.isFinite && context.scope.cgRect.contains($0) }) else {
+                throw SomaError("invalid_screen_point", "Both pinch paths must stay inside the observed scope")
+            }
+        }
+        var rects = action.pinchMotion?.regions(center: start, screen: context.screen.cgRect)
+            ?? CoordinateGesture.actionRegions(start: start, end: end, screen: context.screen.cgRect)
         rects += try action.protectedReferences.map { ScreenRect(try visibleRect($0)) }
         let guardValue: ScreenGuard
         do { guardValue = try ScreenGuard(png: capture.screenshot, context: context, rects: rects, policy: action.guardPolicy) }
@@ -261,7 +268,7 @@ final class ObservationCache {
                                 description: "Cannot prepare a screen guard from this observation; observe again",
                                 possiblyExecuted: false, requiresObservation: true)
         }
-        let gesture = CoordinateGesture(start: start, end: end, screenGuard: guardValue, motion: action.swipeMotion)
+        let gesture = CoordinateGesture(start: start, end: end, screenGuard: guardValue, motion: action.swipeMotion, pinch: action.pinchMotion)
         guard gesture.withinMotionBudget else {
             throw SomaError("swipe_duration_exceeded", "Estimated swipe motion exceeds 10 seconds; use a shorter distance, faster velocity or shorter holds")
         }

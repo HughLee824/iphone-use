@@ -15,7 +15,7 @@ struct SessionOptions: ParsableArguments {
 struct AgentSoma: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "agentsoma", abstract: "Eyes and hands for agents operating a real iPhone.", version: RunnerSetup.releaseVersion,
-        subcommands: [Setup.self, BuildRunner.self, Devices.self, Connect.self, Status.self, Apps.self, Open.self, Observe.self, Inspect.self, Tap.self, DoubleTap.self, LongPress.self, Swipe.self, Home.self, TypeText.self, TextPrepare.self, TextFinish.self, Press.self, Disconnect.self, Host.self])
+        subcommands: [Setup.self, BuildRunner.self, Devices.self, Connect.self, Status.self, Apps.self, Open.self, Observe.self, Inspect.self, Tap.self, DoubleTap.self, Pinch.self, LongPress.self, Swipe.self, Home.self, TypeText.self, TextPrepare.self, TextFinish.self, Press.self, Disconnect.self, Host.self])
     @OptionGroup var options: SessionOptions
 }
 
@@ -223,6 +223,26 @@ struct DoubleTap: ParsableCommand {
         var fields = screenGuard.fields
         fields["reference"] = reference; fields["x"] = x; fields["y"] = y
         try outputAction(session: session, observe: observation.observe) { try SessionClient.call(session: session, operation: "double-tap", fields: fields) }
+    }
+}
+
+struct Pinch: ParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "Move two fingers symmetrically along the screenshot X axis (apple-native).")
+    @OptionGroup var options: SessionOptions
+    @OptionGroup var observation: ActionObservationOptions
+    @OptionGroup var screenGuard: ScreenGuardOptions
+    @Argument(help: "Current screenshot observation ID.") var reference: String
+    @Option(help: "Center horizontal screen point coordinate.") var x: Double
+    @Option(help: "Center vertical screen point coordinate.") var y: Double
+    @Option(help: "Initial finger separation in screen points, at least 20.") var fromDistance: Double
+    @Option(help: "Final separation in screen points; larger spreads, smaller pinches.") var toDistance: Double
+    @Option(help: "Movement seconds, 0.1...5; default 0.5.") var duration: Double = 0.5
+    mutating func run() throws {
+        let session = try options.requiredSession()
+        var fields = screenGuard.fields
+        fields["reference"] = reference; fields["x"] = x; fields["y"] = y
+        fields["fromDistance"] = fromDistance; fields["toDistance"] = toDistance; fields["duration"] = duration
+        try outputAction(session: session, observe: observation.observe) { try SessionClient.call(session: session, operation: "pinch", fields: fields) }
     }
 }
 
