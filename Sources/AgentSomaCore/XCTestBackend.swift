@@ -8,6 +8,7 @@ protocol SessionBackend: AnyObject {
     func status() throws -> [String: Any]
     func apps() throws -> AppCatalog
     func open(bundle: String) throws -> [String: Any]
+    func appLifecycle(bundle: String, relaunch: Bool) throws -> [String: Any]
     func observe() throws -> CapturedObservation
     func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any]
     func stop() -> [String: Any]
@@ -19,6 +20,9 @@ protocol SessionBackend: AnyObject {
 }
 
 extension SessionBackend {
+    func appLifecycle(bundle: String, relaunch: Bool) throws -> [String: Any] {
+        throw SomaError("native_action_unsupported", "terminate/relaunch apply only to apple-native")
+    }
     func cancelCurrent() {}
     func startRecording(duration: Double) throws -> [String: Any] {
         throw SomaError("native_action_unsupported", "Recording applies only to apple-native")

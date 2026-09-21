@@ -136,6 +136,8 @@ Use `agentsoma --help` or `agentsoma <command> --help` for all options. Session 
 | `status` | Check session health and remaining idle time without renewing it. |
 | `apps [--query TEXT]` | Find installed apps by name or bundle ID; follow `nextOffset` for more results. |
 | `open BUNDLE_ID` | Launch or activate an installed app. |
+| `terminate BUNDLE_ID [--observe]` | Apple-native only: terminate the app main process and confirm absence. |
+| `relaunch BUNDLE_ID [--observe]` | Apple-native only: confirm exit, launch once, verify a new PID and inspect the returned screenshot. |
 | `observe` | Capture a PNG and compact AX text with new references. |
 | `inspect REF [--query TEXT]` | Read or search a cached observation or subtree. |
 | `tap REF` | Tap an element, or use an observation ID with `--x X --y Y`. |

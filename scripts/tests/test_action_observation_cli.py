@@ -64,6 +64,18 @@ class ActionObservationCLITests(unittest.TestCase):
             self.assertTrue(result.stdout, f"CLI returned no JSON: exit={result.returncode}, stderr={result.stderr!r}, requests={requests!r}")
             return result.returncode, json.loads(result.stdout), requests
 
+    def test_app_lifecycle_commands_preserve_unknown_without_replay(self):
+        for command in ["terminate", "relaunch"]:
+            args = [command, "com.example.fixture", "--observe"]
+            code, response, requests = self.run_cli(args)
+            self.assertEqual(code, 0)
+            self.assertEqual(requests[0]["bundleId"], "com.example.fixture")
+            self.assertEqual([r["op"] for r in requests], [command, "observe"])
+            code, response, requests = self.run_cli(args, lose_action=True)
+            self.assertNotEqual(code, 0)
+            self.assertEqual(response["action"]["outcome"], "unknown")
+            self.assertEqual([r["op"] for r in requests], [command, "observe"])
+
     def test_recording_commands_do_not_replay_after_lost_reply(self):
         for args, operation in [(["record-start", "--duration", "5"], "record-start"),
                                 (["record-stop", "00000000-0000-0000-0000-000000000001"], "record-stop")]:

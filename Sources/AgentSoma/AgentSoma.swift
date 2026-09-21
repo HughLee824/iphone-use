@@ -15,7 +15,7 @@ struct SessionOptions: ParsableArguments {
 struct AgentSoma: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "agentsoma", abstract: "Eyes and hands for agents operating a real iPhone.", version: RunnerSetup.releaseVersion,
-        subcommands: [Setup.self, BuildRunner.self, Devices.self, Connect.self, Status.self, Apps.self, Open.self, Observe.self, Inspect.self, Tap.self, DoubleTap.self, Pinch.self, LongPress.self, Swipe.self, Home.self, TypeText.self, TextPrepare.self, TextFinish.self, Press.self, RecordStart.self, RecordStop.self, Disconnect.self, Host.self])
+        subcommands: [Setup.self, BuildRunner.self, Devices.self, Connect.self, Status.self, Apps.self, Open.self, Terminate.self, Relaunch.self, Observe.self, Inspect.self, Tap.self, DoubleTap.self, Pinch.self, LongPress.self, Swipe.self, Home.self, TypeText.self, TextPrepare.self, TextFinish.self, Press.self, RecordStart.self, RecordStop.self, Disconnect.self, Host.self])
     @OptionGroup var options: SessionOptions
 }
 
@@ -132,6 +132,32 @@ struct Open: ParsableCommand {
     mutating func run() throws {
         let session = try options.requiredSession()
         try outputAction(session: session, observe: observation.observe) { try SessionClient.call(session: session, operation: "open", fields: ["bundleId": bundleID]) }
+    }
+}
+
+struct Terminate: ParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "Native only: terminate the specified app's main process and confirm its absence. Unsaved app state may be lost.")
+    @OptionGroup var options: SessionOptions
+    @OptionGroup var observation: ActionObservationOptions
+    @Argument(help: "Exact installed app bundle identifier returned by apps.") var bundleID: String
+    mutating func run() throws {
+        let session = try options.requiredSession()
+        try outputAction(session: session, observe: observation.observe) {
+            try SessionClient.call(session: session, operation: "terminate", fields: ["bundleId": bundleID])
+        }
+    }
+}
+
+struct Relaunch: ParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "Native only: confirm the app has stopped, launch it once and check its new PID. Inspect the screenshot for foreground readiness.")
+    @OptionGroup var options: SessionOptions
+    @OptionGroup var observation: ActionObservationOptions
+    @Argument(help: "Exact installed app bundle identifier returned by apps. Unsaved app state may be lost.") var bundleID: String
+    mutating func run() throws {
+        let session = try options.requiredSession()
+        try outputAction(session: session, observe: observation.observe) {
+            try SessionClient.call(session: session, operation: "relaunch", fields: ["bundleId": bundleID])
+        }
     }
 }
 

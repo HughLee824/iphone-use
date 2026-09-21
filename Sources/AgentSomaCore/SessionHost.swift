@@ -76,6 +76,8 @@ final class SessionHost {
         let id = request["id"] as? String ?? ""
         let requestedOperation = request["op"] as? String ?? ""
         let operation = requestedOperation == "type-with-method" ? "type" : requestedOperation
+        let appLifecycle = operation == "terminate" || operation == "relaunch"
+        let appAction = operation == "open" || appLifecycle
         func reject(_ code: String, _ message: String) {
             var response: [String: Any] = ["id": id, "session": config.session, "ok": false,
                    "outcome": "not_dispatched", "error": ["code": code, "message": message]]
@@ -83,16 +85,20 @@ final class SessionHost {
             reply(response, {})
         }
         guard request["version"] as? Int == 1, request["session"] as? String == config.session,
-              !id.isEmpty, (["status", "apps", "open", "observe", "inspect", "disconnect", "text-finish", "text-prepare", "record-start", "record-stop"] + DeviceAction.operations).contains(operation) else {
+              !id.isEmpty, (["status", "apps", "open", "terminate", "relaunch", "observe", "inspect", "disconnect", "text-finish", "text-prepare", "record-start", "record-stop"] + DeviceAction.operations).contains(operation) else {
             reject("invalid_request", "Invalid session request")
             return
         }
-        if operation == "open" {
+        if appAction {
             guard let bundle = request["bundleId"] as? String,
                   bundle.range(of: "^[A-Za-z0-9][A-Za-z0-9.-]{0,254}\\z", options: .regularExpression) != nil else {
                 reject("invalid_bundle_id", "A bundle identifier is required")
                 return
             }
+        }
+        if appLifecycle, config.backend != "apple-native" {
+            reject("native_action_unsupported", "terminate/relaunch apply only to apple-native")
+            return
         }
         if operation == "apps" {
             guard let offset = request["offset"] as? Int, offset >= 0,
@@ -160,7 +166,7 @@ final class SessionHost {
         work.async { [self] in
             var response: [String: Any] = ["id": id, "session": config.session, "ok": true]
             var previousObservation: String?
-            var effective = operation == "open"
+            var effective = appAction
             do {
                 switch operation {
                 case "status": response["result"] = try backend.status()
@@ -172,6 +178,12 @@ final class SessionHost {
                     response["result"] = try backend.open(bundle: request["bundleId"] as! String)
                     observations.finishAction(previous: previousObservation, dispatched: true)
                     response["outcome"] = "completed"
+                case "terminate", "relaunch":
+                    previousObservation = observations.beginAction()
+                    response["result"] = try backend.appLifecycle(bundle: request["bundleId"] as! String, relaunch: operation == "relaunch")
+                    observations.finishAction(previous: previousObservation, dispatched: true)
+                    response["outcome"] = "completed"
+                    response["requiresObservation"] = true
                 case "observe":
                     observations.invalidate("superseded")
                     response["result"] = try observations.store(backend.observe())
@@ -243,7 +255,7 @@ final class SessionHost {
                 if operation == "record-start" || operation == "record-stop" {
                     response["outcome"] = uncertain ? "unknown" : "not_dispatched"
                 }
-                if operation == "open" || action != nil || operation == "text-finish" || operation == "text-prepare" {
+                if appAction || action != nil || operation == "text-finish" || operation == "text-prepare" {
                     observations.finishAction(previous: previousObservation, dispatched: uncertain)
                     if failure?.requiresObservation == true { observations.invalidate("target_changed") }
                     response["outcome"] = uncertain ? "unknown" : "not_dispatched"
@@ -267,7 +279,7 @@ final class SessionHost {
             }
             // Native actions always return a new observation while still holding the device
             // work queue. Capture failure preserves the action's execution facts.
-            if config.backend == "apple-native", operation == "open" || action != nil || operation == "text-finish" || operation == "text-prepare",
+            if config.backend == "apple-native", appAction || action != nil || operation == "text-finish" || operation == "text-prepare",
                response["outcome"] as? String != "not_dispatched" {
                 observations.invalidate("post_action_capture")
                 do {
@@ -286,10 +298,10 @@ final class SessionHost {
                     }
                 }
             }
-            if config.backend == "apple-native", operation == "open" || action != nil || operation == "text-prepare" || (operation == "observe" && response["ok"] as? Bool == false) {
+            if config.backend == "apple-native", appAction || action != nil || operation == "text-prepare" || (operation == "observe" && response["ok"] as? Bool == false) {
                 NativeRecovery.enrich(&response, control: try? backend.status())
             }
-            if config.backend == "apple-native", operation == "open" || action != nil || operation == "text-finish" || operation == "text-prepare" {
+            if config.backend == "apple-native", appAction || action != nil || operation == "text-finish" || operation == "text-prepare" {
                 var result = response["result"] as? [String: Any] ?? [:]
                 result["actionID"] = id
                 result["sourceObservationID"] = action?.reference.observation ?? reference?.observation

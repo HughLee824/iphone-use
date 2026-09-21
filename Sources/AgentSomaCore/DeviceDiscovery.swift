@@ -3,7 +3,7 @@ import Foundation
 // devicectl's JSON file is its supported programmatic interface. Never parse its display table.
 enum CoreDevice {
     static func read(_ arguments: [String], savingTo output: URL? = nil,
-                     cancelled: () -> Bool = { false }, trailingArguments: [String] = []) throws -> [String: Any] {
+                     cancelled: () -> Bool = { false }, trailingArguments: [String] = [], timeout: Int = 20) throws -> [String: Any] {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("agentsoma-discovery-\(UUID().uuidString)")
         try SessionPaths.secureDirectory(directory)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -14,12 +14,12 @@ enum CoreDevice {
         defer { try? log.close() }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-        process.arguments = commandArguments(arguments, output: resultURL, trailingArguments: trailingArguments)
+        process.arguments = commandArguments(arguments, output: resultURL, trailingArguments: trailingArguments, timeout: timeout)
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = log
         process.standardError = log
         try process.run()
-        let deadline = ProcessInfo.processInfo.systemUptime + 25
+        let deadline = ProcessInfo.processInfo.systemUptime + Double(timeout) + 5
         while process.isRunning, !cancelled(), ProcessInfo.processInfo.systemUptime < deadline {
             Thread.sleep(forTimeInterval: 0.02)
         }
@@ -44,8 +44,8 @@ enum CoreDevice {
 
     // Launch treats everything after the bundle as application arguments. All tool options,
     // including JSON output and device selection, must precede that positional tail.
-    static func commandArguments(_ arguments: [String], output: URL, trailingArguments: [String] = []) -> [String] {
-        ["devicectl"] + arguments + ["--timeout", "20", "--quiet", "--json-output", output.path] + trailingArguments
+    static func commandArguments(_ arguments: [String], output: URL, trailingArguments: [String] = [], timeout: Int = 20) -> [String] {
+        ["devicectl"] + arguments + ["--timeout", String(timeout), "--quiet", "--json-output", output.path] + trailingArguments
     }
 
     static func commandFailure(_ arguments: [String], exitCode: Int32, output: String) -> SomaError {

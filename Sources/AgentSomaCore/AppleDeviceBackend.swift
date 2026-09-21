@@ -43,9 +43,9 @@ final class AppleDeviceCLI {
     let device: String
     let cancellation: NativeCancellation
     init(device: String, cancellation: NativeCancellation) { self.device = device; self.cancellation = cancellation }
-    func read(_ arguments: [String], trailingArguments: [String] = []) throws -> [String: Any] {
+    func read(_ arguments: [String], trailingArguments: [String] = [], timeout: Int = 20) throws -> [String: Any] {
         try cancellation.check()
-        return try CoreDevice.read(arguments + ["--device", device], cancelled: { self.cancellation.isCancelled }, trailingArguments: trailingArguments)
+        return try CoreDevice.read(arguments + ["--device", device], cancelled: { self.cancellation.isCancelled }, trailingArguments: trailingArguments, timeout: timeout)
     }
     func display() throws -> NativeDisplay { try NativeDisplay(read(["device", "info", "displays"])) }
     func capture(generation: String, prepareDisplay: (NativeDisplay) throws -> Void = { _ in }) throws -> CapturedObservation {
@@ -199,7 +199,7 @@ final class AppleDeviceBackend: SessionBackend {
                 "recording": recording?.status() ?? ["state": "idle"],
                 "recordingSupport": ["supported": streamRecordingSupported, "source": "owned_native_rtp",
                     "appleCLIAvailable": recordingSupported, "codec": "hevc", "method": "native_rtp"],
-                "capabilities": ["recording": streamRecordingSupported && control.available, "screenshot": true, "tap": control.available, "ax": false, "swipe": control.available,
+                "capabilities": ["terminate": !closing, "relaunch": !closing, "recording": streamRecordingSupported && control.available, "screenshot": true, "tap": control.available, "ax": false, "swipe": control.available,
                     "pinch": control.available, "doubleTap": control.available, "longPress": control.available, "home": control.available && buttonError == nil,
                     "text": control.available && hid?.canType == true, "press": control.available && hid?.canType == true],
                 "systemButtons": ["servicePrepared": buttonTransport != nil, "error": buttonError as Any? ?? NSNull()],
@@ -235,6 +235,15 @@ final class AppleDeviceBackend: SessionBackend {
             throw ActionFailure(code: "native_launch_uncertain", description: "Launch result is uncertain: \(error)",
                                 possiblyExecuted: true, requiresObservation: true)
         }
+    }
+    func appLifecycle(bundle: String, relaunch: Bool) throws -> [String: Any] {
+        guard let cli else { throw SomaError("backend_unavailable", "Native backend not started") }
+        guard pasteboard?.status["restorePending"] as? Bool != true else {
+            throw SomaError("native_pasteboard_pending", "Inspect the paste result and text-finish before closing or relaunching its app")
+        }
+        return try NativeAppLifecycle(read: { arguments, tail, timeout in
+            try cli.read(arguments, trailingArguments: tail, timeout: max(1, Int(ceil(timeout))))
+        }, checkCancellation: { try self.cancellation.check() }).run(bundle: bundle, relaunch: relaunch)
     }
     func observe() throws -> CapturedObservation {
         guard let cli else { throw SomaError("backend_unavailable", "Native backend not started") }

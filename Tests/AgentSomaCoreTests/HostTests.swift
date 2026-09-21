@@ -7,6 +7,8 @@ private final class ControlledBackend: SessionBackend {
     let opened = DispatchSemaphore(value: 0)
     let releaseOpen = DispatchSemaphore(value: 0)
     let stopped = DispatchSemaphore(value: 0)
+    var lifecycleFailure: ActionFailure?
+    private(set) var appLifecycleCount = 0
     var blockOpen = false
     var loseOpenResponse = false
     var rejectOpenBeforeSend = false
@@ -46,6 +48,11 @@ private final class ControlledBackend: SessionBackend {
         if blockOpen { _ = releaseOpen.wait(timeout: .now() + 5) }
         if loseOpenResponse { throw TransportError(description: "Lost response", possiblySent: true) }
         return ["bundleId": bundle]
+    }
+    func appLifecycle(bundle: String, relaunch: Bool) throws -> [String: Any] {
+        appLifecycleCount += 1
+        if let lifecycleFailure { throw lifecycleFailure }
+        return ["oldProcessAbsentConfirmed": true, "newProcessObserved": relaunch, "foregroundConfirmed": false]
     }
     func stop() -> [String: Any] {
         stopCount += 1
@@ -97,6 +104,40 @@ private final class ControlledBackend: SessionBackend {
 }
 
 final class HostTests: XCTestCase {
+    func testAppLifecycleAdmissionObservationAndUnknownFacts() throws {
+        for native in [false, true] {
+            let backend = ControlledBackend()
+            let (paths, session, finished) = try host(timeout: 5, backend: backend, native: native)
+            defer { _ = try? call(paths, session: session, op: "disconnect"); wait(for: [finished], timeout: 3) }
+            _ = try call(paths, session: session, op: "observe")
+            let invalid = try call(paths, session: session, op: "terminate", fields: ["bundleId": "--pid 1"])
+            XCTAssertEqual(invalid["outcome"] as? String, "not_dispatched")
+            let result = try call(paths, session: session, op: "relaunch", fields: ["bundleId": "com.example.fixture"])
+            XCTAssertEqual(result["ok"] as? Bool, native)
+            XCTAssertEqual(backend.appLifecycleCount, native ? 1 : 0)
+            guard native else { continue }
+            XCTAssertEqual((result["observation"] as? [String: Any])?["ok"] as? Bool, true)
+            XCTAssertEqual((result["result"] as? [String: Any])?["afterObservationID"] as? String, "o2")
+            let stale = try call(paths, session: session, op: "tap", fields: ["reference": "o1:e11"])
+            XCTAssertEqual(stale["outcome"] as? String, "not_dispatched")
+            backend.lifecycleFailure = ActionFailure(code: "native_app_process_changed", description: "Changed externally",
+                possiblyExecuted: false, requiresObservation: true)
+            let changed = try call(paths, session: session, op: "relaunch", fields: ["bundleId": "com.example.fixture"])
+            XCTAssertEqual(changed["outcome"] as? String, "not_dispatched")
+            XCTAssertEqual(changed["requiresObservation"] as? Bool, true)
+            let invalidated = try call(paths, session: session, op: "tap", fields: ["reference": "o2:e11"])
+            XCTAssertEqual(invalidated["outcome"] as? String, "not_dispatched")
+            backend.lifecycleFailure = ActionFailure(code: "lost_reply", description: "Lost", possiblyExecuted: true,
+                requiresObservation: true, result: ["terminationAcknowledged": true, "launchRequested": false])
+            backend.failObservation = true
+            let uncertain = try call(paths, session: session, op: "terminate", fields: ["bundleId": "com.example.fixture"])
+            XCTAssertEqual(uncertain["outcome"] as? String, "unknown")
+            XCTAssertEqual((uncertain["result"] as? [String: Any])?["terminationAcknowledged"] as? Bool, true)
+            XCTAssertEqual((uncertain["observation"] as? [String: Any])?["ok"] as? Bool, false)
+            XCTAssertEqual(backend.appLifecycleCount, 3)
+        }
+    }
+
     func testRecordingAdmissionAndObservationInvalidation() throws {
         for native in [false, true] {
             let backend = ControlledBackend()

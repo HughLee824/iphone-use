@@ -220,3 +220,21 @@ agentsoma --session "$SESSION" pinch oN --x 195 --y 350 \
 执行时每帧包含两个固定身份触点，不串行执行两个 swipe。起始和末端各保持至少 60ms，运动按目标 60Hz 采样，慢发送时跳过过期采样；整个执行期限 6 秒。取消、媒体失活或发送失败时，尝试在原通道以最后尝试位置同时释放两指，释放失败保留不确定状态。任何可能已发送的动作都不自动重放。
 
 `contactCount`、`moveReportsQueued`、`hidStart/hidEnd` 和时序仅表示发送事实，成功排队仍为 `outcome=unknown`。必须检查新图确认 App 是否缩放；`status.capabilities.pinch` 表示控制路径可用，不是效果保证。真机证据范围见 [原生后端记录](apple-native-backend.md#native-pinch-2026-09-21)。
+
+
+## 原生 App 生命周期
+
+```bash
+agentsoma --session "$SESSION" terminate com.example.probe --observe
+agentsoma --session "$SESSION" relaunch com.example.probe --observe
+```
+
+仅适用于 `apple-native`，bundle ID 来自 `apps`；不是坐标动作，无需引用旧截图。操作串行执行，使先前观察失效；成功或可能执行后，在同一设备工作队列内附加新截图。`--observe` 沿用动作与截图分开的响应，截图失败不丢失进程事实、不重放命令。现有 `open` 保留启动/激活语义，XCTest 拒绝新增命令。
+
+`terminate` 将安装列表的精确 App 目录与进程可执行文件的直接父目录匹配；不按名称、子串匹配，不递归结束扩展或进程树。主进程候选必须唯一，PID/路径在发信号前再次核对。只发送一次 Apple 默认 SIGTERM，再有界查询确认旧进程消失；不升级 SIGKILL。已停止时返回 `alreadyStopped=true`、`terminationRequested=false`，不会发信号。未安装、身份不完整或匹配歧义在派发前拒绝。
+
+`relaunch` 完成上述退出确认后，再核对无目标进程、安装目录未改变，调用一次 Apple `launch --activate`，随后要求进程列表出现与启动回执一致的新 PID。各阶段的 `terminationRequested`、`terminationAcknowledged`、`oldProcessAbsentConfirmed`、`launchRequested`、`launchAcknowledged`、`newProcessObserved`、`previousPID`、`newPID` 独立记录。`completed` 表示这些进程检查完成；`foregroundConfirmed=false`，仍由调用方看图判断是否前台就绪。冷启动不清除 App 磁盘数据，App 自己可能恢复持久化状态；未保存的内存状态可能丢失。
+
+外部进程替换或 App 重装会中止后续步骤并要求新观察。超时、取消、读回失败或丢失回执发生在终止/启动尝试后，返回 unknown，保留部分事实，绝不自动重试或启动。读取使用短超时和整体期限；取消也传播到运行中的 Apple CLI 子进程。有待恢复的粘贴事务时，先看图并 `text-finish`，再执行生命周期命令；这里不会隐式恢复或丢弃剪贴板。
+
+Apple 终止接口只接受 PID，进程列表没有进程出生令牌，因此最后一次核对与发信号之间不能提供原子身份保证。功能保留这一限制，不宣称完全排除 PID 复用竞态。受控真机验收及边界见 [原生后端记录](apple-native-backend.md#native-app-lifecycle-2026-09-21)。
