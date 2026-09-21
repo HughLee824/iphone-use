@@ -48,13 +48,14 @@ final class AppleDeviceCLI {
         return try CoreDevice.read(arguments + ["--device", device], cancelled: { self.cancellation.isCancelled }, trailingArguments: trailingArguments)
     }
     func display() throws -> NativeDisplay { try NativeDisplay(read(["device", "info", "displays"])) }
-    func capture(generation: String) throws -> CapturedObservation {
+    func capture(generation: String, prepareDisplay: (NativeDisplay) throws -> Void = { _ in }) throws -> CapturedObservation {
         let started = Date().timeIntervalSince1970
         let monotonic = ProcessInfo.processInfo.systemUptime
         let lock = try read(["device", "info", "lockState"])
         guard lock["passcodeRequired"] as? Bool == false else { throw SomaError("device_locked", "Unlock the iPhone before observing") }
         let before = try display()
         guard before.backlightOn else { throw SomaError("capture_unavailable", "The display backlight is off; wake the iPhone before observing") }
+        try prepareDisplay(before)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("agentsoma-screen-\(UUID().uuidString)")
         try SessionPaths.secureDirectory(directory)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -104,7 +105,7 @@ final class AppleDeviceBackend: SessionBackend {
     private var hidTransport: NativeTransport?
     private var mediaTransport: NativeTransport?
     private var hid: NativeHIDAdapter?
-    private var media: NativeMediaSession?
+    private var media: NativeDisplayMediaSession?
     private var tunnel: ASPairedTunnel?
     private var controlError: String?
     private var controlErrorCode: String?
@@ -149,19 +150,25 @@ final class AppleDeviceBackend: SessionBackend {
             let infoURL = URL(fileURLWithPath: "/Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/Resources/Info.plist")
             let info = try PropertyListSerialization.propertyList(from: Data(contentsOf: infoURL), format: nil) as? [String: Any]
             guard let version = info?["CFBundleVersion"] as? String else { throw SomaError("native_version_unsupported", "Installed CoreDevice version unavailable") }
-            let receiver = try NativeRTPReceiver(deviceAddress: address)
-            let session = NativeMediaSession(client: NativeFeatureClient(transport: displayTransport, deviceIdentifier: identifier, version: version), receiver: receiver)
+            let cancellation = self.cancellation
+            let session = NativeDisplayMediaSession(makeSession: {
+                try cancellation.check()
+                let receiver = try NativeRTPReceiver(deviceAddress: address)
+                return NativeMediaSession(client: NativeFeatureClient(transport: displayTransport, deviceIdentifier: identifier, version: version), receiver: receiver)
+            }, startSession: { stream, display in
+                try cancellation.check()
+                let negotiator = try ASMediaNegotiator(error: ())
+                try stream.start(displayID: display.id, deviceAddress: address, offer: negotiator.offer) { try negotiator.acceptAnswer($0) }
+                let deadline = ProcessInfo.processInfo.systemUptime + 5
+                while stream.health()["healthy"] as? Bool != true, ProcessInfo.processInfo.systemUptime < deadline {
+                    try cancellation.check(); Thread.sleep(forTimeInterval: 0.05)
+                }
+                try cancellation.check()
+            })
             media = session
-            let negotiator = try ASMediaNegotiator(error: ())
-            try cancellation.check()
-            try session.start(displayID: display.id, deviceAddress: address, offer: negotiator.offer) { try negotiator.acceptAnswer($0) }
+            try session.ensureDisplay(display, mayReplace: true)
             let input = makeHID(inputTransport, cancellation)
             try input.prepare(); hid = input
-            let deadline = ProcessInfo.processInfo.systemUptime + 5
-            while session.health()["healthy"] as? Bool != true, ProcessInfo.processInfo.systemUptime < deadline {
-                try cancellation.check(); Thread.sleep(forTimeInterval: 0.05)
-            }
-            guard session.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media started but no healthy RTP/RTCP flow was observed") }
         } catch {
             controlError = (error as NSError).userInfo[NSLocalizedDescriptionKey] as? String ?? String(describing: error)
             controlErrorCode = (error as? SomaError)?.code ?? (error as NSError).userInfo["somaCode"] as? String ?? "native_control_unavailable"
@@ -223,7 +230,20 @@ final class AppleDeviceBackend: SessionBackend {
     }
     func observe() throws -> CapturedObservation {
         guard let cli else { throw SomaError("backend_unavailable", "Native backend not started") }
-        return try cli.capture(generation: generation)
+        let captured = try cli.capture(generation: generation) { display in
+            try self.cancellation.check()
+            // Startup failure remains observation-only. Once control is started,
+            // a failed display rebind cannot silently return an unsafe image.
+            if self.controlError == nil {
+                try self.media?.ensureDisplay(display, mayReplace: self.hid?.state == .ready)
+            }
+        }
+        var metadata = captured.metadata
+        if controlError == nil, let health = media?.health() {
+            metadata["mediaSessionID"] = health["mediaSessionID"]
+            metadata["mediaDisplayRefreshCount"] = health["displayRefreshCount"]
+        }
+        return CapturedObservation(nodes: captured.nodes, metadata: metadata, screenshot: captured.screenshot)
     }
     func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any] {
         let typing = action.kind == "type" && action.reference.node == nil
