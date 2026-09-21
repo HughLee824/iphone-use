@@ -187,7 +187,8 @@ NSArray<NSNumber *> *ASNativeRSDPorts(NSString *inventory, NSString *deviceAddre
     NSString *expectedFeature = @{
         @"com.apple.coredevice.hid.universalhidservice": @"com.apple.coredevice.feature.remote.universalhidservice",
         @"com.apple.coredevice.displayservice": @"com.apple.coredevice.feature.getmediastreamserverstatus",
-        @"com.apple.coredevice.pasteboardservice": @"com.apple.coredevice.feature.pasteboard"
+        @"com.apple.coredevice.pasteboardservice": @"com.apple.coredevice.feature.pasteboard",
+        @"com.apple.coredevice.hid.indigo": @"com.apple.coredevice.feature.remote.hid.button"
     }[name];
     __block BOOL featureMatched = NO;
     if (features && xpc_get_type(features) == XPC_TYPE_ARRAY) xpc_array_apply(features, ^bool(size_t index, xpc_object_t value) {
@@ -222,7 +223,7 @@ NSArray<NSNumber *> *ASNativeRSDPorts(NSString *inventory, NSString *deviceAddre
     [_lifecycle lock];
     @try {
         if (_closed) { if (error) *error = PairingError(@"native_tunnel_closed", @"Paired tunnel closed"); return nil; }
-        if (![@[@"com.apple.coredevice.displayservice", @"com.apple.coredevice.hid.universalhidservice", @"com.apple.coredevice.pasteboardservice"] containsObject:name]) {
+        if (![@[@"com.apple.coredevice.displayservice", @"com.apple.coredevice.hid.universalhidservice", @"com.apple.coredevice.pasteboardservice", @"com.apple.coredevice.hid.indigo"] containsObject:name]) {
             if (error) *error = PairingError(@"native_service_unsupported", @"Service outside the native media/HID/pasteboard scope"); return nil;
         }
         if (_broker) return [self openBrokerService:name error:error];

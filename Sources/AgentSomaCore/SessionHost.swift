@@ -193,7 +193,7 @@ final class SessionHost {
                         response["error"] = ["code": "native_pasteboard_restore_unconfirmed",
                             "message": "Clipboard restoration was not confirmed; no restorative write will be replayed. Inspect clipboard status and close the session."]
                     }
-                case "tap", "swipe", "type", "press":
+                case "tap", "long-press", "swipe", "home", "type", "press":
                     let target = try observations.resolveTarget(for: action!)
                     previousObservation = observations.beginAction()
                     effective = true

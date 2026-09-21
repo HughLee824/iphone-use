@@ -93,6 +93,8 @@ final class AppleDeviceBackend: SessionBackend {
     private var pasteboardTransport: NativeTransport?
     private var pasteboard: NativeTextPasteboard?
     private var pasteboardError: String?
+    private var buttonTransport: NativeTransport?
+    private var buttonError: String?
     private var hidTransport: NativeTransport?
     private var mediaTransport: NativeTransport?
     private var hid: NativeHIDAdapter?
@@ -177,7 +179,9 @@ final class AppleDeviceBackend: SessionBackend {
                                                    startupCode: controlErrorCode, startupError: controlError)
         var result: [String: Any] = ["backend": "apple-native", "sessionGeneration": generation, "deviceID": cli?.device ?? config.device,
                 "capabilities": ["screenshot": true, "tap": control.available, "ax": false, "swipe": control.available,
+                    "longPress": control.available, "home": control.available && buttonError == nil,
                     "text": control.available && hid?.canType == true, "press": control.available && hid?.canType == true],
+                "systemButtons": ["servicePrepared": buttonTransport != nil, "error": buttonError as Any? ?? NSNull()],
                 "keyboard": hid?.keyboardStatus ?? [:],
                 "textInputMethods": ["asciiHID": control.available && hid?.canType == true,
                     "unicodePasteboard": control.available && hid?.canType == true && pasteboardError == nil && (pasteboard?.available ?? true)],
@@ -219,8 +223,9 @@ final class AppleDeviceBackend: SessionBackend {
         let typing = action.kind == "type" && action.reference.node == nil
         let pressing = action.kind == "press" && action.reference.node == nil
         let keyboardAction = typing || pressing
-        guard keyboardAction || (["tap", "swipe"].contains(action.kind) && action.coordinate) else {
-            throw SomaError("native_action_unsupported", "Use coordinate tap/swipe, or type/press oN after visually confirming focus")
+        let homeAction = action.kind == "home"
+        guard keyboardAction || homeAction || (["tap", "long-press", "swipe"].contains(action.kind) && action.coordinate) else {
+            throw SomaError("native_action_unsupported", "Use coordinate tap/long-press/swipe, home oN, or type/press oN after visually confirming focus")
         }
         let textInput = typing ? try NativeTextInput(text: action.fields["text"] as! String, mode: action.fields["mode"] as! String, method: action.fields["textMethod"] as? String ?? "auto") : nil
         defer { if textInput?.usesPasteboard == true { pasteboard?.endInputAttempt() } }
@@ -233,7 +238,7 @@ final class AppleDeviceBackend: SessionBackend {
               target.context["sessionGeneration"] as? String == generation,
               let captured = target.context["captureStartedUptime"] as? Double,
               ProcessInfo.processInfo.systemUptime - captured <= 30,
-              let screenGuard = keyboardAction ? target.textGuard : target.gesture?.screenGuard else {
+              let screenGuard = (keyboardAction || homeAction) ? target.textGuard : target.gesture?.screenGuard else {
             throw ActionFailure(code: "stale_observation", description: "Observe this device/session again before input", possiblyExecuted: false, requiresObservation: true)
         }
         // Rotation formulas have host tests but lack device acceptance. Fail closed for now.
@@ -247,6 +252,19 @@ final class AppleDeviceBackend: SessionBackend {
             guard screenGuard.regions.map(\.rect) == [action.textRegion ?? screenGuard.context.screen] else { throw ScreenGuard.Failure.invalidGuard }
             // Registration can change keyboard visibility. Capture/guard after it, before any key.
             try hid.prepareKeyboard()
+        }
+        if homeAction {
+            try screenGuard.validate()
+            guard screenGuard.regions.map(\.rect) == [screenGuard.context.screen] else { throw ScreenGuard.Failure.invalidGuard }
+            if let buttonError { throw SomaError("native_home_unavailable", buttonError) }
+            if buttonTransport == nil {
+                guard let tunnel else { throw SomaError("native_hid_unavailable", "Native tunnel unavailable") }
+                do { buttonTransport = try AppleServiceTransport(tunnel: tunnel, service: "com.apple.coredevice.hid.indigo") }
+                catch {
+                    buttonError = String(describing: error)
+                    throw error // Preserve the denial; never retry service creation in this session.
+                }
+            }
         }
         var check: ScreenGuard.Check
         var captures = 0
@@ -331,6 +349,10 @@ final class AppleDeviceBackend: SessionBackend {
                 throw ActionFailure(code: failure.code, description: failure.description, possiblyExecuted: failure.possiblyExecuted,
                     requiresObservation: failure.requiresObservation, result: facts)
             }
+        } else if homeAction {
+            result = try hid.home(using: buttonTransport!) {
+                guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped during Home") }
+            }
         } else if pressing {
             result = try hid.pressReturn {
                 guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped during Return") }
@@ -341,7 +363,9 @@ final class AppleDeviceBackend: SessionBackend {
             }
         } else {
             let point = try NativeCoordinateMapper.map(target.gesture!.start, screen: screenGuard.context.screen, rotation: "rot0")
-            result = try hid.tap(point)
+            result = try hid.tap(point, hold: action.fields["duration"] as? Double ?? 0.06) {
+                guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped during touch") }
+            }
         }
         result["sourceObservationID"] = action.reference.observation
         result["screenGuard"] = check.result
@@ -394,7 +418,7 @@ final class AppleDeviceBackend: SessionBackend {
         result.merge(pasteboard?.close() ?? ["pasteboardRestoreAcknowledged": true]) { _, new in new }
         pasteboardTransport?.cancel(); pasteboardTransport = nil
         result.merge(media?.close() ?? cleanupFacts) { _, new in new }
-        mediaTransport?.cancel(); hidTransport?.cancel(); hid = nil; media = nil
+        mediaTransport?.cancel(); hidTransport?.cancel(); buttonTransport?.cancel(); buttonTransport = nil; hid = nil; media = nil
         result["tunnelReleaseAcknowledged"] = tunnel?.close() ?? (cleanupFacts["tunnelReleaseAcknowledged"] as? Bool ?? true)
         tunnel = nil
         deviceLock = nil

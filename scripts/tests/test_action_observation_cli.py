@@ -79,6 +79,18 @@ class ActionObservationCLITests(unittest.TestCase):
                 self.assertNotEqual(requests[0]["id"], requests[1]["id"])
                 self.assertTrue(all(request["version"] == 1 and "observe" not in request for request in requests))
 
+    def test_native_home_and_long_press_never_replay_lost_input(self):
+        for args in [["home", "o1"], ["long-press", "o1", "--x", "100", "--y", "200", "--duration", "1.2"]]:
+            with self.subTest(command=args[0]):
+                code, response, requests = self.run_cli([*args, "--observe"], lose_action=True)
+                self.assertEqual(code, 1)
+                self.assertEqual(response["action"]["outcome"], "unknown")
+                self.assertEqual([r["op"] for r in requests], [args[0], "observe"])
+                self.assertEqual(requests[0]["reference"], "o1")
+                if args[0] == "long-press":
+                    self.assertEqual(requests[0]["duration"], 1.2)
+                    self.assertEqual((requests[0]["x"], requests[0]["y"]), (100, 200))
+
     def test_without_flag_preserves_original_response(self):
         code, response, requests = self.run_cli(["tap", "o1:e11"])
         self.assertEqual(code, 0, response)

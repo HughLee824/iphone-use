@@ -15,7 +15,7 @@ struct SessionOptions: ParsableArguments {
 struct AgentSoma: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "agentsoma", abstract: "Eyes and hands for agents operating a real iPhone.", version: RunnerSetup.releaseVersion,
-        subcommands: [Setup.self, BuildRunner.self, Devices.self, Connect.self, Status.self, Apps.self, Open.self, Observe.self, Inspect.self, Tap.self, Swipe.self, TypeText.self, TextPrepare.self, TextFinish.self, Press.self, Disconnect.self, Host.self])
+        subcommands: [Setup.self, BuildRunner.self, Devices.self, Connect.self, Status.self, Apps.self, Open.self, Observe.self, Inspect.self, Tap.self, LongPress.self, Swipe.self, Home.self, TypeText.self, TextPrepare.self, TextFinish.self, Press.self, Disconnect.self, Host.self])
     @OptionGroup var options: SessionOptions
 }
 
@@ -207,6 +207,36 @@ struct Tap: ParsableCommand {
         fields["reference"] = reference
         fields["x"] = x; fields["y"] = y
         try outputAction(session: session, observe: observation.observe) { try SessionClient.call(session: session, operation: "tap", fields: fields) }
+    }
+}
+
+struct LongPress: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "long-press", abstract: "Hold a screenshot point, then release (apple-native).")
+    @OptionGroup var options: SessionOptions
+    @OptionGroup var observation: ActionObservationOptions
+    @OptionGroup var screenGuard: ScreenGuardOptions
+    @Argument(help: "Current screenshot observation ID.") var reference: String
+    @Option(help: "Horizontal screen point coordinate.") var x: Double
+    @Option(help: "Vertical screen point coordinate.") var y: Double
+    @Option(help: "Hold duration in seconds, 0.5...5; default 0.8.") var duration: Double = 0.8
+    mutating func run() throws {
+        let session = try options.requiredSession()
+        var fields = screenGuard.fields
+        fields["reference"] = reference; fields["x"] = x; fields["y"] = y; fields["duration"] = duration
+        try outputAction(session: session, observe: observation.observe) { try SessionClient.call(session: session, operation: "long-press", fields: fields) }
+    }
+}
+
+struct Home: ParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "Press and release Home after checking a current screenshot (apple-native).")
+    @OptionGroup var options: SessionOptions
+    @OptionGroup var observation: ActionObservationOptions
+    @Argument(help: "Current screenshot observation ID.") var reference: String
+    mutating func run() throws {
+        let session = try options.requiredSession()
+        try outputAction(session: session, observe: observation.observe) {
+            try SessionClient.call(session: session, operation: "home", fields: ["reference": reference])
+        }
     }
 }
 

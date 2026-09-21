@@ -343,3 +343,35 @@ Native paste replacement subsequently produced complete `苹果`, six UTF-8 byte
 Admission remains a usability limitation: six paste requests yielded two dispatched replacements and four not-dispatched rejections; the three ASCII key requests yielded one dispatch and two rejections. Successful text and Return checks used the strict branch, with no caret exception recorded. Three rejected pastes had already staged clipboard data; all five distinct staged transactions, including the successful replacements, completed ownership-checked restoration. The full field, pixel thresholds, source lifetime and stage deadlines were unchanged. This run closes Chinese **replacement**, Return, result navigation and same-session reuse in the ordinary Probe; it does not close direct Chinese entry into the empty placeholder field, arbitrary IME/editor support or the blink admission issue.
 
 Final status showed healthy media, no possibly-held keys and no pending clipboard restoration. Owned keyboard removal, media stop, tunnel release, cache cleanup and actual host exit were confirmed. All 32 observations and failed requests were archived in private `apple-native-search-workflow-20260921/resume/`, with the complete sequence in `RESULT.md`. Successful replacement commands took about 10.62 and 13.05 seconds; the three Return commands took about 5.27–5.29 seconds, including preflight and after-capture but excluding external agent/tool delays. Product code and the ordinary Probe were unchanged in this run; no new host test run is claimed.
+
+
+## Home, long press and drag/drop
+
+Native Agent/skill integration is deferred while device actions are completed. The native CLI now accepts:
+
+```sh
+agentsoma --session "$SESSION" long-press oN --x X --y Y --duration 0.8 --observe
+agentsoma --session "$SESSION" swipe oN --from-x X1 --from-y Y1 --to-x X2 --to-y Y2 --press-duration 0.8 --velocity 500 --hold-duration 0.2 --observe
+agentsoma --session "$SESSION" home oN --observe
+```
+
+Choose coordinates and the current observation from the actual PNG. Long press holds one contact for 0.5–5 seconds and releases at the same point. It retains tap's touchdown-region and global guard, observed point mapping, portrait restriction and 30-second observation lifetime. Both short and long touches check cancellation and media health during the hold and bound execution to ten seconds. A failed or cancelled contact attempts release on the same channel, withdraws input availability and is never replayed.
+
+Drag/drop uses the existing swipe implementation: hold before movement, interpolate in original-screenshot pixels/second, hold at the destination and release. There is no second drag engine or automatic menu selection. The external agent must distinguish scrolling from an actual accepted drop by inspecting the result.
+
+Home uses a lazily opened paired CoreDevice `com.apple.coredevice.hid.indigo` socket and an independently written Swift button sequence (Consumer page 0x0c, Home usage 0x40, down/up). Broker replies must advertise the corresponding button feature. It neither synthesizes an edge swipe nor registers a keyboard. The whole source screenshot is guarded at the existing 1% global threshold, since system navigation has no local point target; there is no caret exemption for Home. A failed service opening is retained in `systemButtons.error` and withdraws the Home capability without retrying. Uncertain button delivery withdraws all HID input just like uncertain touch delivery. Cleanup sends a possibly-held Home release through the original connection before closing it.
+
+Home and long press require `apple-native`; XCTest admission rejects these new operations and the default backend is unchanged. Queued inputs still return `outcome=unknown`, not a promise of a menu, drop or SpringBoard transition. The caller must read the after-image. No clipboard operation, AX query or Runner is involved.
+
+Protocol reference was read only: [pymobiledevice3 Indigo button envelope](https://github.com/doronz88/pymobiledevice3/blob/68b444e054ceb456d3215dbfb7ead7db4c507801/pymobiledevice3/remote/core_device/hid_service.py). No code from that project is executed or imported. Its historical results are not evidence that this Swift implementation works on the device.
+
+The ordinary Probe now offers **Gesture workflow** with a real UIKit context menu, a local drag item and a drop destination. Visible menu-choice, drag-start/end and drop counts expose actual UIKit results. Physical acceptance passed on the controlled iPhone 12 Pro / iOS 27.0 under macOS 27.0 and Xcode 27.0 after unlocking:
+
+- A 0.8-second native long press opened the real context menu; a separately observed tap changed `Menu choices: 0 → 1`.
+- Swipe with a 0.8-second initial hold, 500 original pixels/second and a 0.2-second destination hold produced `Received: SOMA` and `Drops: 0 → 1`. The first Probe had an incorrectly named end-delegate callback; this was corrected using the SDK signature, rebuilt/reinstalled, and the second drag showed starts/ends/drops all equal to 1. The backend did not change between these runs.
+- One dispatched Indigo Home down/up returned from Probe to SpringBoard. Explicitly reopening the same Probe retained the prior menu and drop state.
+- Final status showed healthy media, HID ready, the button service prepared, no virtual keyboard created and no clipboard transaction. Scoped media stop, tunnel release, connection/cache cleanup and actual host exit were confirmed.
+
+All seven queued input operations retained API `outcome=unknown`; external image inspection supplied the effect evidence. Four other requests were `not_dispatched`: two entry taps exceeded the global image-change guard, and two Home requests expired during preflight against the 30-second source deadline. Each rejection was retained; subsequent actions used newly inspected observations without changing protection thresholds. These results establish controlled portrait acceptance, not general app/device compatibility or a zero-rejection rate.
+
+Final host validation: 203 Swift tests executed, 202 passed and one existing opt-in skip; 33 Python tests passed; release and ordinary signed Probe builds passed. Sixteen actual screenshots and complete command/cleanup records are archived privately under `apple-native-gestures-20260921/`. See the [gesture procedure](apple-native-acceptance.md#home-long-press-and-dragdrop).

@@ -284,6 +284,64 @@ final class AppleNativeTests: XCTestCase {
         XCTAssertEqual((payload["_1"] as? ASNativeUnsigned)?.value, 987)
         XCTAssertEqual(hid.release()["releaseRequired"] as? Bool, false)
     }
+    func testLongPressHoldsSingleContactAndChecksHealth() throws {
+        let transport = ScriptedTransport(), cancel = NativeCancellation()
+        var now = 10.0, checks = 0
+        let hid = NativeHIDAdapter(transport: transport, cancellation: cancel, wait: { now += $0 }, uptime: { now })
+        try hid.prepare()
+        let facts = try hid.tap((120, 340), hold: 0.8) { checks += 1 }
+        XCTAssertGreaterThanOrEqual(now, 10.8)
+        XCTAssertGreaterThan(checks, 100)
+        XCTAssertEqual(reports(transport).map { $0[3] }, [0xc2, 2])
+        XCTAssertEqual(facts["pressDuration"] as? Double, 0.8)
+    }
+
+    func testLongPressHealthLossReleasesAndBlocksReplay() throws {
+        let transport = ScriptedTransport(), cancel = NativeCancellation()
+        var now = 10.0
+        let hid = NativeHIDAdapter(transport: transport, cancellation: cancel, wait: { now += $0 }, uptime: { now })
+        try hid.prepare()
+        XCTAssertThrowsError(try hid.tap((120, 340), hold: 0.8) {
+            if now > 10.2 { throw SomaError("native_media_unhealthy", "test") }
+        }) { XCTAssertEqual(($0 as? ActionFailure)?.possiblyExecuted, true) }
+        XCTAssertEqual(reports(transport).map { $0[3] }, [0xc2, 2])
+        XCTAssertThrowsError(try hid.tap((120, 340)))
+        XCTAssertEqual(transport.sends.count, 2)
+    }
+
+    func testHomeQueuesButtonPairWithoutTouchOrKeyboard() throws {
+        let touch = ScriptedTransport(), button = ScriptedTransport(), cancel = NativeCancellation()
+        var now = 10.0
+        let hid = NativeHIDAdapter(transport: touch, cancellation: cancel, wait: { now += $0 }, uptime: { now })
+        try hid.prepare()
+        let facts = try hid.home(using: button)
+        XCTAssertTrue(touch.sends.isEmpty)
+        XCTAssertEqual(button.sends.count, 2)
+        for (index, message) in button.sends.enumerated() {
+            XCTAssertEqual(message["messageType"] as? String, "IndigoButtonEvent")
+            let payload = message["payload"] as! [String: Any]
+            XCTAssertEqual((payload["state"] as? ASNativeUnsigned)?.value, UInt64(index + 1))
+            XCTAssertEqual((payload["usagePage"] as? ASNativeUnsigned)?.value, 0x0c)
+            XCTAssertEqual((payload["usageCode"] as? ASNativeUnsigned)?.value, 0x40)
+        }
+        XCTAssertEqual(facts["verificationStatus"] as? String, "not_checked")
+        XCTAssertEqual(facts["buttonReleaseQueued"] as? Bool, true)
+        XCTAssertEqual(hid.state, .ready)
+    }
+
+    func testHomeCancellationReleasesOnSameChannelWithoutReplay() throws {
+        let touch = ScriptedTransport(), button = ScriptedTransport(), cancel = NativeCancellation()
+        var now = 10.0
+        let hid = NativeHIDAdapter(transport: touch, cancellation: cancel, wait: { now += $0; cancel.cancel() }, uptime: { now })
+        try hid.prepare()
+        XCTAssertThrowsError(try hid.home(using: button)) { XCTAssertEqual(($0 as? ActionFailure)?.possiblyExecuted, true) }
+        XCTAssertEqual(button.sends.count, 2)
+        XCTAssertEqual(((button.sends.last?["payload"] as? [String: Any])?["state"] as? ASNativeUnsigned)?.value, 2)
+        XCTAssertThrowsError(try hid.home(using: button))
+        XCTAssertEqual(button.sends.count, 2)
+        XCTAssertEqual(hid.release()["buttonReleaseRequired"] as? Bool, false)
+    }
+
     private func swipePlan(start: CGPoint = CGPoint(x: 195, y: 600), end: CGPoint = CGPoint(x: 195, y: 500),
                            motion: SwipeMotion = SwipeMotion(), scale: Int = 3) throws -> NativeSwipePlan {
         let context = screenTestContext()
@@ -659,7 +717,13 @@ final class AppleNativeTests: XCTestCase {
         _ = try cache.store(capture)
         let action = try DeviceAction(operation: "tap", request: ["reference": "o1", "x": 195, "y": 422])
         XCTAssertNotNil(try cache.resolveTarget(for: action).gesture)
+        let home = try DeviceAction(operation: "home", request: ["reference": "o1"], allowScreenText: true)
+        let press = try DeviceAction(operation: "long-press", request: ["reference": "o1", "x": 195, "y": 422], allowScreenText: true)
+        XCTAssertEqual(try cache.resolveTarget(for: home).textGuard?.regions.map(\.rect), [context.screen])
+        XCTAssertNoThrow(try cache.resolveTarget(for: press).gesture?.validate(kind: "long-press"))
         _ = try cache.store(capture)
+        XCTAssertThrowsError(try cache.resolveTarget(for: home))
+        XCTAssertThrowsError(try cache.resolveTarget(for: press))
         XCTAssertThrowsError(try cache.resolveTarget(for: action)) { XCTAssertEqual(($0 as? SomaError)?.code, "stale_reference") }
         let swipe = try DeviceAction(operation: "swipe", request: ["reference": "o2", "fromX": 100, "fromY": 400, "toX": 100, "toY": 200])
         let target = try cache.resolveTarget(for: swipe)

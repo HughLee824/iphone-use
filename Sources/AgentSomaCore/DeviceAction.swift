@@ -2,7 +2,7 @@ import Foundation
 import CoreFoundation
 
 struct DeviceAction {
-    static let operations = ["tap", "swipe", "type", "press"]
+    static let operations = ["tap", "long-press", "swipe", "home", "type", "press"]
     let kind: String
     let reference: ObservationReference
     let fields: [String: Any]
@@ -15,6 +15,9 @@ struct DeviceAction {
     init(operation: String, request: [String: Any], allowScreenText: Bool = false) throws {
         guard Self.operations.contains(operation) else { throw SomaError("invalid_action", "Unknown device action") }
         kind = operation
+        if ["home", "long-press"].contains(operation), !allowScreenText {
+            throw SomaError("native_action_unsupported", "This action requires apple-native")
+        }
         if let method = request["textMethod"] {
             guard allowScreenText, operation == "type", let method = method as? String,
                   ["auto", "keys", "paste"].contains(method) else {
@@ -26,10 +29,10 @@ struct DeviceAction {
         coordinate = coordinateKeys.contains { request[$0] != nil }
         var fields: [String: Any] = ["kind": operation]
         if coordinate {
-            let required = operation == "tap" ? ["x", "y"] : (operation == "swipe" ? ["fromX", "fromY", "toX", "toY"] : [])
+            let required = ["tap", "long-press"].contains(operation) ? ["x", "y"] : (operation == "swipe" ? ["fromX", "fromY", "toX", "toY"] : [])
             if !required.isEmpty, let node = reference.node {
                 let element = "\(reference.observation):e\(node + 1)"
-                let coordinates = operation == "tap" ? "--x X --y Y" : "--from-x X --from-y Y --to-x X --to-y Y"
+                let coordinates = ["tap", "long-press"].contains(operation) ? "--x X --y Y" : "--from-x X --from-y Y --to-x X --to-y Y"
                 throw SomaError("invalid_coordinates", "Element reference \(element) cannot be combined with coordinates. Use \(operation) \(reference.observation) \(coordinates); optionally add --protect \(element) to protect the captured element")
             }
             guard !required.isEmpty,
@@ -40,7 +43,7 @@ struct DeviceAction {
                 guard let value = Self.number(request[key]) else { throw SomaError("invalid_coordinates", "Supply every coordinate as a finite number of screen points") }
                 fields[key] = value
             }
-        } else if reference.node == nil && !(allowScreenText && ["type", "press"].contains(operation)) {
+        } else if reference.node == nil && !(allowScreenText && ["type", "press", "home"].contains(operation)) {
             throw SomaError("element_required", "Use an element reference such as o1:e2")
         }
         if operation == "swipe", coordinate {
@@ -70,6 +73,17 @@ struct DeviceAction {
                 throw SomaError("invalid_swipe_motion", "Motion controls apply only to swipe")
             }
             swipeMotion = nil
+        }
+        if operation == "home", reference.node != nil {
+            throw SomaError("invalid_reference", "Home requires the current screenshot oN")
+        }
+        if operation == "long-press" {
+            guard coordinate, let duration = Self.number(request["duration"] ?? 0.8), (0.5...5).contains(duration) else {
+                throw SomaError("invalid_press_duration", "Long press requires coordinates and duration in 0.5...5 seconds")
+            }
+            fields["duration"] = duration
+        } else if request["duration"] != nil {
+            throw SomaError("invalid_press_duration", "--duration applies only to long-press")
         }
         if operation == "type" {
             let modes = allowScreenText && reference.node == nil ? ["insert", "replace", "append"] : ["insert", "replace"]
@@ -109,7 +123,7 @@ struct DeviceAction {
         } else { textRegion = nil }
         var policy = ScreenGuard.Policy()
         var protected: [ObservationReference] = []
-        if ["tap", "swipe"].contains(operation) {
+        if ["tap", "long-press", "swipe"].contains(operation) {
             if request["maxScreenChange"] != nil {
                 guard let value = Self.number(request["maxScreenChange"]) else { throw SomaError("invalid_screen_guard_policy", "Screen change limit must be finite") }
                 policy.maxScreenChange = value

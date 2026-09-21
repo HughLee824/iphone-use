@@ -2,6 +2,22 @@ import XCTest
 @testable import AgentSomaCore
 
 final class DeviceActionTests: XCTestCase {
+    func testNativeHomeAndLongPressAdmission() throws {
+        XCTAssertNoThrow(try DeviceAction(operation: "home", request: ["reference": "o1"], allowScreenText: true))
+        XCTAssertThrowsError(try DeviceAction(operation: "home", request: ["reference": "o1"]))
+        for request: [String: Any] in [["reference": "o1:e1"], ["reference": "o1", "x": 1, "y": 2], ["reference": "o1", "fieldRect": "0,0,10,10"]] {
+            XCTAssertThrowsError(try DeviceAction(operation: "home", request: request, allowScreenText: true))
+        }
+        let request: [String: Any] = ["reference": "o1", "x": 40, "y": 80]
+        XCTAssertEqual(try DeviceAction(operation: "long-press", request: request, allowScreenText: true).fields["duration"] as? Double, 0.8)
+        XCTAssertThrowsError(try DeviceAction(operation: "long-press", request: request))
+        for value: Any in [0.49, 5.01, true, "1", Double.nan] {
+            var invalid = request; invalid["duration"] = value
+            XCTAssertThrowsError(try DeviceAction(operation: "long-press", request: invalid, allowScreenText: true))
+        }
+        XCTAssertThrowsError(try DeviceAction(operation: "tap", request: request.merging(["duration": 1]) { _, new in new }))
+    }
+
     func testInputModesUnicodeAndControlKeys() throws {
         for mode in ["insert", "replace"] {
             let action = try DeviceAction(operation: "type", request: ["reference": "o1:e27", "mode": mode, "text": "北京👩‍💻e\u{301}"])

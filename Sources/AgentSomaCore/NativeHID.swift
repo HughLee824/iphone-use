@@ -92,6 +92,8 @@ final class NativeHIDAdapter {
     private let keyboardProduct = "AgentSoma " + UUID().uuidString
     private var keyboardMayExist = false
     private var keyboardReady = false
+    private var buttonTransport: NativeTransport?
+    private var homeDown = false
     private var keysDown = false
     private var keyboardCleanup: [String: Any]?
     var canType: Bool { isAvailable && (keyboardReady || !keyboardMayExist) }
@@ -101,7 +103,7 @@ final class NativeHIDAdapter {
         if releaseUncertain { return .releaseUncertain }
         if inputUncertain { return .inputUncertain }
         if cancellation.isCancelled { return .cancelled }
-        if contact != nil || keysDown { return .contactActive }
+        if contact != nil || keysDown || homeDown { return .contactActive }
         return surface == nil ? .unprepared : .ready
     }
     var isAvailable: Bool { state == .ready }
@@ -289,28 +291,34 @@ final class NativeHIDAdapter {
         keyboardReady = false; keyboardCleanup = result
         return result
     }
-    func tap(_ point: (UInt16, UInt16), hold: TimeInterval = 0.06) throws -> [String: Any] {
+    func tap(_ point: (UInt16, UInt16), hold: TimeInterval = 0.06, checkHealth: () throws -> Void = {}) throws -> [String: Any] {
         try cancellation.check()
-        guard isAvailable, hold.isFinite, (0.01...0.5).contains(hold) else {
+        guard isAvailable, hold.isFinite, (0.01...5).contains(hold) else {
             throw SomaError("native_hid_unavailable", "Touch state is unavailable; reconnect and observe")
         }
-        let started = ProcessInfo.processInfo.systemUptime
+        try checkHealth()
+        let started = uptime()
+        let inputDeadline = started + SwipeMotion.maximumEstimatedDuration
+        func check() throws {
+            try cancellation.check(); try checkHealth()
+            guard uptime() < inputDeadline else { throw SomaError("native_input_deadline", "Native touch exceeded its execution deadline") }
+        }
         // Mark before sending: a failed write may have delivered CONTACT.
         contact = point
         do {
             try report(contact: true, point: point)
-            let deadline = ProcessInfo.processInfo.systemUptime + hold
-            while ProcessInfo.processInfo.systemUptime < deadline {
-                try cancellation.check()
-                wait(min(0.005, max(0, deadline - ProcessInfo.processInfo.systemUptime)))
+            let deadline = uptime() + hold
+            while uptime() < deadline {
+                try check()
+                wait(min(0.005, max(0, deadline - uptime())))
             }
-            try cancellation.check()
-            try report(contact: false, point: point)
+            try check()
+            try report(contact: false, point: point, timeout: min(3, max(0.001, inputDeadline - uptime())))
             contact = nil
             return ["transportStatus": "sent", "verificationStatus": "not_checked",
                     "contactReleaseQueued": true, "hostStartedUptime": started,
-                    "hostCompletedUptime": ProcessInfo.processInfo.systemUptime,
-                    "hidX": Int(point.0), "hidY": Int(point.1),
+                    "hostCompletedUptime": uptime(),
+                    "pressDuration": hold, "hidX": Int(point.0), "hidY": Int(point.1),
                     "timestampSource": "mach_absolute_time_low48"]
         } catch {
             inputUncertain = true
@@ -382,8 +390,51 @@ final class NativeHIDAdapter {
                          "motion": plan.motion.result, "moveReportsQueued": moves])
         }
     }
+    // System button events use the separate, paired CoreDevice Indigo service.
+    // Queuing the event does not establish that SpringBoard handled it.
+    private func homeEvent(state: UInt64) throws {
+        guard let buttonTransport else { throw SomaError("native_hid_unavailable", "Home service is unavailable") }
+        try buttonTransport.send(["featureIdentifier": "com.apple.coredevice.feature.remote.hid.button",
+            "messageType": "IndigoButtonEvent", "payload": ["state": nativeUInt(state),
+                "usagePage": nativeUInt(0x0c), "usageCode": nativeUInt(0x40)]], timeout: 3)
+    }
+    func home(using transport: NativeTransport, checkHealth: () throws -> Void = {}) throws -> [String: Any] {
+        try cancellation.check()
+        guard isAvailable else { throw SomaError("native_hid_unavailable", "Input state is unavailable; reconnect and observe") }
+        try checkHealth()
+        buttonTransport = transport
+        let started = uptime()
+        homeDown = true // A failed write may still have delivered the down event.
+        do {
+            try homeEvent(state: 1)
+            let deadline = uptime() + 0.06
+            while uptime() < deadline {
+                try cancellation.check(); try checkHealth()
+                wait(min(0.005, max(0, deadline - uptime())))
+            }
+            try cancellation.check(); try checkHealth()
+            try homeEvent(state: 2)
+            homeDown = false
+            return ["transportStatus": "sent", "verificationStatus": "not_checked",
+                "button": "home", "buttonReleaseQueued": true,
+                "hostStartedUptime": started, "hostCompletedUptime": uptime()]
+        } catch {
+            inputUncertain = true
+            let cleanup = release()
+            throw ActionFailure(code: "native_input_uncertain", description: "Home may have been sent: \(error). Observe; do not replay automatically.",
+                possiblyExecuted: true, requiresObservation: true,
+                result: ["transportStatus": "uncertain", "verificationStatus": "uncertain", "cleanup": cleanup])
+        }
+    }
     func release() -> [String: Any] {
         var keyboardFacts: [String: Any] = ["keyboardReleaseRequired": keysDown]
+        keyboardFacts["buttonReleaseRequired"] = homeDown
+        if homeDown {
+            homeDown = false
+            // Cleanup uses this exact connection even after cancellation.
+            do { try homeEvent(state: 2); keyboardFacts["buttonReleaseQueued"] = true }
+            catch { releaseUncertain = true; keyboardFacts["buttonReleaseQueued"] = false; keyboardFacts["buttonReleaseError"] = String(describing: error) }
+        }
         if keysDown {
             keysDown = false
             do { try sendKeys([]); keyboardFacts["keyboardReleaseQueued"] = true }
