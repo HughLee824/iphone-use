@@ -1,5 +1,25 @@
 import Foundation
 
+enum NativePressKey: String, CaseIterable {
+    case returnKey = "return", backspace, left, right, up, down, tab
+    case shiftTab = "shift-tab", escape
+
+    // USB HID Keyboard/Keypad usage page (0x07). Modifier goes first on wire.
+    var usages: [UInt8] {
+        switch self {
+        case .returnKey: return [0x28]
+        case .backspace: return [0x2a]
+        case .left: return [0x50]
+        case .right: return [0x4f]
+        case .up: return [0x52]
+        case .down: return [0x51]
+        case .tab: return [0x2b]
+        case .shiftTab: return [0xe1, 0x2b]
+        case .escape: return [0x29]
+        }
+    }
+}
+
 enum NativeKeyboard {
     static let maximumCharacters = 64
     // These are editing requests, not proof of focus, selection or caret position.

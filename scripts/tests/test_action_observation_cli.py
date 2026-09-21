@@ -143,6 +143,17 @@ class ActionObservationCLITests(unittest.TestCase):
         self.assertEqual(requests[0]["key"], "return")
         self.assertEqual(requests[0]["fieldRect"], "18,146,354,48")
 
+    def test_native_editing_keys_are_forwarded_once_after_lost_reply(self):
+        for key in ["backspace", "left", "right", "up", "down", "tab", "shift-tab", "escape"]:
+            with self.subTest(key=key):
+                code, response, requests = self.run_cli(
+                    ["press", "o2", "--key", key, "--field-rect", "60,78,724,82"], lose_action=True)
+                self.assertEqual(code, 1, response)
+                self.assertEqual(response["outcome"], "unknown")
+                self.assertEqual(len(requests), 1)
+                self.assertEqual(requests[0]["key"], key)
+                self.assertEqual(requests[0]["fieldRect"], "60,78,724,82")
+
     def test_unknown_and_observation_failure_exit_nonzero_without_replay(self):
         for outcome, capture_ok in [("unknown", True), ("completed", False), ("unknown", False)]:
             with self.subTest(outcome=outcome, capture_ok=capture_ok):

@@ -192,7 +192,7 @@ final class AppleDeviceBackend: SessionBackend {
                 "textInputMethods": ["asciiHID": control.available && hid?.canType == true,
                     "unicodePasteboard": control.available && hid?.canType == true && pasteboardError == nil && (pasteboard?.available ?? true)],
                 "textMethodSelection": ["auto", "keys", "paste"], "textModes": ["insert", "replace", "append"], "textFinishSupported": true,
-                "textPrepareSupported": true, "pressKeys": ["return"],
+                "textPrepareSupported": true, "pressKeys": NativePressKey.allCases.map(\.rawValue),
                 "pasteboard": pasteboard?.status ?? ["restorePending": false],
                 "sessionClosing": closing, "hidState": hidState?.rawValue ?? "unprepared",
                 "media": health, "runnerStarted": false, "serviceTransport": config.nativeEndpointInventory == nil ? "apple-coredevice-service-socket" : "apple-paired-tunnel",
@@ -251,9 +251,6 @@ final class AppleDeviceBackend: SessionBackend {
               ["rot0", "rot90", "rot270"].contains(rotation), target.context["nativeRotation"] as? String == "rot0" else {
             throw SomaError("native_orientation_unsupported", "Native HID requires portrait or landscape on a native-portrait display")
         }
-        if keyboardAction, rotation != "rot0" {
-            throw SomaError("native_orientation_unsupported", "Native text input currently requires portrait; landscape acceptance covers touch actions")
-        }
         if let gesture = target.gesture { try gesture.validate(kind: action.kind) }
         let swipe = action.kind == "swipe" ? try NativeSwipePlan(gesture: target.gesture!, rotation: rotation) : nil
         if keyboardAction {
@@ -282,7 +279,9 @@ final class AppleDeviceBackend: SessionBackend {
             let (value, count) = try NativeInputPreflight.check(guard: screenGuard,
                 displayID: target.context["displayID"] as? UInt64, displayRotation: rotation,
                 deadline: min(captured + 30, ProcessInfo.processInfo.systemUptime + 8),
-                maximumCaptures: textInput?.usesPasteboard == true ? 3 : 1,
+                // Editing keys can encounter the same blinking caret as paste.
+                // Retry only captures against the original guard, never input.
+                maximumCaptures: pressing || textInput?.usesPasteboard == true ? 3 : 1,
                 caretGuard: keyboardAction ? target.textCaretGuard : nil,
                 record: { sample in
                     var sample = sample; sample["stage"] = stage
@@ -363,8 +362,11 @@ final class AppleDeviceBackend: SessionBackend {
                 guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped during Home") }
             }
         } else if pressing {
-            result = try hid.pressReturn {
-                guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped during Return") }
+            guard let name = action.fields["key"] as? String, let key = NativePressKey(rawValue: name) else {
+                throw SomaError("invalid_key", "Unknown native keyboard key")
+            }
+            result = try hid.press(key) {
+                guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped during key press") }
             }
         } else if let swipe {
             result = try hid.swipe(swipe) {

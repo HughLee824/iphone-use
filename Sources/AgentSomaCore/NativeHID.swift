@@ -216,22 +216,22 @@ final class NativeHIDAdapter {
                          "editingEffectConfirmed": false, "cleanup": release()])
         }
     }
-    func pressReturn(checkHealth: () throws -> Void = {}) throws -> [String: Any] {
+    func press(_ key: NativePressKey, checkHealth: () throws -> Void = {}) throws -> [String: Any] {
         func facts(_ value: [String: Any], queued: Any) -> [String: Any] {
             var result = value
             for key in ["charactersQueued", "textMode", "editingShortcutAttempted", "editingShortcutQueued", "editingEffectConfirmed"] {
                 result.removeValue(forKey: key)
             }
-            result["key"] = "return"
+            result["key"] = key.rawValue
             result["keyReportQueued"] = queued
             result["keyEffectConfirmed"] = false
             return result
         }
         do {
-            // Standard keyboard Return usage. The focused app decides its effect.
-            return facts(try type([[0x28]], checkHealth: checkHealth), queued: true)
+            // The focused app interprets this usage; no caret/focus effect is inferred.
+            return facts(try type([key.usages], checkHealth: checkHealth), queued: true)
         } catch let failure as ActionFailure {
-            throw ActionFailure(code: failure.code, description: "Return may have changed the focused app: \(failure.description)", possiblyExecuted: failure.possiblyExecuted,
+            throw ActionFailure(code: failure.code, description: "\(key.rawValue) may have changed the focused app: \(failure.description)", possiblyExecuted: failure.possiblyExecuted,
                 requiresObservation: failure.requiresObservation, result: facts(failure.result ?? [:], queued: "unknown"))
         }
     }

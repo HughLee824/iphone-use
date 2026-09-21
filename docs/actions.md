@@ -187,3 +187,12 @@ XCTest 的命令错误经 Runner 转成响应；不再把已经返回给调用�
 原生显式字段的光标例外 `source-blue-caret-fade-v1` 只从原 observation 的 PNG 定位一个可见蓝色竖线，要求宽 1–3 points、高 8–40 points、周围背景均匀。新图仅允许该固定位置整体明暗变化；完整字段的其他像素按原分辨率逐通道检查，仍使用原 8/255 噪声容差。正文、选区、位置或背景变化不属于例外，全屏 1%、设备/会话、方向、30 秒时效和截止时间检查保留。普通差异比例仍输出；例外通过时额外记录 `screenGuard.caretBlinkException`，不能把非零 `regionChanges` 解释成阈值被调大。
 
 原图光标不可见、颜色不支持、多个候选、邻近文字干扰或背景不均匀时回到原严格检查；不自动等待光标、不重新绑定基准、不重放输入。截图无法区分外观完全相同的蓝色文字竖线与光标，也无法仅凭光标消失证明焦点未丢失；这是像素启发式，不是焦点保证。`focusConfirmed=false` 和外部 Agent 的焦点确认、输入后核对责任不变。tap/swipe、XCTest 和未指定完整字段的 type 不使用该例外。
+
+
+## 原生编辑按键与横屏文字
+
+`apple-native` 的 `press oN --key KEY` 支持 `return`、`backspace`、`left`、`right`、`up`、`down`、`tab`、`shift-tab`、`escape`。使用当前截图确认焦点，可通过 `--field-rect x,y,width,height` 保护完整输入框。每次只发送一个按键或明确的 Shift+Tab 组合，包含释放；没有重复次数、任意快捷键或自动补发。Runner 的元素引用 `press oN:eN` 仍只接受 `return`。按键与 Unicode 粘贴共用最多三次只读预检：始终比较原 observation，沿用每阶段 8 秒及原观察 30 秒截止时间，方向变化立即拒绝；只重取截图，不重发按键。
+
+这些名称表示 HID 键盘操作，不承诺业务效果：Backspace 的删除单位、方向键的光标位置、Tab 的焦点切换、Escape 的取消行为均由前台 App/IME 决定。回执保留 `key`、`keyReportQueued`、`keyboardReleaseQueued`、`keyEffectConfirmed=false`；本地发送完成仍是 unknown，需检查结果截图。Shift+Tab 先单独按下 Shift，再按 Tab，最后释放全部按键；取消或失败沿用同通道释放和不重放契约。
+
+原生 `type` 和 `press` 可用于原生竖屏显示器的竖屏及左右横屏。无需旋转按键 usage；坐标输入框使用当前截图的屏幕点。文字模式、剪贴板所有权与恢复、设备/会话/30秒观察绑定、方向和截图保护保持不变。先使用 `text-prepare` 建立键盘，再观察并确认焦点；旋转后必须重新观察。具体真机验收范围见[原生后端记录](apple-native-backend.md)。

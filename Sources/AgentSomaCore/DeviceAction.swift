@@ -102,8 +102,11 @@ struct DeviceAction {
             fields["textMethod"] = request["textMethod"]
         }
         if operation == "press" {
-            guard request["key"] as? String == "return" else { throw SomaError("invalid_key", "Use --key return") }
-            fields["key"] = "return"
+            let supported = allowScreenText && reference.node == nil ? NativePressKey.allCases.map(\.rawValue) : ["return"]
+            guard let key = request["key"] as? String, supported.contains(key) else {
+                throw SomaError("invalid_key", "Use --key " + supported.joined(separator: ", "))
+            }
+            fields["key"] = key
         }
         if let raw = request["fieldRect"] {
             guard allowScreenText, ["type", "press"].contains(operation), reference.node == nil,

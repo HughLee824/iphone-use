@@ -332,11 +332,11 @@ struct TextFinish: ParsableCommand {
 }
 
 struct Press: ParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Send an explicit Return to a text input with existing keyboard focus.")
+    static let configuration = CommandConfiguration(abstract: "Send an explicit key to the existing keyboard focus.")
     @OptionGroup var options: SessionOptions
     @OptionGroup var observation: ActionObservationOptions
     @Argument(help: "Current text input reference, or native screenshot oN after visually confirming focus. Does not tap to focus; Return can submit, search, or insert a newline depending on the app.") var reference: String
-    @Option(help: "Key to send; currently only return is supported.") var key: String
+    @Option(help: "Key: return. Native oN also supports backspace, left, right, up, down, tab, shift-tab, escape.") var key: String
     @Option(help: "Native press oN only: complete focused field x,y,width,height in screen points, with the same protection as native type.") var fieldRect: String?
     mutating func run() throws {
         let session = try options.requiredSession()
