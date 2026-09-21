@@ -23,7 +23,7 @@ enum NativeTextInput {
 // Retry observations only, never input. Every frame compares with the original
 // guard, with unchanged thresholds and one shared deadline for this preflight.
 enum NativeInputPreflight {
-    static func check(guard screenGuard: ScreenGuard, displayID: UInt64?, deadline: TimeInterval, maximumCaptures: Int,
+    static func check(guard screenGuard: ScreenGuard, displayID: UInt64?, displayRotation: String? = nil, deadline: TimeInterval, maximumCaptures: Int,
                       caretGuard: NativeCaretGuard? = nil,
                       now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
                       record: ([String: Any]) -> Void = { _ in },
@@ -34,10 +34,26 @@ enum NativeInputPreflight {
             guard now() < deadline else { throw SomaError("stale_observation", "Input observation deadline expired") }
             let captureStarted = now()
             let frame = try capture()
-            guard frame.metadata["displayID"] as? UInt64 == displayID,
-                  let raw = frame.metadata["screenContext"] as? [String: Any] else { throw ScreenGuard.Failure.contextChanged }
-            let context = try JSONDecoder().decode(ScreenContext.self, from: jsonData(raw))
-            var check = try screenGuard.check(png: frame.screenshot, context: context)
+            let context: ScreenContext
+            var check: ScreenGuard.Check
+            do {
+                guard frame.metadata["displayID"] as? UInt64 == displayID,
+                      let raw = frame.metadata["screenContext"] as? [String: Any] else { throw ScreenGuard.Failure.contextChanged }
+                if let displayRotation {
+                    guard frame.metadata["displayRotation"] as? String == displayRotation,
+                          frame.metadata["nativeRotation"] as? String == "rot0" else { throw ScreenGuard.Failure.contextChanged }
+                }
+                context = try JSONDecoder().decode(ScreenContext.self, from: jsonData(raw))
+                check = try screenGuard.check(png: frame.screenshot, context: context)
+            } catch ScreenGuard.Failure.contextChanged {
+                // An orientation change is never a retryable pixel mismatch. Preserve
+                // this new frame and invalidate the old observation before any input.
+                record(["attempt": attempt, "contextChanged": true,
+                        "elapsedMs": (now() - started) * 1000])
+                throw ActionFailure(code: "stale_observation", description: "Display geometry or orientation changed; inspect the new screenshot before choosing coordinates",
+                    possiblyExecuted: false, requiresObservation: true,
+                    result: ["preInputCaptures": attempt, "screenContextChanged": true], rejectedCapture: frame)
+            }
             if !check.accepted, check.screenChange <= check.policy.maxScreenChange,
                let caretGuard, try caretGuard.acceptsBlink(png: frame.screenshot, context: context) {
                 check.ignoredCaretBlink = caretGuard.caret

@@ -98,6 +98,32 @@ final class NativeTextInputTests: XCTestCase {
         XCTAssertThrowsError(try DeviceAction(operation: "type", request: ["reference": "o1", "mode": "append", "text": ""], allowScreenText: true))
     }
 
+    func testRotationChangeRejectsIdenticalPixelsWithoutRetryAndPreservesNewFrame() throws {
+        let screen = ScreenRect(CGRect(x: 0, y: 0, width: 844, height: 390))
+        let context = ScreenContext(screen: screen, scope: screen, orientation: 4, keyboardCount: 0)
+        let png = try screenPNG(width: 844, height: 390)
+        let guardValue = try ScreenGuard(png: png, context: context, rects: [screen], policy: .init())
+        // Left and right landscape have identical sizes. Orientation, not image
+        // similarity, must stop a stale action even on a uniform screen.
+        for (rotation, native, orientation) in [("rot270", "rot0", 3), ("rot90", "rot90", 4), ("rot90", "rot0", 3)] {
+            var calls = 0
+            XCTAssertThrowsError(try NativeInputPreflight.check(guard: guardValue, displayID: 1, displayRotation: "rot90",
+                deadline: 8, maximumCaptures: 3, now: { 0 }) {
+                calls += 1
+                let changed = ScreenContext(screen: screen, scope: screen, orientation: orientation, keyboardCount: 0)
+                return CapturedObservation(nodes: [], metadata: ["displayID": UInt64(1), "displayRotation": rotation,
+                    "nativeRotation": native, "screenContext": try jsonObject(JSONEncoder().encode(changed))], screenshot: png)
+            }) {
+                let failure = $0 as? ActionFailure
+                XCTAssertEqual(failure?.possiblyExecuted, false)
+                XCTAssertEqual(failure?.requiresObservation, true)
+                XCTAssertEqual(failure?.result?["screenContextChanged"] as? Bool, true)
+                XCTAssertEqual(failure?.rejectedCapture?.screenshot, png)
+            }
+            XCTAssertEqual(calls, 1)
+        }
+    }
+
     func testReadOnlyPreflightAlwaysUsesOriginalGuardAndHasBoundedAttempts() throws {
         let context = screenTestContext(), baseline = try screenPNG()
         let changed = try screenPNG(patches: [(CGRect(x: 50, y: 160, width: 4, height: 10), [0,0,0])])

@@ -270,6 +270,40 @@ final class AppleNativeTests: XCTestCase {
         XCTAssertThrowsError(try NativeCoordinateMapper.map(CGPoint(x: Double.nan, y: 0), screen: screen, rotation: "rot0"))
     }
 
+    func testLandscapeCornersAndAsymmetricPointUseNativeTouchAxes() throws {
+        let screen = ScreenRect(CGRect(x: 0, y: 0, width: 844, height: 390))
+        let points = [CGPoint(x: 0, y: 0), CGPoint(x: 844, y: 0), CGPoint(x: 0, y: 390), CGPoint(x: 844, y: 390), CGPoint(x: 211, y: 292.5)]
+        let expected: [String: [[UInt16]]] = [
+            "rot90": [[0,65535], [0,0], [65535,65535], [65535,0], [49151,49151]],
+            "rot270": [[65535,0], [65535,65535], [0,0], [0,65535], [16384,16384]]]
+        for rotation in ["rot90", "rot270"] {
+            for (index, point) in points.enumerated() {
+                let mapped = try NativeCoordinateMapper.map(point, screen: screen, rotation: rotation)
+                XCTAssertEqual([mapped.0, mapped.1], expected[rotation]![index])
+            }
+            XCTAssertThrowsError(try NativeCoordinateMapper.map(CGPoint(x: 845, y: 100), screen: screen, rotation: rotation))
+        }
+    }
+
+    func testLandscapeSwipeMapsBothEndpointsWithoutChangingPixelSpeed() throws {
+        let screen = ScreenRect(CGRect(x: 0, y: 0, width: 844, height: 390))
+        let context = ScreenContext(screen: screen, scope: screen, orientation: 3, keyboardCount: 0)
+        let start = CGPoint(x: 211, y: 97.5), end = CGPoint(x: 633, y: 292.5)
+        let guardValue = try ScreenGuard(png: screenPNG(width: 2532, height: 1170), context: context,
+            rects: CoordinateGesture.actionRegions(start: start, end: end, screen: screen.cgRect), policy: .init())
+        let gesture = CoordinateGesture(start: start, end: end, screenGuard: guardValue, motion: SwipeMotion(velocity: 600))
+        let left = try NativeSwipePlan(gesture: gesture, rotation: "rot90")
+        let right = try NativeSwipePlan(gesture: gesture, rotation: "rot270")
+        XCTAssertEqual([left.start.0, left.start.1], [16384,49151])
+        XCTAssertEqual([left.end.0, left.end.1], [49151,16384])
+        XCTAssertEqual([right.start.0, right.start.1], [49151,16384])
+        XCTAssertEqual([right.end.0, right.end.1], [16384,49151])
+        XCTAssertEqual(left.movementDuration, hypot(1266, 585) / 600, accuracy: 0.00001)
+        XCTAssertEqual(left.movementDuration, right.movementDuration)
+        XCTAssertEqual(left.point(at: 0.5).0, 32768)
+        XCTAssertEqual(left.point(at: 0.5).1, 32768)
+    }
+
     private func reports(_ transport: ScriptedTransport) -> [Data] {
         transport.sends.compactMap { (($0["payload"] as? [String: Any])?["send"] as? [String: Any])?["_0"] as? Data }
     }
@@ -707,6 +741,18 @@ final class AppleNativeTests: XCTestCase {
         XCTAssertTrue(display.backlightOn)
         XCTAssertThrowsError(try NativeDisplay(["displays": []]))
     }
+    func testNativeDisplayRotatesNativeBoundsIntoUnmodifiedScreenshotGeometry() throws {
+        for (rotation, width, height, orientation) in [("rot0", 1170, 2532, 1), ("rot90", 2532, 1170, 4), ("rot270", 2532, 1170, 3)] {
+            let display = try NativeDisplay(["backlightState": "activeOn", "displays": [["primary": true, "displayId": 1,
+                "bounds": [[0, 0], [1170, 2532]], "pointScale": 3, "currentOrientation": rotation, "nativeOrientation": "rot0"]]])
+            XCTAssertEqual(display.pixelWidth, Double(width)); XCTAssertEqual(display.pixelHeight, Double(height))
+            XCTAssertEqual(display.screen.width, Double(width) / 3); XCTAssertEqual(display.screen.height, Double(height) / 3)
+            XCTAssertEqual(display.context.orientation, orientation)
+        }
+        XCTAssertThrowsError(try NativeDisplay(["displays": [["primary": true, "displayId": 1,
+            "bounds": [[0, 0], [1170, 2532]], "pointScale": 3, "currentOrientation": "rot90", "nativeOrientation": "unknown"]]]))
+    }
+
     func testNativeScreenshotReferencesDoNotRequireAXAndBecomeStale() throws {
         let directory = URL(fileURLWithPath: "/private/tmp/native-observation-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -739,6 +785,29 @@ final class AppleNativeTests: XCTestCase {
         XCTAssertEqual(result["ok"] as? Bool, false)
         XCTAssertEqual(((result["observation"] as? [String: Any])?["result"] as? [String: Any])?["observation"] as? String, "o2")
     }
+    func testRTCPReportRequiresNegotiatedSourceAndCompleteFraming() {
+        let rr: [UInt8] = [0x80, 201, 0, 1, 0, 0, 0, 123]
+        let sr: [UInt8] = [0x80, 200, 0, 6, 0, 0, 0, 123] + Array(repeating: 0, count: 20)
+        XCTAssertEqual(NativeRTCPReport.parse(rr, expectedSSRC: 123), .report)
+        XCTAssertEqual(NativeRTCPReport.parse(sr, expectedSSRC: 123), .report)
+        XCTAssertNil(NativeRTCPReport.parse(sr, expectedSSRC: 456))
+        for malformed: [UInt8] in [[], Array(sr.dropLast()), Array(sr.prefix(8)),
+                                  [0x81, 201, 0, 1, 0, 0, 0, 123],
+                                  [0x40, 201, 0, 1, 0, 0, 0, 123],
+                                  [0xa0, 201, 0, 2, 0, 0, 0, 123, 0, 0, 0, 0],
+                                  rr + [0x80, 202, 0, 8], rr + [0],
+                                  [0x80, 204, 0, 1, 0, 0, 0, 123]] {
+            XCTAssertNil(NativeRTCPReport.parse(malformed, expectedSSRC: 123))
+        }
+        let padded: [UInt8] = [0xa0, 201, 0, 2, 0, 0, 0, 123, 0, 0, 0, 4]
+        XCTAssertEqual(NativeRTCPReport.parse(padded, expectedSSRC: 123), .report)
+        XCTAssertNil(NativeRTCPReport.parse(padded + rr, expectedSSRC: 123))
+        let bye: [UInt8] = [0x81, 203, 0, 1, 0, 0, 0, 123]
+        XCTAssertEqual(NativeRTCPReport.parse(rr + bye, expectedSSRC: 123), .goodbye)
+        XCTAssertEqual(NativeRTCPReport.parse(bye, expectedSSRC: 123), .goodbye)
+        XCTAssertNil(NativeRTCPReport.parse(bye, expectedSSRC: 456))
+    }
+
     func testRTPReceiverBindsDrainsAndSendsRTCPOnOwnedSocket() throws {
         let sender = socket(AF_INET6, SOCK_DGRAM, 0)
         XCTAssertGreaterThanOrEqual(sender, 0)
@@ -764,6 +833,21 @@ final class AppleNativeTests: XCTestCase {
         try receiver.configure(["SourcePort": sourcePort, "LocalSSRC": UInt32(123), "RemoteSSRC": UInt32(456),
             "RTCPEnabled": true, "RTCPSendInterval": 0.02, "SRTPCipherSuite": 0])
         endpoint.sin6_port = receiver.port.bigEndian
+        func send(_ packet: [UInt8]) {
+            _ = packet.withUnsafeBytes { bytes in withUnsafePointer(to: &endpoint) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    sendto(sender, bytes.baseAddress, bytes.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in6>.size))
+                }
+            } }
+        }
+        let report: [UInt8] = [0x80, 200, 0, 6, 0, 0, 0, 123] + Array(repeating: 0, count: 20)
+        send(report)
+        let startupDeadline = ProcessInfo.processInfo.systemUptime + 1
+        while (receiver.health()["validatedRTCPReports"] as? Int ?? 0) == 0 && ProcessInfo.processInfo.systemUptime < startupDeadline {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        XCTAssertEqual(receiver.health()["validatedRTCPReports"] as? Int, 1)
+        XCTAssertEqual(receiver.health()["healthy"] as? Bool, false, "RTCP alone cannot establish startup readiness")
         let packet: [UInt8] = [0x80, 100, 0, 1, 0, 0, 0, 0, 0, 0, 0, 123, 1]
         let count = packet.withUnsafeBytes { bytes in withUnsafePointer(to: &endpoint) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
@@ -783,7 +867,7 @@ final class AppleNativeTests: XCTestCase {
         XCTAssertEqual(receiver.health()["healthy"] as? Bool, false)
         XCTAssertEqual(receiver.health()["healthReason"] as? String, "rtp_stale")
         XCTAssertEqual(receiver.health()["lastRTPAgeSeconds"] as? Double, 5)
-        // Peer RTCP and rejected RTP are observable but cannot refresh video health.
+        // Truncated RTCP and rejected RTP cannot refresh session health.
         for diagnosticPacket: [UInt8] in [[0x80, 200, 0, 1, 0, 0, 0, 123],
                                          [0x80, 100, 0, 2, 0, 0, 0, 0, 0, 0, 0, 124]] {
             _ = diagnosticPacket.withUnsafeBytes { bytes in withUnsafePointer(to: &endpoint) {
@@ -793,11 +877,11 @@ final class AppleNativeTests: XCTestCase {
             } }
         }
         let diagnosticDeadline = ProcessInfo.processInfo.systemUptime + 1
-        while (receiver.health()["datagramsReceived"] as? Int ?? 0) < 3 && ProcessInfo.processInfo.systemUptime < diagnosticDeadline {
+        while (receiver.health()["datagramsReceived"] as? Int ?? 0) < 4 && ProcessInfo.processInfo.systemUptime < diagnosticDeadline {
             Thread.sleep(forTimeInterval: 0.01)
         }
-        XCTAssertEqual(receiver.health()["rtcpPacketsReceived"] as? Int, 1)
-        XCTAssertEqual(receiver.health()["rejectedDatagrams"] as? Int, 1)
+        XCTAssertEqual(receiver.health()["rtcpPacketsReceived"] as? Int, 2)
+        XCTAssertEqual(receiver.health()["rejectedDatagrams"] as? Int, 2)
         XCTAssertEqual(receiver.health()["rtpPackets"] as? Int, 1)
         XCTAssertEqual(receiver.health()["healthReason"] as? String, "rtp_stale")
         XCTAssertEqual(receiver.health()["lastRTCPReceiveAgeSeconds"] as? Double, 0)
@@ -808,6 +892,25 @@ final class AppleNativeTests: XCTestCase {
         XCTAssertGreaterThan(received, 32)
         XCTAssertEqual(Array(bytes.prefix(4)), [0x81, 201, 0, 7])
         XCTAssertEqual(bytes[33], 202)
+        send(report)
+        let reportDeadline = ProcessInfo.processInfo.systemUptime + 1
+        while receiver.health()["healthy"] as? Bool != true && ProcessInfo.processInfo.systemUptime < reportDeadline {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        XCTAssertEqual(receiver.health()["healthReason"] as? String, "recent_peer_report")
+        XCTAssertEqual(receiver.health()["videoFlowing"] as? Bool, false)
+        XCTAssertEqual(receiver.health()["validatedRTCPReports"] as? Int, 2)
+        XCTAssertEqual(receiver.health()["rtpPackets"] as? Int, 1)
+        clock.set(20)
+        XCTAssertEqual(receiver.health()["healthy"] as? Bool, false)
+        XCTAssertEqual(receiver.health()["healthReason"] as? String, "rtp_stale")
+        send(report + [0x81, 203, 0, 1, 0, 0, 0, 123])
+        let byeDeadline = ProcessInfo.processInfo.systemUptime + 1
+        while receiver.health()["peerEnded"] as? Bool != true && ProcessInfo.processInfo.systemUptime < byeDeadline {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        XCTAssertEqual(receiver.health()["healthReason"] as? String, "peer_ended")
+        XCTAssertEqual(receiver.health()["healthy"] as? Bool, false)
         receiver.close()
         XCTAssertEqual(receiver.health()["healthy"] as? Bool, false)
         XCTAssertEqual(receiver.health()["healthReason"] as? String, "receiver_closed")

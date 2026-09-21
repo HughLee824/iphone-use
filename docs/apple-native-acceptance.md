@@ -65,7 +65,7 @@ Use the same explicit native connection and fresh screenshot procedure. Check `c
   --velocity 500 --hold-duration 0.2
 ```
 
-For this backend, velocity means original PNG pixels/second. A terminal hold can reduce momentum but does not guarantee a specific scroll distance. Keep the default screen guard; it protects the entire swipe corridor. Native input currently requires original portrait orientation and bounds planned motion to 10 seconds. Cancellation, media loss and deadline expiry attempt RELEASE at the last attempted position without a new connection or MOVE replay.
+For this backend, velocity means original PNG pixels/second. A terminal hold can reduce momentum but does not guarantee a specific scroll distance. Keep the default screen guard; it protects the entire swipe corridor. Native touch input accepts portrait and both landscape orientations on a native-portrait display and bounds planned motion to 10 seconds. Cancellation, media loss and deadline expiry attempt RELEASE at the last attempted position without a new connection or MOVE replay.
 
 Preserve the action response and attached after-PNG. Verify the intended scroll direction using both visible rows and Probe's scroll offset, and check that target-hit/generation/focus counters did not change unexpectedly. Record the source/after observation IDs, requested motion, queued MOVE count and measured host duration separately from visual acceptance. `outcome=unknown` remains correct after local queue completion. A later swipe must be chosen from a fresh observation, never automatically repeated after uncertainty. Host cancellation/failed-MOVE tests are separate from on-device swipe interruption acceptance.
 
@@ -133,7 +133,7 @@ When the HID action is dispatched, inspect its after-image for composition and t
 
 ## Acceptance boundaries
 
-The implementation evidence is summarized in [the backend report](apple-native-backend.md). Physical unplug during contact, SIGKILL, reboot/re-pairing, device coexistence, rotated/edge input and extended stress remain separate tests. Do not report them as passed based on these scripts or host fakes. No release or default-backend migration is part of M2–M3 acceptance.
+The implementation evidence is summarized in [the backend report](apple-native-backend.md). Physical unplug during contact, SIGKILL, reboot/re-pairing, device coexistence, broader device/orientation support, exact screen-edge input and extended stress remain separate tests. Do not report them as passed based on these scripts or host fakes. No release or default-backend migration is part of M2–M3 acceptance.
 
 ## Explicit literal text and in-session clipboard completion
 
@@ -197,7 +197,7 @@ The missing live exception case passed on 2026-09-21 with unchanged `cab41e8`: a
 
 ## Diagnosing intermittent media health
 
-Use a single owned native session and inspect the controlled Probe. Record `status.result.media` every few seconds for a bounded focused/caret phase and an unfocused/static phase, preserving the actual sample times, counters and source/after screenshots. Do not stop sampling solely because `healthy` becomes false: retain that failed sample and a bounded read-only follow-up, without input or automatic reconnect. `healthReason=rtp_stale` means only that no accepted RTP packet arrived within five seconds. Compare last-RTP age with peer RTCP receive age, local RTCP send/attempt ages and `displayConnection` terminal-event age/error. None of the diagnostic-only RTCP or connection fields override the input guard. Pre-dispatch rejections preserve their media sample; inspect it even if later status is healthy.
+Use a single owned native session and inspect the controlled Probe. Record `status.result.media` every few seconds for a bounded focused/caret phase and an unfocused/static phase, preserving the actual sample times, counters and source/after screenshots. Do not stop sampling solely because `healthy` becomes false: retain that failed sample and a bounded read-only follow-up, without input or automatic reconnect. `healthReason=rtp_stale` means neither recent RTP nor the validated RTCP liveness condition described in the backend document is satisfied. Compare last-RTP age with peer RTCP receive age, local RTCP send/attempt ages and `displayConnection` terminal-event age/error. Diagnostic-only RTCP and connection fields never override the input guard. Inspect `validatedRTCPReports`, `lastValidatedRTCPAgeSeconds` and `videoFlowing` to distinguish validated session liveness from video flow. Pre-dispatch rejections preserve their media sample; inspect it even if later status is healthy.
 
 If changing phases requires an action, first inspect a fresh Probe screenshot and use ordinary native guards. When keyboard occlusion makes the visible unfocus button unavailable, restarting only the disposable ordinary Probe app through Apple devicectl is a setup alternative; keep the same media session and document that choice. Do not restart device services, disrupt other clients or weaken checks to obtain a passing sample. Archive evidence and verify owned cleanup and host exit.
 
@@ -239,3 +239,12 @@ Use the ordinary signed `scripts/NativeTextProbe.xcodeproj` app on an unlocked d
 5. Read status, disconnect, archive facts/images and verify owned cleanup and actual host exit. Keep unknown API outcomes separate from visual acceptance.
 
 Host coverage includes new-action admission and bounds, current-reference invalidation, the single-contact hold, health-loss release, Home's typed down/up envelope, cancellation cleanup on the original channel, and no automatic replay after uncertain delivery or lost CLI response. Fake transports cannot prove device protocol behavior. Private run evidence is in `.local/research/apple-native-gestures-20260921/`; the initial lock was resolved and controlled acceptance subsequently passed. Screenshots o5/o6 show the context menu and selected action, o7 shows the first accepted drop, o11 shows SpringBoard after Home, o12 shows the retained Probe state after reopen, and o16 shows the corrected Probe's drag start/end/drop counts all equal to 1. The first Probe's end callback name was wrong; the ordinary app alone was corrected and reinstalled before the final drag. All dispatch outcomes stayed unknown until external image inspection. Final cleanup and host exit are recorded separately.
+
+
+## Landscape touch acceptance
+
+Build/install the ordinary `NativeTextProbe` and open its visible **Rotation workflow** page. Its public UIKit scene-geometry buttons select Portrait/Left/Right without changing the system rotation-lock setting. Inspect each original PNG and its `displayRotation`, point scale and screen dimensions before choosing coordinates. Test independent targets away from the center, the real context-menu action and the SOMA drag source/drop destination in both landscape directions; compare individual hit/menu/start/end/drop counters. Return to Portrait and confirm a new guarded target hit.
+
+For stale-orientation acceptance, tap **Right +5s** while in Left, inspect the attached still-left screenshot, then allow the visible delayed rotation to finish. An input using that old reference must be refused before contact with `screenContextChanged=true` and the actual new frame attached, even though both landscape screenshots have equal dimensions. Do not count a plain TTL expiry as this check. Use the rejected observation for a new visual decision, never automatic replay.
+
+For static-display liveness, retain bounded read-only status samples until `lastRTPAgeSeconds` exceeds five seconds while valid peer reports continue. Require `healthReason=recent_peer_report`, fresh validated-report/send ages and unchanged RTP counters; then inspect a new PNG and verify one separately chosen target hit. Missing reports, invalid SSRC/length, BYE and timeout rejection have host tests; do not claim device fault-injection acceptance from those tests.

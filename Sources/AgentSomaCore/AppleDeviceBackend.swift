@@ -13,7 +13,7 @@ struct NativeDisplay: Equatable {
     let backlightOn: Bool
     var screen: ScreenRect { ScreenRect(CGRect(x: 0, y: 0, width: pixelWidth / scale, height: pixelHeight / scale)) }
     var context: ScreenContext {
-        let orientation = ["rot0": 1, "rot90": 3, "rot180": 2, "rot270": 4][rotation] ?? 0
+        let orientation = ["rot0": 1, "rot90": 4, "rot180": 2, "rot270": 3][rotation] ?? 0
         // Native screenshots have no keyboard/AX count; this placeholder is only for grid
         // comparison. keyboardState is explicitly unknown in the observation metadata.
         return ScreenContext(screen: screen, scope: screen, orientation: orientation, keyboardCount: 0)
@@ -27,8 +27,14 @@ struct NativeDisplay: Equatable {
               bounds[0].map(\.doubleValue) == [0, 0], bounds[1].allSatisfy({ $0.doubleValue.isFinite && $0.doubleValue > 0 && $0.doubleValue <= 16384 }),
               let scale = value["pointScale"] as? NSNumber, scale.doubleValue.isFinite, scale.doubleValue >= 1,
               let rotation = value["currentOrientation"] as? String, ["rot0", "rot90", "rot180", "rot270"].contains(rotation),
-              let native = value["nativeOrientation"] as? String else { throw SomaError("native_display_unavailable", "Unknown primary display geometry") }
-        self.id = id.uint64Value; pixelWidth = bounds[1][0].doubleValue; pixelHeight = bounds[1][1].doubleValue; self.scale = scale.doubleValue
+              let native = value["nativeOrientation"] as? String, ["rot0", "rot90", "rot180", "rot270"].contains(native) else { throw SomaError("native_display_unavailable", "Unknown primary display geometry") }
+        // CoreDevice bounds remain in native display axes when the scene rotates;
+        // devicectl's PNG is already oriented. Do not rotate or resample that PNG.
+        let quarterTurn = ["rot90", "rot270"].contains(rotation) != ["rot90", "rot270"].contains(native)
+        self.id = id.uint64Value
+        pixelWidth = bounds[1][quarterTurn ? 1 : 0].doubleValue
+        pixelHeight = bounds[1][quarterTurn ? 0 : 1].doubleValue
+        self.scale = scale.doubleValue
         self.rotation = rotation; nativeRotation = native; backlightOn = result["backlightState"] as? String == "activeOn"
     }
 }
@@ -241,12 +247,15 @@ final class AppleDeviceBackend: SessionBackend {
               let screenGuard = (keyboardAction || homeAction) ? target.textGuard : target.gesture?.screenGuard else {
             throw ActionFailure(code: "stale_observation", description: "Observe this device/session again before input", possiblyExecuted: false, requiresObservation: true)
         }
-        // Rotation formulas have host tests but lack device acceptance. Fail closed for now.
-        guard target.context["displayRotation"] as? String == "rot0", target.context["nativeRotation"] as? String == "rot0" else {
-            throw SomaError("native_orientation_unsupported", "Native HID currently requires the original portrait orientation")
+        guard let rotation = target.context["displayRotation"] as? String,
+              ["rot0", "rot90", "rot270"].contains(rotation), target.context["nativeRotation"] as? String == "rot0" else {
+            throw SomaError("native_orientation_unsupported", "Native HID requires portrait or landscape on a native-portrait display")
+        }
+        if keyboardAction, rotation != "rot0" {
+            throw SomaError("native_orientation_unsupported", "Native text input currently requires portrait; landscape acceptance covers touch actions")
         }
         if let gesture = target.gesture { try gesture.validate(kind: action.kind) }
-        let swipe = action.kind == "swipe" ? try NativeSwipePlan(gesture: target.gesture!) : nil
+        let swipe = action.kind == "swipe" ? try NativeSwipePlan(gesture: target.gesture!, rotation: rotation) : nil
         if keyboardAction {
             try screenGuard.validate()
             guard screenGuard.regions.map(\.rect) == [action.textRegion ?? screenGuard.context.screen] else { throw ScreenGuard.Failure.invalidGuard }
@@ -271,7 +280,7 @@ final class AppleDeviceBackend: SessionBackend {
         var preInputChecks: [[String: Any]] = []
         func preflight(stage: String) throws -> ScreenGuard.Check {
             let (value, count) = try NativeInputPreflight.check(guard: screenGuard,
-                displayID: target.context["displayID"] as? UInt64,
+                displayID: target.context["displayID"] as? UInt64, displayRotation: rotation,
                 deadline: min(captured + 30, ProcessInfo.processInfo.systemUptime + 8),
                 maximumCaptures: textInput?.usesPasteboard == true ? 3 : 1,
                 caretGuard: keyboardAction ? target.textCaretGuard : nil,
@@ -362,12 +371,14 @@ final class AppleDeviceBackend: SessionBackend {
                 guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped during swipe") }
             }
         } else {
-            let point = try NativeCoordinateMapper.map(target.gesture!.start, screen: screenGuard.context.screen, rotation: "rot0")
+            let point = try NativeCoordinateMapper.map(target.gesture!.start, screen: screenGuard.context.screen, rotation: rotation)
             result = try hid.tap(point, hold: action.fields["duration"] as? Double ?? 0.06) {
                 guard media.health()["healthy"] as? Bool == true else { throw SomaError("native_media_unhealthy", "Media stopped during touch") }
             }
         }
         result["sourceObservationID"] = action.reference.observation
+        result["displayRotation"] = rotation
+        result["nativeRotation"] = target.context["nativeRotation"]
         result["screenGuard"] = check.result
         result["preInputCaptures"] = captures
         result["preInputChecks"] = preInputChecks

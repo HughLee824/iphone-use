@@ -51,12 +51,12 @@ struct NativeSwipePlan {
     let movementDuration: TimeInterval
     static let sampleInterval: TimeInterval = 1.0 / 60
 
-    init(gesture: CoordinateGesture) throws {
+    init(gesture: CoordinateGesture, rotation: String = "rot0") throws {
         try gesture.validate(kind: "swipe")
         guard let end = gesture.end, let motion = gesture.motion else { throw ScreenGuard.Failure.invalidGuard }
         let screen = gesture.screenGuard.context.screen
-        start = try NativeCoordinateMapper.map(gesture.start, screen: screen, rotation: "rot0")
-        self.end = try NativeCoordinateMapper.map(end, screen: screen, rotation: "rot0")
+        start = try NativeCoordinateMapper.map(gesture.start, screen: screen, rotation: rotation)
+        self.end = try NativeCoordinateMapper.map(end, screen: screen, rotation: rotation)
         self.motion = motion
         // Native velocity is measured in original screenshot pixels per second.
         let dx = (end.x - gesture.start.x) * Double(gesture.screenGuard.pixelWidth) / screen.width
