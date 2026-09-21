@@ -8,21 +8,21 @@ This checkout adds mode selection; these changes have not been released. Older i
 - **runner** → `xctest`: the existing signed XCTest Runner, screenshots and available element data. Existing setup/build-runner workflows remain. Runner does not yet implement every standard-mode operation; feature parity is the follow-up goal, not a current guarantee.
 
 ```sh
-agentsoma config get mode
-agentsoma config set mode standard
-agentsoma connect --device "$DEVICE"
+iphone-use config get mode
+iphone-use config set mode standard
+iphone-use connect --device "$DEVICE"
 
 # Override only this connection; do not change the saved default.
-agentsoma connect --device "$DEVICE" --mode runner
+iphone-use connect --device "$DEVICE" --mode runner
 # Or select Runner as the default for later connections.
-agentsoma config set mode runner
+iphone-use config set mode runner
 ```
 
 `setup` still prepares/verifies Runner. It does not change an existing mode preference. If you previously selected standard, choose runner explicitly after setup. Source developers can continue to supply `--xctestrun /absolute/signed.xctestrun`.
 
 ## Storage and precedence
 
-User configuration is `~/.agentsoma/config.json`:
+User configuration is `~/.iphone-use/config.json`:
 
 ```json
 {
@@ -36,16 +36,16 @@ The directory is private (0700), and files written by the CLI are 0600. Updates 
 Selection order:
 
 1. Explicit connection options. `--mode standard|runner` is the preferred interface. Existing `--backend apple-native|xctest` remains compatible. An explicit `--xctestrun` implies runner; the diagnostic `--native-endpoint-inventory` implies standard. Compatible options can coexist; contradictory options fail before any host/device operation. Explicit selection neither reads nor changes the user default.
-2. Saved `mode` in user configuration.
+2. Saved `mode` in user configuration; when absent, a valid old `~/.agentsoma/config.json` preference is migrated before choosing a fresh default.
 3. One-time initialization at the first connection without explicit options: migrate an intact, unexpired Runner setup compatible with the installed package to runner; otherwise a fresh installation uses standard. The selected default is saved before starting the host and remains even if connection fails.
 
 Migration examines only local Runner preparation records and validates the prepared files using the existing package validation. The presence of Xcode, certificates or an unregistered Runner alone is insufficient. Existing JSON setup records that cannot be validated produce `mode_selection_required`; choose with `config set mode runner` or `config set mode standard`. Expired or broken setup must not silently redirect an old workflow. Migrating runner does not establish that the phone or signing environment is currently ready; normal Runner connection checks still run.
 
-The preference is global to this macOS user. There are no device-level overrides in this version. Runner artifacts stay in `~/Library/Application Support/AgentSoma`; session IPC, logs and observations stay under `/private/tmp/agentsoma-<uid>` (or `AGENTSOMA_STATE_DIR`). User preferences are separate from session state.
+The preference is global to this macOS user. There are no device-level overrides in this version. Runner artifacts stay in `~/Library/Application Support/iphone-use`; session IPC, logs and observations stay under `/private/tmp/agentsoma-<uid>` (or `IPHONE_USE_STATE_DIR`, with `AGENTSOMA_STATE_DIR` compatibility). User preferences are separate from session state.
 
 ## Session contract for agents
 
-`connect`, `status` and host replies report `mode`, `backend` and `modeSource`. Sources are `command_line_mode`, `command_line_backend`, `command_line_xctestrun`, `command_line_native_endpoint_inventory`, `configuration`, `legacy_runner_migration` or `default`. Direct core callers can report `explicit_runner`/`explicit_standard`; saved hosts predating this field report `legacy_session`. Old host configurations without a backend remain XCTest. Older running host binaries cannot gain these fields until a new session is created.
+`connect`, `status` and host replies report `mode`, `backend` and `modeSource`. Sources are `command_line_mode`, `command_line_backend`, `command_line_xctestrun`, `command_line_native_endpoint_inventory`, `configuration`, `legacy_configuration_migration`, `legacy_runner_migration` or `default`. Direct core callers can report `explicit_runner`/`explicit_standard`; saved hosts predating this field report `legacy_session`. Old host configurations without a backend remain XCTest. Older running host binaries cannot gain these fields until a new session is created.
 
 `connect.result.support` and `status.result.support` describe implemented operations, observation sources, action target forms, text modes/methods and keys. They describe implementation support, not current readiness or per-app success. Standard-mode `controlAvailable`, `capabilities`, media and recovery fields still report dynamic availability. Successful Runner status verifies its ping; element availability must be established by the actual observation. Runner reports an empty `textMethods` list because it has no `type --method` override; use its default XCTest text implementation. Consult the action's help for bounds and other requirements.
 
@@ -55,10 +55,12 @@ Agent rules:
 2. Read the session's support and readiness. Standard mode uses screenshot `oN` references; Runner permits captured `oN:eN` elements where supported. Screenshots still work for Runner coordinate taps/swipes.
 3. Keep session/observation binding, coordinates, screen protection and outcome facts intact. Text `--mode insert|replace|append` controls editing and is separate from **connect** `--mode standard|runner`.
 4. Unsupported operations or unavailable control are explicit failures. Do not start another backend to complete them. If the result is unknown, observe and judge the effect; never replay automatically.
-5. Changing the user configuration affects only new connections. To change a device's active mode, explicitly close its session, handle pending input/clipboard/media cleanup, then connect with the new mode and observe again. Never transfer old references or pending actions. Existing per-device locking prevents simultaneous AgentSoma control sessions. Cleanup uncertainty is reported, not resolved by switching routes.
+5. Changing the user configuration affects only new connections. To change a device's active mode, explicitly close its session, handle pending input/clipboard/media cleanup, then connect with the new mode and observe again. Never transfer old references or pending actions. Existing per-device locking prevents simultaneous iPhone-use control sessions. Cleanup uncertainty is reported, not resolved by switching routes.
 
 The external agent owns planning and visual verification. No model or automatic cross-backend action router is added.
 
 ## Follow-up: feature parity
 
 Runner should progressively support the same user operations: the outstanding areas include additional gestures/system controls, text editing and keys, recording and app lifecycle operations. Keep backend-specific implementations and validate each before advertising support. Standard-mode code must not start Runner to fill a gap; Runner must not silently establish a native control session. This change implements mode management, not feature parity.
+
+See [rename and upgrade behavior](rename-to-iphone-use.md) for old configuration, active sessions and the new Runner bundle IDs.

@@ -1,0 +1,78 @@
+name: Update iPhone-use
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Published stable version without v (for example, 0.1.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-iphone-use
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.repository == 'HughLee824/homebrew-tap' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: tap
+      - name: Require a published stable release
+        run: |
+          python3 - <<'PY'
+          import os, re
+          if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', os.environ['VERSION']):
+              raise SystemExit('Use a stable version without v; prereleases use manual installation.')
+          PY
+          gh release view "v${VERSION}" --repo HughLee824/iphone-use --json isDraft,isPrerelease,tagName > "$RUNNER_TEMP/release.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          release = json.loads((Path(os.environ['RUNNER_TEMP']) / 'release.json').read_text())
+          if release['isDraft'] or release['isPrerelease'] or release['tagName'] != 'v' + os.environ['VERSION']:
+              raise SystemExit('The Tap may only reference an already published stable release.')
+          PY
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: HughLee824/iphone-use
+          ref: v${{ inputs.version }}
+          path: source
+          persist-credentials: false
+      - name: Download, verify and regenerate the formula
+        run: |
+          gh release download "v${VERSION}" --repo HughLee824/iphone-use --dir "$RUNNER_TEMP/release" --pattern "iphone-use-${VERSION}-macos-arm64.tar.gz" --pattern "iphone-use-${VERSION}-macos-arm64.tar.gz.sha256" --pattern iphone-use.rb
+          archive="$RUNNER_TEMP/release/iphone-use-${VERSION}-macos-arm64.tar.gz"
+          python3 source/scripts/verify-release.py "$archive" --require-clean --no-execute
+          PYTHONPATH=source/scripts python3 - <<'PY'
+          import os, subprocess
+          from pathlib import Path
+          from release_artifact import inspect_archive
+          archive = Path(os.environ['RUNNER_TEMP']) / 'release' / ('iphone-use-' + os.environ['VERSION'] + '-macos-arm64.tar.gz')
+          release = inspect_archive(archive, require_clean=True)
+          commit = subprocess.check_output(['git', '-C', 'source', 'rev-parse', 'HEAD'], text=True).strip()
+          if release['build']['sourceCommit'] != commit:
+              raise SystemExit('The release tag and binary source commit differ.')
+          PY
+          python3 source/scripts/generate-homebrew.py "$archive" --output "$RUNNER_TEMP/iphone-use.rb"
+          cmp "$RUNNER_TEMP/iphone-use.rb" "$RUNNER_TEMP/release/iphone-use.rb"
+          mkdir -p tap/Formula
+          cp "$RUNNER_TEMP/iphone-use.rb" tap/Formula/iphone-use.rb
+      - name: Commit the verified formula to the Tap
+        working-directory: tap
+        run: |
+          git add Formula/iphone-use.rb
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "iphone-use ${VERSION}"
+          git push origin HEAD:main

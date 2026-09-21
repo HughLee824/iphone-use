@@ -1,7 +1,7 @@
 <h1>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/brand/agentsoma-wordmark-dark.svg">
-    <img src="assets/brand/agentsoma-wordmark.svg" alt="AgentSoma" width="420">
+    <img src="assets/brand/agentsoma-wordmark.svg" alt="iPhone-use" width="420">
   </picture>
 </h1>
 
@@ -9,23 +9,25 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-[![CI](https://github.com/HughLee824/AgentSoma/actions/workflows/ci.yml/badge.svg)](https://github.com/HughLee824/AgentSoma/actions/workflows/ci.yml)
+[![CI](https://github.com/HughLee824/iphone-use/actions/workflows/ci.yml/badge.svg)](https://github.com/HughLee824/iphone-use/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Swift](https://img.shields.io/badge/Swift-5.9%2B-F05138.svg)](Package.swift)
 
-AgentSoma is a macOS CLI that lets an external agent discover apps, read screenshots and accessibility data, and interact with a connected iPhone. Your agent handles natural language, planning, and judging results; AgentSoma provides device observations and actions through a persistent device session.
+iPhone-use is a macOS CLI that lets an external agent discover apps, read screenshots and accessibility data, and interact with a connected iPhone. Your agent handles natural language, planning, and judging results; iPhone-use provides device observations and actions through a persistent device session.
 
 An agent needs local command execution and the ability to read PNG files. The device control path runs locally on your Mac and iPhone.
 
 [Website](https://agentsoma.dev) · [First iPhone task](docs/first-task.md) · [Client plugins](docs/plugins.md) · [Commands](#commands) · [Documentation](#documentation)
 
+This checkout implements the local AgentSoma → iPhone-use rename. Remote repository, Tap, website and plugin rollout have not been performed. Existing Logo assets are intentionally unchanged. See [rename and upgrade notes](docs/rename-to-iphone-use.md).
+
 ## Control modes (unreleased checkout)
 
-This checkout supports **standard** (screenshot + native HID) and **runner** (XCTest). Choose with `agentsoma config set mode standard` or `runner`, then `agentsoma connect --device "$DEVICE"`; override one connection with `--mode standard|runner`. Preferences live in `~/.agentsoma/config.json`. Existing `--backend` and signed `--xctestrun` usage remain compatible. New users default to standard; valid legacy Runner setup migrates to runner. An active session never changes backend when preferences change.
+This checkout supports **standard** (screenshot + native HID) and **runner** (XCTest). Choose with `iphone-use config set mode standard` or `runner`, then `iphone-use connect --device "$DEVICE"`; override one connection with `--mode standard|runner`. Preferences live in `~/.iphone-use/config.json`. Existing `--backend` and signed `--xctestrun` usage remain compatible. New users default to standard; valid legacy Runner setup migrates to runner. An active session never changes backend when preferences change.
 
 Standard currently requires the documented macOS/Xcode/iOS 27 environment, pairing, Developer Mode and unlock, but no Runner signing. Runner feature parity is planned; consult the returned support/readiness fields. See [mode selection, migration and Agent rules](docs/control-modes.md). The installation and signing walkthrough below describes the existing **Runner** release workflow; it is not a prerequisite for standard mode.
 
-## Why AgentSoma?
+## Why iPhone-use?
 
 - **See the screen and its structure.** Observations return a PNG path, compact accessibility (AX) text, and element references. Expand or search cached snapshots with `inspect`.
 - **Act on real apps.** Discover installed apps, bring them to the foreground, tap, swipe, drag, edit text, and send Return.
@@ -54,13 +56,13 @@ Choose the source workflow for development, or the packaged workflow when releas
 #### From source
 
 ```sh
-git clone https://github.com/HughLee824/AgentSoma.git
-cd AgentSoma
+git clone https://github.com/HughLee824/iphone-use.git
+cd iphone-use
 swift build
 export PATH="$PWD/.build/debug:$PATH"
 
-agentsoma --help
-agentsoma devices
+iphone-use --help
+iphone-use devices
 ```
 
 For Runner mode, complete the [source signing setup](docs/onboarding.md#源码开发入口) in Xcode, then fill in your team ID and the device ID returned by `devices`:
@@ -69,32 +71,32 @@ For Runner mode, complete the [source signing setup](docs/onboarding.md#源码�
 export APPLE_TEAM_ID="YOUR_TEAM_ID"
 export IOS_UDID="DEVICE_ID_FROM_DEVICES"
 
-agentsoma build-runner --team "$APPLE_TEAM_ID"
+iphone-use build-runner --team "$APPLE_TEAM_ID"
 
 # Copy result.xctestrun from the successful build-runner response.
 export SIGNED_XCTESTRUN="/absolute/path/from/build-runner.xctestrun"
-agentsoma connect --device "$IOS_UDID" --xctestrun "$SIGNED_XCTESTRUN"
+iphone-use connect --device "$IOS_UDID" --xctestrun "$SIGNED_XCTESTRUN"
 ```
 
 `build-runner` builds and verifies the signed Runner using the repository's standalone Xcode project. Reuse a compatible build for later connections; rebuild after changing the Runner, its shared code, Xcode, or signing configuration.
 
 #### From a release package
 
-The precompiled release targets **Apple Silicon / macOS 15+**. Install the stable version from the [Homebrew Tap](https://github.com/HughLee824/homebrew-tap), or see [GitHub Releases](https://github.com/HughLee824/AgentSoma/releases) for manual downloads:
+The precompiled release targets **Apple Silicon / macOS 15+**. Install the stable version from the [Homebrew Tap](https://github.com/HughLee824/homebrew-tap), or see [GitHub Releases](https://github.com/HughLee824/iphone-use/releases) for manual downloads:
 
 ```sh
-brew install HughLee824/tap/agentsoma
-agentsoma --version
+brew install HughLee824/tap/iphone-use
+iphone-use --version
 ```
 
-Alternatively, download the archive and matching SHA-256 file from [GitHub Releases](https://github.com/HughLee824/AgentSoma/releases), verify them, and retain the full package directory. See the [installation guide](docs/install.md) for manual installation, upgrades, and removal.
+Alternatively, download the archive and matching SHA-256 file from [GitHub Releases](https://github.com/HughLee824/iphone-use/releases), verify them, and retain the full package directory. See the [installation guide](docs/install.md) for manual installation, upgrades, and removal.
 
 ```sh
-agentsoma devices
+iphone-use devices
 export IOS_UDID="DEVICE_ID_FROM_DEVICES"
 
-agentsoma setup --device "$IOS_UDID"
-agentsoma connect --device "$IOS_UDID"
+iphone-use setup --device "$IOS_UDID"
+iphone-use connect --device "$IOS_UDID"
 ```
 
 `setup` re-signs the precompiled Runner locally and verifies a device handshake, screenshot capture, and clean shutdown before saving preparation state. It does not compile source, log in to Apple, or create certificates or profiles. Use `--profile`, `--team`, or `--identity` to resolve signing selection; see [onboarding](docs/onboarding.md).
@@ -106,32 +108,32 @@ After either connection workflow, copy the `session` value returned by `connect`
 ```sh
 export SESSION="SESSION_FROM_CONNECT"
 
-agentsoma --session "$SESSION" status
-agentsoma --session "$SESSION" apps --query Settings
-agentsoma --session "$SESSION" open com.apple.Preferences
-agentsoma --session "$SESSION" observe
+iphone-use --session "$SESSION" status
+iphone-use --session "$SESSION" apps --query Settings
+iphone-use --session "$SESSION" open com.apple.Preferences
+iphone-use --session "$SESSION" observe
 ```
 
 Read the PNG at the returned `screenshot` path alongside the AX text. The IDs below are illustrative: replace them with references from your actual observation.
 
 ```sh
 # Search the captured snapshot, or inspect a known element directly.
-agentsoma --session "$SESSION" inspect o1 --query General
-agentsoma --session "$SESSION" inspect o1:e9
+iphone-use --session "$SESSION" inspect o1 --query General
+iphone-use --session "$SESSION" inspect o1:e9
 
 # Use a current reference, then observe again to verify the result.
-agentsoma --session "$SESSION" tap o1:e9
-agentsoma --session "$SESSION" observe
+iphone-use --session "$SESSION" tap o1:e9
+iphone-use --session "$SESSION" observe
 
 # Release the session when finished.
-agentsoma --session "$SESSION" disconnect
+iphone-use --session "$SESSION" disconnect
 ```
 
 The working loop is **observe → read the screenshot → inspect if needed → act → observe again**. A completed action does not establish that the agent's task succeeded.
 
 ## Commands
 
-Use `agentsoma --help` or `agentsoma <command> --help` for all options. Session commands use `agentsoma --session "$SESSION" <command>`.
+Use `iphone-use --help` or `iphone-use <command> --help` for all options. Session commands use `iphone-use --session "$SESSION" <command>`.
 
 | Command | Purpose |
 | --- | --- |
@@ -156,25 +158,25 @@ Coordinates use **screen points**, not screenshot pixels. Swipe direction descri
 
 ## Agent integration
 
-Install the self-contained [AgentSoma plugin](plugins/agentsoma/README.md) from this repository's public Git marketplace:
+Install the self-contained [iPhone-use plugin](plugins/iphone-use/README.md) from this repository's public Git marketplace:
 
 ```sh
 # Codex (command names checked on CLI 0.146.0)
-codex plugin marketplace add HughLee824/AgentSoma
-codex plugin add agentsoma@agentsoma
+codex plugin marketplace add HughLee824/iphone-use
+codex plugin add iphone-use@iphone-use
 
 # Claude Code
-claude plugin marketplace add HughLee824/AgentSoma
-claude plugin install agentsoma@agentsoma
+claude plugin marketplace add HughLee824/iphone-use
+claude plugin install iphone-use@iphone-use
 ```
 
-Start a new client session and invoke `$agentsoma:agentsoma` in Codex or `/agentsoma:agentsoma` in Claude Code. Follow [the first-task guide](docs/first-task.md) for Xcode, signing, setup, verification, and upgrades. The plugin contains shared device rules, a read-only prerequisite check, [Codex call templates](skills/agentsoma/references/codex-calls.md), and [Claude Code Bash/Read instructions](skills/agentsoma/references/claude-code.md). It does not install the CLI or prepare signing. Distribution through this project's marketplace is separate from an official-directory listing.
+Start a new client session and invoke `$iphone-use:iphone-use` in Codex or `/iphone-use:iphone-use` in Claude Code. Follow [the first-task guide](docs/first-task.md) for Xcode, signing, setup, verification, and upgrades. The plugin contains shared device rules, a read-only prerequisite check, [Codex call templates](skills/iphone-use/references/codex-calls.md), and [Claude Code Bash/Read instructions](skills/iphone-use/references/claude-code.md). It does not install the CLI or prepare signing. Distribution through this project's marketplace is separate from an official-directory listing.
 
-Manual skill installation remains available: copy the entire `skills/agentsoma` folder into your client's skill directory (for Codex, `$CODEX_HOME/skills` or `~/.codex/skills`) and invoke `$agentsoma` in a new task. Use the plugin's namespaced invocation if both copies are present. For an explicitly selected source workflow, the prerequisite check accepts `--source` and a supplied signed `.xctestrun`.
+Manual skill installation remains available: copy the entire `skills/iphone-use` folder into your client's skill directory (for Codex, `$CODEX_HOME/skills` or `~/.codex/skills`) and invoke `$iphone-use` in a new task. Use the plugin's namespaced invocation if both copies are present. For an explicitly selected source workflow, the prerequisite check accepts `--source` and a supplied signed `.xctestrun`.
 
 Add `--observe` to `open`, `tap`, `swipe`, `type`, or `press` to return one JSON object containing separate `action` and `observation` responses. Exit code zero requires both to succeed; an observation failure never overwrites the action's outcome or replays input. A confirmed rejection without a refresh requirement skips observation. This client-side sequence uses the existing host protocol, including older hosts; it does not reserve the device between requests. Read `observation.result.text` and its `screenshot` before choosing the next input. See [the contract and examples](docs/actions.md#动作后观察).
 
-Check the installed command's `--help` for `--observe` support. For older CLIs, the skill retains the [action-and-observation fallback template](skills/agentsoma/references/action-observation.md).
+Check the installed command's `--help` for `--observe` support. For older CLIs, the skill retains the [action-and-observation fallback template](skills/iphone-use/references/action-observation.md).
 
 Successful `observe` and `inspect` commands print multiline text. Other results and runtime errors use single-line JSON. Success exits with `0`; runtime failure exits with `1`. Argument syntax errors are reported on stderr with a nonzero exit code.
 
@@ -193,7 +195,7 @@ Keep these rules in the calling agent's workflow:
 - **Refresh after actions.** Completed or unknown app/device actions invalidate old references. Detected target or context changes can invalidate them too. A result screenshot has no new AX references; call `observe` before the next reference-based action.
 - **Search the snapshot you have.** `inspect --query` searches all captured nodes before pagination. It neither captures missing source data nor makes stale references current.
 - **Read the image.** A path in stdout is not visual input. The agent must open the PNG with its own image-reading tool.
-- **Track command completion.** If the execution tool returns a background job ID, use its continuation mechanism to collect the original command's exit code and output. That ID is separate from AgentSoma's device `session`.
+- **Track command completion.** If the execution tool returns a background job ID, use its continuation mechanism to collect the original command's exit code and output. That ID is separate from iPhone-use's device `session`.
 - **Keep guard defaults.** Screen-change limits apply before input, relative to the observation. Expected scrolling or animation size is not a reason to raise them.
 - **Close the session.** The default idle timeout is 30 minutes. `status` does not renew it, and accepted or running commands are not interrupted by idle expiry. Disconnecting or expiring removes the socket and observation cache.
 
@@ -203,7 +205,7 @@ Details: [observations](docs/observations.md), [actions](docs/actions.md), and [
 
 ```mermaid
 flowchart LR
-    Agent[External AI agent] --> CLI[agentsoma CLI]
+    Agent[External AI agent] --> CLI[iphone-use CLI]
     CLI <-->|Unix socket| Host[Swift session host on Mac]
     Host <-->|CoreDevice IPv6| Runner[XCTest Runner on iPhone]
     Runner <--> Apps[iPhone apps]
@@ -211,12 +213,12 @@ flowchart LR
 
 `connect` starts the host and uses Xcode's `test-without-building` to install and launch the Runner. It returns when both are responsive. The host retains the XCTest session between CLI calls, serializes device requests, caches observations, and manages cleanup. No separate service startup is needed.
 
-Session files default to `/private/tmp/agentsoma-<uid>` with directory permissions `0700`; `AGENTSOMA_STATE_DIR` can select an alternative path. Packaged Runner preparation lives in `~/Library/Application Support/AgentSoma`. Signing private keys stay in Keychain; the device token stays in host memory and the XCTest subprocess environment.
+Session files default to `/private/tmp/agentsoma-<uid>` with directory permissions `0700`; `IPHONE_USE_STATE_DIR` can select an alternative path. Packaged Runner preparation lives in `~/Library/Application Support/iphone-use`. Signing private keys stay in Keychain; the device token stays in host memory and the XCTest subprocess environment.
 
 | Location | Responsibility |
 | --- | --- |
-| [`Sources/AgentSoma`](Sources/AgentSoma) | CLI commands and argument parsing. |
-| [`Sources/AgentSomaCore`](Sources/AgentSomaCore) | Sessions, transport, observations, actions, signing, and device discovery. |
+| [`Sources/IPhoneUse`](Sources/IPhoneUse) | CLI commands and argument parsing. |
+| [`Sources/IPhoneUseCore`](Sources/IPhoneUseCore) | Sessions, transport, observations, actions, signing, and device discovery. |
 | [`Runner`](Runner) | Thin iOS XCTest Runner and standalone Xcode project. |
 | [`Tests`](Tests) | Swift tests and sanitized fixtures for host behavior and device contracts. |
 | [`scripts`](scripts) / [`packaging`](packaging) | Release packaging, verification, and Homebrew tooling. |
@@ -224,7 +226,7 @@ Session files default to `/private/tmp/agentsoma-<uid>` with directory permissio
 
 ## Current limitations
 
-AgentSoma is in early development. Real-device validation covers the environment listed above, not every Mac, Xcode, iOS version, or app.
+iPhone-use is in early development. Real-device validation covers the environment listed above, not every Mac, Xcode, iOS version, or app.
 
 - The Swift package targets macOS 13+, and the packaged Runner has an iOS 17 compilation floor. These are build limits, not claims of end-to-end support. Binary distribution targets Apple Silicon / macOS 15+.
 - Full Xcode and local development signing are required. Fresh-Mac onboarding and free Personal Team provisioning/renewal remain unverified. The Mac CLI is ad-hoc signed; Developer ID signing and notarization are not in the current release workflow.
@@ -249,7 +251,7 @@ The complete first-task and architecture guides are in English; detailed command
 
 ## Contributing
 
-Issues, focused pull requests, and reproducible device reports are welcome. For a substantial change, open an [issue](https://github.com/HughLee824/AgentSoma/issues) to discuss the scope first.
+Issues, focused pull requests, and reproducible device reports are welcome. For a substantial change, open an [issue](https://github.com/HughLee824/iphone-use/issues) to discuss the scope first.
 
 Run the same checks configured in [CI](.github/workflows/ci.yml):
 
@@ -260,7 +262,7 @@ node --test scripts/tests/test_agent_templates.mjs
 python3 scripts/sync-plugin.py --check
 ```
 
-Python 3.9+ is used for release tooling and development tests, not the installed CLI runtime. Run the commands in the order shown: CLI integration tests use `.build/debug/agentsoma` from the Swift build and are skipped when it is absent. The only Swift package dependency is [Swift ArgumentParser](https://github.com/apple/swift-argument-parser/tree/1.5.0), pinned to `1.5.0`.
+Python 3.9+ is used for release tooling and development tests, not the installed CLI runtime. Run the commands in the order shown: CLI integration tests use `.build/debug/iphone-use` from the Swift build and are skipped when it is absent. The only Swift package dependency is [Swift ArgumentParser](https://github.com/apple/swift-argument-parser/tree/1.5.0), pinned to `1.5.0`.
 
 Node.js 22+ runs the documented call templates against controlled tool responses in CI; it is only needed for development tests. After changing the canonical skill, run `python3 scripts/sync-plugin.py` to update its packaged copy and bump both plugin manifest versions when releasing changed instructions. CI also compiles the Runner without signing and packages the plugin for review. Website source, tests and Cloudflare deployment are maintained separately in [agentsoma-website](https://github.com/HughLee824/agentsoma-website). See [public-access release checks](docs/public-access-release.md) for the exact commands and hardware acceptance requirements.
 
@@ -268,4 +270,4 @@ CI does not have a physical iPhone. For device-facing changes, also build a fres
 
 ## License
 
-[MIT](LICENSE) © AgentSoma contributors.
+[MIT](LICENSE) © iPhone-use contributors.

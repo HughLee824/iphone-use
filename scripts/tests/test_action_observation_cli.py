@@ -8,7 +8,7 @@ import threading
 import unittest
 
 
-CLI = Path(__file__).resolve().parents[2] / ".build/debug/agentsoma"
+CLI = Path(__file__).resolve().parents[2] / ".build/debug/iphone-use"
 
 
 @unittest.skipUnless(CLI.is_file(), "Run swift build or swift test before CLI integration tests")
@@ -54,7 +54,7 @@ class ActionObservationCLITests(unittest.TestCase):
                 thread.start()
                 try:
                     result = subprocess.run([str(CLI), "--session", session, *args],
-                        env={**os.environ, "AGENTSOMA_STATE_DIR": root}, input=stdin,
+                        env={**os.environ, "IPHONE_USE_STATE_DIR": root}, input=stdin,
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
                 finally:
                     stop.set()

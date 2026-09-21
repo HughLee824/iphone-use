@@ -4,7 +4,7 @@
 #import <unistd.h>
 
 static NSError *PairingError(NSString *code, NSString *message) {
-    return [NSError errorWithDomain:@"AgentSoma.ApplePairing" code:1
+    return [NSError errorWithDomain:@"iPhone-use.ApplePairing" code:1
                           userInfo:@{NSLocalizedDescriptionKey: message, @"somaCode": code}];
 }
 static xpc_object_t DictionaryValue(xpc_object_t object, const char *key) {
@@ -91,7 +91,7 @@ NSArray<NSNumber *> *ASNativeRSDPorts(NSString *inventory, NSString *deviceAddre
     if (!deviceID) { if (error) *error = PairingError(@"native_device_mismatch", @"CoreDevice identifier must be a UUID"); return nil; }
     _deviceIdentifier = deviceID.UUIDString;
     _peerInfo = @{};
-    _queue = dispatch_queue_create("agentsoma.apple.pairing", DISPATCH_QUEUE_SERIAL);
+    _queue = dispatch_queue_create("iphone-use.apple.pairing", DISPATCH_QUEUE_SERIAL);
     _browser = xpc_connection_create_mach_service("com.apple.CoreDevice.remotepairingd", _queue, 0);
     NSLock *lock = [NSLock new]; dispatch_semaphore_t found = dispatch_semaphore_create(0);
     __block xpc_endpoint_t endpoint; __block BOOL finished = NO;

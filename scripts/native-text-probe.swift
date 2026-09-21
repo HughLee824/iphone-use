@@ -40,7 +40,7 @@ private final class TextProbeController: UIViewController, UITextViewDelegate {
             stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 18),
             stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18)
         ])
-        let title = UILabel(); title.text = "AgentSoma Text Probe"; title.font = .boldSystemFont(ofSize: 20)
+        let title = UILabel(); title.text = "iPhone-use Text Probe"; title.font = .boldSystemFont(ofSize: 20)
         stack.addArrangedSubview(title)
         let buttons = UIStackView(); buttons.distribution = .fillEqually
         for (name, value) in samples {

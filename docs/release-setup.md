@@ -1,18 +1,18 @@
 # Release 与 setup
 
-发布采用“预编译 CLI + 预编译 Runner，本机重签部署”。项目采用 MIT，发布仓库为 `HughLee824/AgentSoma`，Tap 为 `HughLee824/homebrew-tap`。
+发布采用“预编译 CLI + 预编译 Runner，本机重签部署”。项目采用 MIT，发布仓库为 `HughLee824/iphone-use`，Tap 为 `HughLee824/homebrew-tap`。
 
 保留 Xcode 和用户自己的开发签名前提，日常使用不依赖源码仓库或 `.build` 目录。用户流程见[首次接入](onboarding.md)，发布包附带的独立说明见[安装说明](install.md)。
 
 ## 包结构与信任边界
 
 ```text
-agentsoma-<version>-macos-<architecture>/
-  bin/agentsoma
-  libexec/agentsoma/runner/
+iphone-use-<version>-macos-<architecture>/
+  bin/iphone-use
+  libexec/iphone-use/runner/
     manifest.json
     Runner.xctestrun
-    AgentSomaRunner.app/
+    IPhoneUseRunner.app/
   README.md
   LICENSE                   # 项目 MIT
   licenses/SwiftArgumentParser.txt
@@ -35,8 +35,8 @@ setup 将包复制到用户状态目录，改写为保存的 App bundle ID、嵌
 swift test
 python3 -m unittest discover -s scripts/tests -v
 python3 scripts/build-release.py --version 0.1.0-rc.1 --require-clean
-python3 scripts/verify-release.py .build/releases/agentsoma-0.1.0-rc.1-macos-arm64.tar.gz --require-clean
-python3 scripts/generate-homebrew.py .build/releases/agentsoma-0.1.0-rc.1-macos-arm64.tar.gz --output .build/releases/agentsoma.rb
+python3 scripts/verify-release.py .build/releases/iphone-use-0.1.0-rc.1-macos-arm64.tar.gz --require-clean
+python3 scripts/generate-homebrew.py .build/releases/iphone-use-0.1.0-rc.1-macos-arm64.tar.gz --output .build/releases/iphone-use.rb
 ```
 
 脚本构建 release CLI、在隔离目录 `build-for-testing` 构建无开发签名的 Runner，移除二进制调试信息，整理固定相对路径的测试清单，附带许可证及构建记录，然后生成目录、tar.gz 和 SHA-256 文件。CLI 仅作本机运行所需的 ad-hoc 签名。产物默认位于 `.build/releases`，也可用 `--output-dir` 指定；已有同名产物会拒绝覆盖。打包和清单检查在临时目录完成，失败不会留下同名的半成品包。CLI 与 Runner 构建日志分开保存。脚本不创建 tag、不上传文件、不操作 Apple 账号、不使用维护者的 iOS profile。
@@ -45,7 +45,7 @@ python3 scripts/generate-homebrew.py .build/releases/agentsoma-0.1.0-rc.1-macos-
 
 `verify-release.py` 校验外层 SHA-256、归档路径、许可证、构建记录、CLI 与 Runner 逐文件摘要及测试清单，拒绝软链接、越界路径、签名资料和嵌入框架。默认还在含空格的新目录解压搬移，通过软链接执行版本和帮助命令并检查 CLI 签名；其他系统可用 `--no-execute` 仅检查归档。
 
-AgentSoma 仍是 macOS CLI。Mac Developer ID 签名、公证是下载渠道与系统信任体验的选择，不代表需要制作 Mac GUI App，也不是所有 CLI 分发渠道统一的前置条件。当前流程未使用 Developer ID 或 notarization。若以后接入，签名必须先于 CLI 摘要及最终归档，不能沿用旧摘要。见 Apple 的 [Developer ID](https://developer.apple.com/developer-id/) 和 [notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)。浏览器下载后及全新 Mac 的安装体验仍需单独验收。
+iPhone-use 仍是 macOS CLI。Mac Developer ID 签名、公证是下载渠道与系统信任体验的选择，不代表需要制作 Mac GUI App，也不是所有 CLI 分发渠道统一的前置条件。当前流程未使用 Developer ID 或 notarization。若以后接入，签名必须先于 CLI 摘要及最终归档，不能沿用旧摘要。见 Apple 的 [Developer ID](https://developer.apple.com/developer-id/) 和 [notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)。浏览器下载后及全新 Mac 的安装体验仍需单独验收。
 
 ## GitHub Releases 与 Homebrew Tap
 
@@ -61,19 +61,19 @@ AgentSoma 仍是 macOS CLI。Mac Developer ID 签名、公证是下载渠道与�
 
 [GitHub 托管 runner](https://docs.github.com/en/actions/concepts/runners/github-hosted-runners) 提供构建主机，不附带供此工作流使用的 iPhone。当前不接入云真机平台或 self-hosted runner；未来若自动化真机检查，需要另外提供 Mac + iPhone 测试环境。
 
-1. 将本次发布源码提交到 `HughLee824/AgentSoma` 的 `main`，让 CI 通过。
+1. 将本次发布源码提交到 `HughLee824/iphone-use` 的 `main`，让 CI 通过。
 2. 在 Actions 中运行 **Draft release**，填写未使用过的版本，不含 `v`。工作流只允许从主仓库的 `main` 执行，运行 Swift/Python/Node 测试与插件一致性检查，构建干净源码，验证归档、搬移和 Homebrew 安装后的全部 CLI/Runner 摘要。
-3. 云端检查通过后，独立的写入任务创建 GitHub Release **草稿**，附上 tar.gz、SHA-256、从同一归档生成的 `agentsoma.rb`，以及从该源码验证的插件 ZIP 与校验文件。说明自动填入版本、源码提交、包摘要和工作流链接，**本地真机验收始终初始化为 pending**。已有 tag 拒绝复用，不覆盖旧版本。包含 `-` 的版本自动标记 prerelease。
+3. 云端检查通过后，独立的写入任务创建 GitHub Release **草稿**，附上 tar.gz、SHA-256、从同一归档生成的 `iphone-use.rb`，以及从该源码验证的插件 ZIP 与校验文件。说明自动填入版本、源码提交、包摘要和工作流链接，**本地真机验收始终初始化为 pending**。已有 tag 拒绝复用，不覆盖旧版本。包含 `-` 的版本自动标记 prerelease。
 4. 在本地下载该草稿的安装包，按下文完成真机验收。将结果摘要填回草稿，补齐版本变化、升级说明和兼容性范围，保留失败和未测试项。
 5. 维护者核对验收记录与草稿的版本、源码 SHA、包 SHA-256 一致后，手动发布该草稿。发布使用本地验收过的同一批资产，不重新构建或替换包。这是维护者发布前的检查；当前工作流只创建草稿，不自动判断业务结果，也不自动阻止维护者在 GitHub 页面点击发布。
-6. 稳定版发布后，在 `HughLee824/homebrew-tap` 的 Actions 运行 **Update AgentSoma**，填写相同版本。它拒绝草稿和预发布版，校验归档、源码提交与 tag，再生成并对比 release 中的 formula，最后提交到 Tap 的 `main`。重复同版本不产生空提交。
-7. 从公共 Release 地址重新下载并核对摘要，按安装说明验证手动安装。稳定版另用 `brew install HughLee824/tap/agentsoma`（已有安装则升级）核对版本和连接；Tap 工作流的成功不替代这一步。浏览器下载及全新 Mac 的系统信任体验单独记录。
+6. 稳定版发布后，在 `HughLee824/homebrew-tap` 的 Actions 运行 **Update iPhone-use**，填写相同版本。它拒绝草稿和预发布版，校验归档、源码提交与 tag，再生成并对比 release 中的 formula，最后提交到 Tap 的 `main`。重复同版本不产生空提交。
+7. 从公共 Release 地址重新下载并核对摘要，按安装说明验证手动安装。稳定版另用 `brew install HughLee824/tap/iphone-use`（已有安装则升级）核对版本和连接；Tap 工作流的成功不替代这一步。浏览器下载及全新 Mac 的系统信任体验单独记录。
 
-Tap 初始文件位于 `packaging/homebrew-tap`，另复制仓库根目录的 `LICENSE`。其更新工作流只需要 Tap 自身的 `GITHUB_TOKEN`，不需要跨仓库写入 PAT；AgentSoma 源码与 Release 需公开可读。首次稳定版之前不放置指向不存在资产的 formula。预发布版本通过 GitHub Releases 手动安装。
+Tap 初始文件位于 `packaging/homebrew-tap`，另复制仓库根目录的 `LICENSE`。其更新工作流只需要 Tap 自身的 `GITHUB_TOKEN`，不需要跨仓库写入 PAT；iPhone-use 源码与 Release 需公开可读。首次稳定版之前不放置指向不存在资产的 formula。预发布版本通过 GitHub Releases 手动安装。
 
 Release 和 Tap 的实际可用版本以各仓库为准；发布流程不会自动把本地候选包或开发验收记录上传。
 
-formula 将原包的 `bin` 与 `libexec` 一起放在 Homebrew keg 的 `libexec` 下，并创建 `bin/agentsoma` 软链接，保持 CLI 的相对资源定位规则。安装与升级不执行 setup，不编译、不在 iPhone 上操作。每次 release 的 `brew test` 检查安装后的 CLI 与 Runner 全部文件摘要，以发现 Homebrew 清理或二进制处理引入的修改。
+formula 将原包的 `bin` 与 `libexec` 一起放在 Homebrew keg 的 `libexec` 下，并创建 `bin/iphone-use` 软链接，保持 CLI 的相对资源定位规则。安装与升级不执行 setup，不编译、不在 iPhone 上操作。每次 release 的 `brew test` 检查安装后的 CLI 与 Runner 全部文件摘要，以发现 Homebrew 清理或二进制处理引入的修改。
 
 ### 本地候选包验收
 
@@ -82,24 +82,24 @@ formula 将原包的 `bin` 与 `libexec` 一起放在 Homebrew keg 的 `libexec`
 ```sh
 (
   set -e
-  AGENTSOMA_VERSION=0.1.0-rc.1 # 替换为待验草稿版本
-  AGENTSOMA_PACKAGE="agentsoma-${AGENTSOMA_VERSION}-macos-arm64"
-  AGENTSOMA_ACCEPTANCE_DIR="$PWD/.local/releases/$AGENTSOMA_VERSION"
+  IPHONE_USE_VERSION=0.1.0-rc.1 # 替换为待验草稿版本
+  IPHONE_USE_PACKAGE="iphone-use-${IPHONE_USE_VERSION}-macos-arm64"
+  IPHONE_USE_ACCEPTANCE_DIR="$PWD/.local/releases/$IPHONE_USE_VERSION"
   mkdir -p "$PWD/.local/releases"
-  mkdir "$AGENTSOMA_ACCEPTANCE_DIR"
-  gh release download "v${AGENTSOMA_VERSION}" --repo HughLee824/AgentSoma \
-    --dir "$AGENTSOMA_ACCEPTANCE_DIR" \
-    --pattern "${AGENTSOMA_PACKAGE}.tar.gz" --pattern "${AGENTSOMA_PACKAGE}.tar.gz.sha256"
-  python3 scripts/verify-release.py "$AGENTSOMA_ACCEPTANCE_DIR/${AGENTSOMA_PACKAGE}.tar.gz" \
-    --require-clean > "$AGENTSOMA_ACCEPTANCE_DIR/package-verification.json"
-  gh release view "v${AGENTSOMA_VERSION}" --repo HughLee824/AgentSoma \
-    --json body --jq .body > "$AGENTSOMA_ACCEPTANCE_DIR/acceptance.md"
+  mkdir "$IPHONE_USE_ACCEPTANCE_DIR"
+  gh release download "v${IPHONE_USE_VERSION}" --repo HughLee824/iphone-use \
+    --dir "$IPHONE_USE_ACCEPTANCE_DIR" \
+    --pattern "${IPHONE_USE_PACKAGE}.tar.gz" --pattern "${IPHONE_USE_PACKAGE}.tar.gz.sha256"
+  python3 scripts/verify-release.py "$IPHONE_USE_ACCEPTANCE_DIR/${IPHONE_USE_PACKAGE}.tar.gz" \
+    --require-clean > "$IPHONE_USE_ACCEPTANCE_DIR/package-verification.json"
+  gh release view "v${IPHONE_USE_VERSION}" --repo HughLee824/iphone-use \
+    --json body --jq .body > "$IPHONE_USE_ACCEPTANCE_DIR/acceptance.md"
 )
 ```
 
 使用尚未存在的验收目录，避免覆盖旧记录；下载或校验失败会停止后续步骤。失败重试时另选新目录。核对 `package-verification.json` 的版本、源码提交和 SHA-256 与草稿一致；其中 `executed: true` 仅表示运行了版本/帮助命令和签名检查，没有操作 iPhone。浏览器下载也应使用同一校验命令。原始记录保存在已忽略的 `.local/releases/<version>/`，草稿只填写不含个人数据的结果摘要。
 
-按[安装说明](install.md)把完整包安装到源码目录外，从另一个工作目录运行它。每个命令使用该包的绝对路径，或先用 `command -v agentsoma` 和 `agentsoma --version` 确认入口，避免误用开发版。保留原始归档及 SHA-256，不用本地重新编译的 CLI 或 Runner 代替候选包。
+按[安装说明](install.md)把完整包安装到源码目录外，从另一个工作目录运行它。每个命令使用该包的绝对路径，或先用 `command -v iphone-use` 和 `iphone-use --version` 确认入口，避免误用开发版。保留原始归档及 SHA-256，不用本地重新编译的 CLI 或 Runner 代替候选包。
 
 | 真机验收项 | 需要记录的结果 |
 | --- | --- |
@@ -127,13 +127,13 @@ formula 将原包的 `bin` 与 `libexec` 一起放在 Homebrew keg 的 `libexec`
 
 ### 0.1.0 正式发布验收
 
-2026-09-07 已发布 [0.1.0](https://github.com/HughLee824/AgentSoma/releases/tag/v0.1.0)，源码提交为 `25bef5092aac42a3f60bf1ec01b7ba79e12bee5d`，安装包 SHA-256 为 `c2eb4f1ee1e2c61cf05bfae46076f38d18c3385a6b0a5ab2c9181ed933fec80d`。本次验收使用从 GitHub 下载并搬移到源码目录外的同一安装包；发布时未重新构建或替换资产。
+2026-09-07 已发布 [0.1.0](https://github.com/HughLee824/iphone-use/releases/tag/v0.1.0)，源码提交为 `25bef5092aac42a3f60bf1ec01b7ba79e12bee5d`，安装包 SHA-256 为 `c2eb4f1ee1e2c61cf05bfae46076f38d18c3385a6b0a5ab2c9181ed933fec80d`。本次验收使用从 GitHub 下载并搬移到源码目录外的同一安装包；发布时未重新构建或替换资产。
 
 - Apple Silicon / macOS 15.0.1 / Xcode 16.0 / iPhone 12 Pro / iOS 26.6.1，已有付费开发签名。首次 setup 无需编译，重复 setup 复用成功。
 - 连接、应用发现、打开、观察、受保护输入及断开通过。计算器 `125 × 8 = 1,000` 经截图与界面文本核对；断开重连后再次打开历史记录，确认今天的计算仍在。一次屏幕变化拦截未派发输入，刷新观察后恢复。
 - setup 验证会话和业务会话均正常清理；业务会话的 host/xcodebuild 退出及观察缓存删除另行核对。
 - [Tap 更新](https://github.com/HughLee824/homebrew-tap/actions/runs/34123914541)通过，formula 提交为 `ab3cc80fc7af9db4483177f334c9f3cd686e1505`。匿名下载的三个公开资产与验收文件逐字节一致，公开 tag 指向上述源码提交。
-- 实际执行 `brew install HughLee824/tap/agentsoma` 和 `brew test HughLee824/tap/agentsoma` 通过，CLI/Runner 文件摘要与发布清单一致。使用 `/opt/homebrew/bin/agentsoma` 完成真机连接、截图检查、点击和正常断开。
+- 实际执行 `brew install HughLee824/tap/iphone-use` 和 `brew test HughLee824/tap/iphone-use` 通过，CLI/Runner 文件摘要与发布清单一致。使用 `/opt/homebrew/bin/iphone-use` 完成真机连接、截图检查、点击和正常断开。
 
 本次证明现有开发签名条件下的正式包与公共安装入口可用，未扩展免费账号、全新签名环境或浏览器渠道的支持范围。私有设备标识、签名资料、截图与命令原始记录保留在本地。
 

@@ -4,33 +4,33 @@
 
 ## 发布包 setup
 
-1. 解压完整发布目录，将 `bin` 加入 PATH，保留相邻的 `libexec/agentsoma/runner`。可以移动整个目录或为 CLI 创建软链接；不要只复制单个二进制。
+1. 解压完整发布目录，将 `bin` 加入 PATH，保留相邻的 `libexec/iphone-use/runner`。可以移动整个目录或为 CLI 创建软链接；不要只复制单个二进制。
 2. 使用完整 Xcode；`xcode-select -p` 应指向它的 `Contents/Developer`。在 Xcode Settings → Accounts 登录开发账号，确保 Keychain 中有可用的 Apple Development 证书和对应私钥。
 3. 用 USB 连接 iPhone，完成信任确认并启用 Developer Mode，保持解锁。准备包含该设备、开发证书和目标 bundle ID 的 iOS development profile。已有 Xcode profile 可自动发现；付费开发团队也可按 Apple 的[开发 profile 流程](https://developer.apple.com/help/account/provisioning-profiles/create-a-development-provisioning-profile)创建并下载，再传 `--profile`。setup 不创建 Apple 资源，也不通过编译 Runner 来生成 profile。
 
 ```sh
-agentsoma --version
-agentsoma devices
-agentsoma setup --device "$IOS_UDID"
+iphone-use --version
+iphone-use devices
+iphone-use setup --device "$IOS_UDID"
 # 无匹配 profile 或存在歧义时，按实际签名条件明确选择：
-agentsoma setup --device "$IOS_UDID" --profile "$DEVELOPMENT_PROFILE" --team "$APPLE_TEAM_ID"
+iphone-use setup --device "$IOS_UDID" --profile "$DEVELOPMENT_PROFILE" --team "$APPLE_TEAM_ID"
 ```
 
-默认手机 App bundle ID 为 `com.agentsoma.runner.xctrunner`。若 profile 只授权自己的标识，首次 setup 添加 `--bundle-id com.example.agentsoma.xctrunner`；这里传的是 **App 的完整 bundle ID**，之后会保存复用。存在多个匹配开发证书时，用 `--identity` 传 `security find-identity -v -p codesigning` 中的证书 SHA-1。该标识用于本机选取私钥，不是私钥内容。
+默认手机 App bundle ID 为 `com.iphone-use.runner.xctrunner`。若 profile 只授权自己的标识，首次 setup 添加 `--bundle-id com.example.iphone-use.xctrunner`；这里传的是 **App 的完整 bundle ID**，之后会保存复用。存在多个匹配开发证书时，用 `--identity` 传 `security find-identity -v -p codesigning` 中的证书 SHA-1。该标识用于本机选取私钥，不是私钥内容。
 
 setup 依次校验发布文件和 CLI 配对、设备版本、profile 的设备/bundle ID/有效期/证书匹配，复制并重签 Runner，通过 `test-without-building` 在设备安装启动，然后验证握手、截图和正常退出。只有全部成功才更新该设备的准备记录。`compiled:false` 表示这条用户路径没有编译；`verified` 的截图项不代表已验证某个业务 App 的 AX 树或交互效果。
 
 之后从任意工作目录连接，无需 `.xctestrun`：
 
 ```sh
-agentsoma connect --device "$IOS_UDID"
+iphone-use connect --device "$IOS_UDID"
 # 使用真实返回的 session。
-agentsoma --session "$SESSION" open com.apple.Preferences
-agentsoma --session "$SESSION" observe
-agentsoma --session "$SESSION" disconnect
+iphone-use --session "$SESSION" open com.apple.Preferences
+iphone-use --session "$SESSION" observe
+iphone-use --session "$SESSION" disconnect
 ```
 
-设备准备记录和重签产物位于 `~/Library/Application Support/AgentSoma`，与发布包、源码和临时会话目录分开。记录按 CoreDevice 返回的规范 UDID 关联，保存 bundle ID、签名选择、profile 到期时间和文件摘要。产物中包含用户自己的 profile，根目录权限为 0700、记录权限为 0600；不要将此目录放进公开 issue 或发布包。私钥留在 Keychain 中。
+设备准备记录和重签产物位于 `~/Library/Application Support/iphone-use`，与发布包、源码和临时会话目录分开。记录按 CoreDevice 返回的规范 UDID 关联，保存 bundle ID、签名选择、profile 到期时间和文件摘要。产物中包含用户自己的 profile，根目录权限为 0700、记录权限为 0600；不要将此目录放进公开 issue 或发布包。私钥留在 Keychain 中。
 
 ## 升级与续签
 
@@ -49,39 +49,39 @@ agentsoma --session "$SESSION" disconnect
 ### 准备一次签名环境
 
 1. 使用完整 Xcode；`xcode-select -p` 应指向该 Xcode 的 `Contents/Developer`。如果选择了独立 Command Line Tools，可在 Xcode 的 Settings → Locations 中选择工具链。
-2. 在 Xcode 登录自己的 Apple 开发账号，打开 `Runner/AgentSomaRunner.xcodeproj`。选择 `AgentSomaTests` target，在 Signing & Capabilities 中选择团队、启用自动签名，并设置该团队可使用的 bundle ID。默认 `com.agentsoma.runner` 是工程默认值，可按账号需要更改。
-3. 用 USB 连接 iPhone，完成设备上的信任确认并启用 Developer Mode；保持解锁。首次证书/profile 配置需要时，在 Xcode 选择该设备和 `AgentSomaRunner` scheme，使用 Product → Build For → Testing 完成签名配置。
+2. 在 Xcode 登录自己的 Apple 开发账号，打开 `Runner/IPhoneUseRunner.xcodeproj`。选择 `IPhoneUseTests` target，在 Signing & Capabilities 中选择团队、启用自动签名，并设置该团队可使用的 bundle ID。默认 `com.iphone-use.runner` 是工程默认值，可按账号需要更改。
+3. 用 USB 连接 iPhone，完成设备上的信任确认并启用 Developer Mode；保持解锁。首次证书/profile 配置需要时，在 Xcode 选择该设备和 `IPhoneUseRunner` scheme，使用 Product → Build For → Testing 完成签名配置。
 
 CLI 不管理 Apple 账号、证书或 profile，不传入 `-allowProvisioningUpdates`。团队和 bundle ID 可以保存在本机 Xcode 工程设置中，也可由 agent 在构建时用 `--team`、`--bundle-id` 覆盖。命令行覆盖不会写回 Xcode 工程。
 
 ### 构建并连接
 
-在 AgentSoma 源码目录执行：
+在 iPhone-use 源码目录执行：
 
 ```sh
 swift build
-.build/debug/agentsoma build-runner --team "$APPLE_TEAM_ID"
+.build/debug/iphone-use build-runner --team "$APPLE_TEAM_ID"
 ```
 
-已经在 Xcode 工程中选择团队时，省略 `--team`。当 agent 的当前目录是待测 App 项目时，使用 AgentSoma CLI 的完整路径，并传 `build-runner --source-root /path/to/AgentSoma`。
+已经在 Xcode 工程中选择团队时，省略 `--team`。当 agent 的当前目录是待测 App 项目时，使用 iPhone-use CLI 的完整路径，并传 `build-runner --source-root /path/to/iphone-use`。
 
 成功返回单行 JSON，路径以实际输出为准：
 
 ```json
-{"ok":true,"result":{"xctestrun":"/path/to/AgentSoma/.build/runner/<build-id>/Build/Products/AgentSomaRunner_iphoneos18.0-arm64.xctestrun","runnerApp":"/path/to/AgentSoma/.build/runner/<build-id>/Build/Products/Debug-iphoneos/AgentSomaTests-Runner.app","buildDirectory":"/path/to/AgentSoma/.build/runner/<build-id>","log":"/path/to/AgentSoma/.build/runner/<build-id>/build.log"}}
+{"ok":true,"result":{"xctestrun":"/path/to/iphone-use/.build/runner/<build-id>/Build/Products/IPhoneUseRunner_iphoneos18.0-arm64.xctestrun","runnerApp":"/path/to/iphone-use/.build/runner/<build-id>/Build/Products/Debug-iphoneos/IPhoneUseTests-Runner.app","buildDirectory":"/path/to/iphone-use/.build/runner/<build-id>","log":"/path/to/iphone-use/.build/runner/<build-id>/build.log"}}
 ```
 
 `build-runner` 调用 Apple `xcodebuild build-for-testing` 和 `codesign --verify --deep --strict`。它从产物目录读取真实 `.xctestrun` 名称及 Runner 路径，不硬编码 SDK 版本。构建日志保存在 `build.log`，路径清单同时保存到 `build.json`；失败返回非零退出码和 JSON 错误。Apple 对构建与后续测试命令的说明见 [TN2339](https://developer.apple.com/library/archive/technotes/tn2339/_index.html)。
 
 ```sh
-.build/debug/agentsoma devices
-.build/debug/agentsoma connect --device "$IOS_UDID" --xctestrun "$SIGNED_XCTESTRUN"
+.build/debug/iphone-use devices
+.build/debug/iphone-use connect --device "$IOS_UDID" --xctestrun "$SIGNED_XCTESTRUN"
 # 使用 connect 返回的 session。
-.build/debug/agentsoma --session "$SESSION" apps --query Settings
-.build/debug/agentsoma --session "$SESSION" open com.apple.Preferences
-.build/debug/agentsoma --session "$SESSION" observe
+.build/debug/iphone-use --session "$SESSION" apps --query Settings
+.build/debug/iphone-use --session "$SESSION" open com.apple.Preferences
+.build/debug/iphone-use --session "$SESSION" observe
 # agent 读取 observe 返回的 PNG，再根据实际观察选择动作。
-.build/debug/agentsoma --session "$SESSION" disconnect
+.build/debug/iphone-use --session "$SESSION" disconnect
 ```
 
 `SIGNED_XCTESTRUN` 使用构建结果的 `result.xctestrun`。`connect` 用 Xcode 安装并启动 Runner；之后继续使用已验证的 CoreDevice 原生链路。断开会话停止进程并释放观察缓存，签名构建和手机上的 Runner 保留以便复用。
@@ -99,7 +99,7 @@ swift build
 | `profile_expired` / `profile_device_mismatch` / `profile_bundle_mismatch` / `profile_identity_mismatch` / `profile_team_mismatch` | 按错误修正 profile 或选择参数，然后重新 setup。 |
 | `signing_identity_unavailable` / `signing_identity_ambiguous` | 检查当前执行上下文是否能访问 Keychain 中的开发私钥；明确选择匹配证书。沙盒内看不到证书不等于本机不存在证书。 |
 | `runner_signing_failed` / `setup_verification_failed` / `setup_cleanup_failed` | 阅读错误和会话日志；签名成功不等于设备可用，验证失败不会保存准备记录。 |
-| `runner_source_missing` | 将 `--source-root` 指向包含 `Runner/AgentSomaRunner.xcodeproj` 的源码目录。复制单个 CLI 二进制不会携带 iOS 源码。 |
+| `runner_source_missing` | 将 `--source-root` 指向包含 `Runner/IPhoneUseRunner.xcodeproj` 的源码目录。复制单个 CLI 二进制不会携带 iOS 源码。 |
 | `invalid_team` / `invalid_bundle_id` | 修正签名参数；team 是 10 位开发团队 ID，bundle ID 是点分隔标识。 |
 | `runner_build_failed` | 阅读返回路径中的 `build.log`。若提示缺少开发团队/profile，在 Xcode 完成签名；若选中的是 Command Line Tools，切换到完整 Xcode。构建错误不一概归因于签名。 |
 | `runner_products_invalid` / `runner_signature_invalid` | 检查当前源码、构建日志和产物；重新构建，使用新的输出路径。 |
@@ -113,6 +113,6 @@ swift build
 
 ## 工程边界
 
-独立 Xcode 工程编译 `Runner/LiveSessionTests.swift`，并共享 `Sources/AgentSomaCore` 中的帧稳定、画面校验和 XCTest 诊断实现，不依赖本地探针或 Fixture。测试模块叫 `AgentSomaTests`，构建不需要 XcodeGen。目录职责见 [架构与仓库布局](architecture.md)。
+独立 Xcode 工程编译 `Runner/LiveSessionTests.swift`，并共享 `Sources/IPhoneUseCore` 中的帧稳定、画面校验和 XCTest 诊断实现，不依赖本地探针或 Fixture。测试模块叫 `IPhoneUseTests`，构建不需要 XcodeGen。目录职责见 [架构与仓库布局](architecture.md)。
 
 免 Xcode 安装、全新 Mac 配置、免费 Personal Team 签名以及更多 OS/设备组合仍未验证。发布 Runner 的编译下限为 iOS 17，源码工程默认仍为 iOS 16；macOS CLI 编译下限为 13。这些编译下限不是完整链路的支持承诺。发布包验收见 [Release 与 setup](release-setup.md)。

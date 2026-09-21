@@ -1,7 +1,7 @@
 import Foundation
 import Darwin
 import AppleNativeBridge
-@testable import AgentSomaCore
+@testable import IPhoneUseCore
 
 // Explicit development-only acceptance harness; never linked into the product CLI.
 // It sends no input by itself. Use only with an inspected, controlled Probe observation.
@@ -95,12 +95,12 @@ struct ContactFaultHost {
         }
         if args.count == 2 && args[1] == "--self-test" { try selfTest(); return }
         guard args.count == 4, modes.contains(args[2]) else {
-            throw SomaError("usage", "Use --help; requires device, fault mode and new evidence directory")
+            throw IPhoneUseError("usage", "Use --help; requires device, fault mode and new evidence directory")
         }
         umask(0o077)
         let evidence = URL(fileURLWithPath: args[3]).standardizedFileURL
         guard !FileManager.default.fileExists(atPath: evidence.path) else {
-            throw SomaError("existing_evidence", "Use a new evidence directory")
+            throw IPhoneUseError("existing_evidence", "Use a new evidence directory")
         }
         try SessionPaths.secureDirectory(evidence)
         let session = "s" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
@@ -188,7 +188,7 @@ struct ContactFaultHost {
         FileManager.default.createFile(atPath: log.path, contents: nil)
         let fake = FakeTransport(), recorder = ReportRecorder(FakeTransport(), log: log)
         let failed = ReportRecorder(fake, log: log)
-        func require(_ value: Bool) throws { if !value { throw SomaError("self_test_failed", "Fault checkpoint did not match the required successful report barriers") } }
+        func require(_ value: Bool) throws { if !value { throw IPhoneUseError("self_test_failed", "Fault checkpoint did not match the required successful report barriers") } }
         func send(_ recorder: ReportRecorder, x: UInt16) throws {
             try recorder.send(["payload": ["send": ["_0": NativeTouchReport.make(contact: true, x: x, y: 100, timestamp: 1)]]], timeout: 1)
         }
@@ -204,7 +204,7 @@ struct ContactFaultHost {
         try require(recorder.ready(for: "close-hid-after-move"))
         try send(failed, x: 100)
         fake.fail = true
-        for index in 1...20 { do { try send(failed, x: UInt16(100 + index)); throw SomaError("self_test_failed", "Expected transport failure") } catch is TransportError {} }
+        for index in 1...20 { do { try send(failed, x: UInt16(100 + index)); throw IPhoneUseError("self_test_failed", "Expected transport failure") } catch is TransportError {} }
         try require(failed.moveBarriers == 0 && !failed.ready(for: "close-hid-after-move"))
         let keyboard = ReportRecorder(FakeTransport(), log: log)
         _ = try keyboard.request(["payload": ["createService": [:]]], timeout: 1)
@@ -242,10 +242,10 @@ struct ContactFaultHost {
             try hid.prepare(); try hid.prepareKeyboard()
             do {
                 _ = try hid.paste(mode: "replace")
-                throw SomaError("self_test_failed", "Interrupted paste unexpectedly completed")
+                throw IPhoneUseError("self_test_failed", "Interrupted paste unexpectedly completed")
             } catch let failure as ActionFailure {
                 try require(mode != "signal-before-key" && failure.possiblyExecuted)
-            } catch let error as SomaError {
+            } catch let error as IPhoneUseError {
                 try require(mode == "signal-before-key" && error.code == "native_cancelled")
             }
             try require(injected)

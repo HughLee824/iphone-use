@@ -20,21 +20,21 @@ spec.loader.exec_module(homebrew)
 
 class ReleaseTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix="agentsoma test ")
+        self.temporary = tempfile.TemporaryDirectory(prefix="iphone-use test ")
         self.addCleanup(self.temporary.cleanup)
         self.version = "0.1.0-rc.1"
-        self.archive = Path(self.temporary.name) / f"agentsoma-{self.version}-macos-arm64.tar.gz"
+        self.archive = Path(self.temporary.name) / f"iphone-use-{self.version}-macos-arm64.tar.gz"
         self.root = self.archive.name.removesuffix(".tar.gz")
         self.runner = {
-            "AgentSomaRunner.app/Info.plist": plistlib.dumps({"MinimumOSVersion": "17.0"}),
-            "AgentSomaRunner.app/AgentSomaTests-Runner": b"runner binary",
-            "AgentSomaRunner.app/PlugIns/AgentSomaTests.xctest/AgentSomaTests": b"test binary",
-            "Runner.xctestrun": plistlib.dumps({"AgentSomaTests": {
-                "TestHostPath": "__TESTROOT__/AgentSomaRunner.app",
-                "TestBundlePath": "__TESTHOST__/PlugIns/AgentSomaTests.xctest",
+            "IPhoneUseRunner.app/Info.plist": plistlib.dumps({"MinimumOSVersion": "17.0"}),
+            "IPhoneUseRunner.app/IPhoneUseTests-Runner": b"runner binary",
+            "IPhoneUseRunner.app/PlugIns/IPhoneUseTests.xctest/IPhoneUseTests": b"test binary",
+            "Runner.xctestrun": plistlib.dumps({"IPhoneUseTests": {
+                "TestHostPath": "__TESTROOT__/IPhoneUseRunner.app",
+                "TestBundlePath": "__TESTHOST__/PlugIns/IPhoneUseTests.xctest",
                 "UseUITargetAppProvidedByTests": True,
-                "DependentProductPaths": ["__TESTROOT__/AgentSomaRunner.app",
-                    "__TESTROOT__/AgentSomaRunner.app/PlugIns/AgentSomaTests.xctest"],
+                "DependentProductPaths": ["__TESTROOT__/IPhoneUseRunner.app",
+                    "__TESTROOT__/IPhoneUseRunner.app/PlugIns/IPhoneUseTests.xctest"],
             }}),
         }
         self.build = {"version": self.version, "architecture": "arm64", "license": "MIT",
@@ -47,7 +47,7 @@ class ReleaseTests(unittest.TestCase):
                     "runnerVersion": sha256(json.dumps(inventory, sort_keys=True, separators=(",", ":")).encode())}
         if modify_manifest:
             modify_manifest(manifest)
-        files = {"bin/agentsoma": b"CLI", "README.md": b"install", "LICENSE": b"MIT",
+        files = {"bin/iphone-use": b"CLI", "bin/agentsoma": b"CLI", "README.md": b"install", "LICENSE": b"MIT",
                  "licenses/SwiftArgumentParser.txt": b"dependency licence",
                  "build-info.json": json.dumps(self.build).encode(),
                  RUNNER + "manifest.json": json.dumps(manifest).encode(),
@@ -62,6 +62,11 @@ class ReleaseTests(unittest.TestCase):
             for member in extra_members:
                 tar.addfile(member, io.BytesIO(b""))
         Path(str(self.archive) + ".sha256").write_text(f"{sha256(self.archive.read_bytes())}  {self.archive.name}\n")
+
+    def test_legacy_command_must_match_new_binary(self):
+        self.write_archive(modify_files=lambda files: files.update({"bin/agentsoma": b"different CLI"}))
+        with self.assertRaisesRegex(ValueError, "Legacy command"):
+            inspect_archive(self.archive)
 
     def test_valid_release_and_checksum(self):
         self.write_archive()
@@ -103,7 +108,7 @@ class ReleaseTests(unittest.TestCase):
                 self.build[key] = saved
 
     def test_cli_and_runner_tampering_rejected(self):
-        for name in ["bin/agentsoma", RUNNER + "AgentSomaRunner.app/AgentSomaTests-Runner"]:
+        for name in ["bin/iphone-use", RUNNER + "IPhoneUseRunner.app/IPhoneUseTests-Runner"]:
             with self.subTest(name=name):
                 self.write_archive(modify_files=lambda files: files.update({name: b"changed"}))
                 with self.assertRaises(ValueError):
@@ -116,7 +121,7 @@ class ReleaseTests(unittest.TestCase):
                 inspect_archive(self.archive)
 
     def test_incomplete_but_consistently_hashed_runner_rejected(self):
-        self.runner.pop("AgentSomaRunner.app/AgentSomaTests-Runner")
+        self.runner.pop("IPhoneUseRunner.app/IPhoneUseTests-Runner")
         self.write_archive()
         with self.assertRaisesRegex(ValueError, "incomplete"):
             inspect_archive(self.archive)
@@ -129,7 +134,7 @@ class ReleaseTests(unittest.TestCase):
                 inspect_archive(self.archive)
 
     def test_signing_profiles_frameworks_and_source_rejected_even_with_matching_hashes(self):
-        for name in ["AgentSomaRunner.app/embedded.mobileprovision", "AgentSomaRunner.app/Frameworks/XCTest.framework/XCTest",
+        for name in ["IPhoneUseRunner.app/embedded.mobileprovision", "IPhoneUseRunner.app/Frameworks/XCTest.framework/XCTest",
                      "source.swift", "Runner.dSYM/Contents/Resources/DWARF/Runner"]:
             self.runner[name] = b"must not ship"
             self.write_archive()
@@ -139,7 +144,7 @@ class ReleaseTests(unittest.TestCase):
 
     def test_external_test_manifest_path_rejected(self):
         plan = plistlib.loads(self.runner["Runner.xctestrun"])
-        plan["AgentSomaTests"]["TestHostPath"] = "/private/local/Runner.app"
+        plan["IPhoneUseTests"]["TestHostPath"] = "/private/local/Runner.app"
         self.runner["Runner.xctestrun"] = plistlib.dumps(plan)
         self.write_archive()
         with self.assertRaisesRegex(ValueError, "packaged app"):
@@ -147,7 +152,7 @@ class ReleaseTests(unittest.TestCase):
 
     def test_unsafe_tar_members_rejected_before_extraction(self):
         for name in ["/tmp/escape", f"{self.root}/../escape", f"{self.root}/./extra",
-                     f"{self.root}//extra", "", "another-root/file", f"{self.root}/bin/agentsoma"]:
+                     f"{self.root}//extra", "", "another-root/file", f"{self.root}/bin/iphone-use"]:
             with self.subTest(name=name):
                 self.write_archive(extra_members=[tarfile.TarInfo(name)])
                 with self.assertRaises(ValueError):
@@ -166,20 +171,20 @@ class ReleaseTests(unittest.TestCase):
 
     def test_formula_uses_immutable_version_url_and_preserves_resource_layout(self):
         self.write_archive()
-        output = Path(self.temporary.name) / "Formula/agentsoma.rb"
+        output = Path(self.temporary.name) / "Formula/iphone-use.rb"
         subprocess.run([sys.executable, str(Path(homebrew.__file__)), str(self.archive), "--output", str(output)],
                        check=True, capture_output=True)
         formula = output.read_text()
         self.assertIn(f"/releases/download/v{self.version}/{self.archive.name}", formula)
         self.assertIn(sha256(self.archive.read_bytes()), formula)
         self.assertIn('libexec.install "bin", "libexec"', formula)
-        self.assertIn('bin.install_symlink libexec/"bin/agentsoma"', formula)
+        self.assertIn('bin.install_symlink libexec/"bin/iphone-use"', formula)
         self.assertNotIn("latest/download", formula)
 
     def test_public_formula_rejects_dirty_candidate_but_local_test_can_install_it(self):
         self.build["sourceDirty"] = True
         self.write_archive()
-        output = Path(self.temporary.name) / "agentsoma.rb"
+        output = Path(self.temporary.name) / "iphone-use.rb"
         command = [sys.executable, str(Path(homebrew.__file__)), str(self.archive), "--output", str(output)]
         self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
         self.assertFalse(output.exists())

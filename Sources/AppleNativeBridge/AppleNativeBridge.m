@@ -8,7 +8,7 @@
 #import <poll.h>
 
 static NSError *Failure(NSString *code, NSString *message) {
-    return [NSError errorWithDomain:@"AgentSoma.AppleNative" code:1
+    return [NSError errorWithDomain:@"iPhone-use.AppleNative" code:1
                           userInfo:@{NSLocalizedDescriptionKey:message, @"somaCode":code}];
 }
 
@@ -178,7 +178,7 @@ NSDictionary *ASNativeRoundTrip(NSDictionary *value, NSError **error) {
     }
     fcntl(fd, F_SETFD, FD_CLOEXEC);
     fcntl(fd, F_SETFL, O_NONBLOCK);
-    _queue = dispatch_queue_create("agentsoma.apple.paired-channel", DISPATCH_QUEUE_SERIAL);
+    _queue = dispatch_queue_create("iphone-use.apple.paired-channel", DISPATCH_QUEUE_SERIAL);
     dispatch_queue_set_specific(_queue, (__bridge const void *)self, (__bridge void *)self, NULL);
     // macOS 27 ABI: fd, queue, wire version flags, client/server mode flags. The created object owns fd.
     _connection = createFDConnection(fd, _queue, flags ?: failsafeVersion(), 0);
@@ -264,7 +264,7 @@ NSDictionary *ASNativeRoundTrip(NSDictionary *value, NSError **error) {
 - (void)dealloc { if (_connection) cancelConnection(_connection); }
 @end
 
-@interface NSObject (AgentSomaAVC)
+@interface NSObject (IPhoneUseAVC)
 - (id)initWithMode:(NSInteger)mode options:(NSDictionary *)options error:(NSError **)error;
 - (id)negotiatorSettings;
 - (BOOL)createOffer;

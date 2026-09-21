@@ -45,7 +45,7 @@ final class Interrupt {
 var options: [String: String] = [:]
 let arguments = Array(CommandLine.arguments.dropFirst())
 if arguments.contains("--help") {
-    print("swift scripts/verify-apple-native.swift --output NEW_PRIVATE_DIRECTORY [--cli .build/release/agentsoma] [--device ID] [--duration 300] [--cycles 3] [--interval 15]")
+    print("swift scripts/verify-apple-native.swift --output NEW_PRIVATE_DIRECTORY [--cli .build/release/iphone-use] [--device ID] [--duration 300] [--cycles 3] [--interval 15]")
     print("First cycle holds media for duration seconds; later cycles verify new sessions for one interval. Auto-selects exactly one wired iPhone. Sends no input. Exit 0 requires protocol, packet flow and owned cleanup checks, not just command success.")
     exit(0)
 }
@@ -67,7 +67,7 @@ func main() throws {
     let output = URL(fileURLWithPath: outputPath).standardizedFileURL
     try require(!files.fileExists(atPath: output.path), "Output must be a new directory")
     try files.createDirectory(at: output, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-    let cli = URL(fileURLWithPath: options["--cli"] ?? ".build/release/agentsoma").standardizedFileURL.path
+    let cli = URL(fileURLWithPath: options["--cli"] ?? ".build/release/iphone-use").standardizedFileURL.path
     let interrupt = Interrupt()
     var commandNumber = 0
     func command(_ executable: String, _ args: [String], timeout: Double = 90) throws -> (Int32, Data) {

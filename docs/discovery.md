@@ -5,15 +5,15 @@
 ## CLI 契约
 
 ```sh
-agentsoma devices
-agentsoma connect --device "$DEVICE_ID" --xctestrun "$SIGNED_XCTESTRUN"
-agentsoma --session "$SESSION" apps
-agentsoma --session "$SESSION" apps --offset 50
-agentsoma --session "$SESSION" apps --query Settings
-agentsoma --session "$SESSION" open com.apple.Preferences
-agentsoma --session "$SESSION" observe
+iphone-use devices
+iphone-use connect --device "$DEVICE_ID" --xctestrun "$SIGNED_XCTESTRUN"
+iphone-use --session "$SESSION" apps
+iphone-use --session "$SESSION" apps --offset 50
+iphone-use --session "$SESSION" apps --query Settings
+iphone-use --session "$SESSION" open com.apple.Preferences
+iphone-use --session "$SESSION" observe
 # agent 读取返回的 PNG，使用本次实际返回的元素引用执行动作，再 observe。
-agentsoma --session "$SESSION" disconnect
+iphone-use --session "$SESSION" disconnect
 ```
 
 `devices` 无需会话，返回 CoreDevice 已知的设备，并不等于所有设备此刻都能建立会话。`id` 优先使用 UDID，缺失时使用 CoreDevice identifier；它们都可用于 connect。名称、系统版本、平台、设备类型、连接方式、隧道和配对状态只映射原生返回值，缺失字段为 `null`。不推测锁屏或会话就绪状态，也不把曾配对设备排除出列表。
@@ -40,11 +40,11 @@ CoreDevice 的非零退出保留原始日志末尾最多 4000 个字符，并在
 
 | 错误码 | 依据与下一步 |
 | --- | --- |
-| `coredevice_initialization_timeout` | 原始输出包含 CoreDeviceService 初始化超时。它不能证明设备断开、服务损坏或沙盒限制中的哪一种原因。若调用在沙盒内，先通过调用工具的授权机制，用允许 CoreDevice 通信的本机执行环境对照一次只读 `agentsoma devices`。 |
+| `coredevice_initialization_timeout` | 原始输出包含 CoreDeviceService 初始化超时。它不能证明设备断开、服务损坏或沙盒限制中的哪一种原因。若调用在沙盒内，先通过调用工具的授权机制，用允许 CoreDevice 通信的本机执行环境对照一次只读 `iphone-use devices`。 |
 | `coredevice_access_denied` | 原始输出包含 `Operation not permitted` 或 `Permission denied`，大小写不敏感。先检查本机执行权限；在受限环境中，同样先对照一次只读 devices。它不表示 CLI 已自动提权，也不证明一定是某一种沙盒机制。 |
 | `coredevice_failed` | 其他原生失败，按实际阶段、退出码和原始错误排查，不归入权限或初始化问题。 |
 
-成功发现设备后，再根据 devices 返回的信息和原始任务继续 connect。若允许通信的执行环境中仍失败，应继续使用实际错误定位设备连接、配对或开发服务问题；不要反复执行同一失败命令、直接跳到 connect 重复相同预检，或默认重启系统服务。AgentSoma 不自动重试、提权或重启服务。
+成功发现设备后，再根据 devices 返回的信息和原始任务继续 connect。若允许通信的执行环境中仍失败，应继续使用实际错误定位设备连接、配对或开发服务问题；不要反复执行同一失败命令、直接跳到 connect 重复相同预检，或默认重启系统服务。iPhone-use 不自动重试、提权或重启服务。
 
 这些诊断同样适用于 connect 的 CoreDevice 预检，以及 apps/open 的安装清单查询；沿用现有的错误消息传播和动作三态规则。仅修改 CLI/宿主代码时，重新 `swift build` 并用新 CLI 建立会话；是否需要更新 Runner 由协议兼容性检查决定。
 

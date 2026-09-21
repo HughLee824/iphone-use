@@ -1,5 +1,8 @@
 # Experimental Apple native backend
 
+> The project is now iPhone-use. Historical acceptance below retains the names used during each run; `agentsoma` remains a compatibility command. See [rename and upgrade notes](rename-to-iphone-use.md) for current names and paths.
+
+
 The `apple-native` backend (standard mode) uses Apple `devicectl`, the paired-device XPC service, system RemoteXPC, AVConference, and AgentSoma's Swift/Objective-C code. It never starts a Runner or falls back to XCTest. Published releases retain their existing default; this checkout now selects standard/Runner using the [mode configuration contract](control-modes.md); Apple's ArgumentParser dependency is unchanged.
 
 **Current acceptance: the screenshot → coordinate → self-written HID → screenshot loop works on the controlled iPhone under macOS/iOS 27.** Both debug and release builds now connect without an endpoint inventory, including with Device Hub and Xcode exited and the tunnel initially disconnected. New independent-session screenshots visually confirmed Probe target hits `6 → 7 → 8`; scoped media stop and pairing assertion release were acknowledged. This is controlled Probe acceptance, not general app/device compatibility; the landscape extension is recorded below.

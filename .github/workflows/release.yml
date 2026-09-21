@@ -18,7 +18,7 @@ concurrency:
 jobs:
   build:
     name: Build and package checks (no iPhone)
-    if: github.repository == 'HughLee824/AgentSoma' && github.ref == 'refs/heads/main'
+    if: github.repository == 'HughLee824/iphone-use' && github.ref == 'refs/heads/main'
     runs-on: macos-15
     timeout-minutes: 30
     env:
@@ -44,17 +44,17 @@ jobs:
       - name: Build and verify the exact archive
         run: |
           python3 scripts/build-release.py --version "$VERSION" --require-clean
-          python3 scripts/verify-release.py ".build/releases/agentsoma-${VERSION}-macos-arm64.tar.gz" --require-clean
+          python3 scripts/verify-release.py ".build/releases/iphone-use-${VERSION}-macos-arm64.tar.gz" --require-clean
       - name: Verify Homebrew installation preserves the CLI and Runner
         run: |
-          python3 scripts/generate-homebrew.py ".build/releases/agentsoma-${VERSION}-macos-arm64.tar.gz" --local --output "$RUNNER_TEMP/agentsoma.rb"
-          ruby -c "$RUNNER_TEMP/agentsoma.rb"
-          brew tap-new agentsoma/acceptance
-          cp "$RUNNER_TEMP/agentsoma.rb" "$(brew --repository agentsoma/acceptance)/Formula/agentsoma.rb"
-          brew install agentsoma/acceptance/agentsoma
-          brew test agentsoma/acceptance/agentsoma
+          python3 scripts/generate-homebrew.py ".build/releases/iphone-use-${VERSION}-macos-arm64.tar.gz" --local --output "$RUNNER_TEMP/iphone-use.rb"
+          ruby -c "$RUNNER_TEMP/iphone-use.rb"
+          brew tap-new iphone-use/acceptance
+          cp "$RUNNER_TEMP/iphone-use.rb" "$(brew --repository iphone-use/acceptance)/Formula/iphone-use.rb"
+          brew install iphone-use/acceptance/iphone-use
+          brew test iphone-use/acceptance/iphone-use
       - name: Generate the public formula
-        run: python3 scripts/generate-homebrew.py ".build/releases/agentsoma-${VERSION}-macos-arm64.tar.gz" --output .build/releases/agentsoma.rb
+        run: python3 scripts/generate-homebrew.py ".build/releases/iphone-use-${VERSION}-macos-arm64.tar.gz" --output .build/releases/iphone-use.rb
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: release-assets
@@ -64,7 +64,7 @@ jobs:
           path: |
             .build/releases/*.tar.gz
             .build/releases/*.tar.gz.sha256
-            .build/releases/agentsoma.rb
+            .build/releases/iphone-use.rb
             .build/releases/*.zip
             .build/releases/*.zip.sha256
 
@@ -90,12 +90,12 @@ jobs:
           path: release-assets
       - name: Check downloaded artifacts and refuse an existing tag
         run: |
-          python3 scripts/verify-release.py "release-assets/agentsoma-${VERSION}-macos-arm64.tar.gz" --require-clean --no-execute > "$RUNNER_TEMP/verified-release.json"
-          python3 scripts/generate-homebrew.py "release-assets/agentsoma-${VERSION}-macos-arm64.tar.gz" --output "$RUNNER_TEMP/agentsoma.rb"
-          cmp "$RUNNER_TEMP/agentsoma.rb" release-assets/agentsoma.rb
+          python3 scripts/verify-release.py "release-assets/iphone-use-${VERSION}-macos-arm64.tar.gz" --require-clean --no-execute > "$RUNNER_TEMP/verified-release.json"
+          python3 scripts/generate-homebrew.py "release-assets/iphone-use-${VERSION}-macos-arm64.tar.gz" --output "$RUNNER_TEMP/iphone-use.rb"
+          cmp "$RUNNER_TEMP/iphone-use.rb" release-assets/iphone-use.rb
           python3 scripts/sync-plugin.py --archive "$RUNNER_TEMP/plugins"
-          cmp "$RUNNER_TEMP/plugins/"*.zip release-assets/agentsoma-plugin-*.zip
-          cmp "$RUNNER_TEMP/plugins/"*.zip.sha256 release-assets/agentsoma-plugin-*.zip.sha256
+          cmp "$RUNNER_TEMP/plugins/"*.zip release-assets/iphone-use-plugin-*.zip
+          cmp "$RUNNER_TEMP/plugins/"*.zip.sha256 release-assets/iphone-use-plugin-*.zip.sha256
           existing=$(git ls-remote --tags origin "refs/tags/v${VERSION}")
           if [ -n "$existing" ]; then
             echo 'This tag already exists; use a new release version.' >&2
@@ -114,7 +114,7 @@ jobs:
           print('## Build\n')
           print(f"- Version: `{release['version']}`")
           print(f"- Source commit: `{release['sourceCommit']}`")
-          print(f"- Archive: `agentsoma-{release['version']}-macos-{release['architecture']}.tar.gz`")
+          print(f"- Archive: `iphone-use-{release['version']}-macos-{release['architecture']}.tar.gz`")
           print(f"- Archive SHA-256: `{release['sha256']}`")
           print(f"- Automated checks: [GitHub Actions]({run_url}) (attempt {os.environ['GITHUB_RUN_ATTEMPT']})\n")
           PY
@@ -148,13 +148,13 @@ jobs:
 
           ## Installation
 
-          Download the tar.gz and its .sha256 file together. Installation and iPhone setup instructions are in the package README and repository docs/install.md. The separate agentsoma-plugin ZIP contains both client manifests and the complete skill; it does not contain the CLI or signed Runner. Follow docs/first-task.md for public marketplace installation and the first iPhone task in each client.
+          Download the tar.gz and its .sha256 file together. Installation and iPhone setup instructions are in the package README and repository docs/install.md. The separate iphone-use-plugin ZIP contains both client manifests and the complete skill; it does not contain the CLI or signed Runner. Follow docs/first-task.md for public marketplace installation and the first iPhone task in each client.
 
           Device setup requires full Xcode and your own Apple development certificate, private key and matching provisioning profile. Setup re-signs the precompiled Runner locally. Free Personal Team onboarding and renewal are not yet validated. The Mac CLI is ad-hoc signed, without Developer ID signing or notarization.
 
-          Maintainer: publish the exact archive accepted locally. After a stable release is published, run the Homebrew Tap's Update AgentSoma workflow with the same version, then verify installation from the public download URL and Tap. Prereleases use manual installation. The attached agentsoma.rb contains the exact versioned download URL and archive checksum.
+          Maintainer: publish the exact archive accepted locally. After a stable release is published, run the Homebrew Tap's Update iPhone-use workflow with the same version, then verify installation from the public download URL and Tap. Prereleases use manual installation. The attached iphone-use.rb contains the exact versioned download URL and archive checksum.
           EOF
           flags=()
           if [[ "$VERSION" == *-* ]]; then flags+=(--prerelease); fi
-          gh release create "v${VERSION}" release-assets/* --target "$SOURCE_COMMIT" --draft "${flags[@]}" --title "AgentSoma ${VERSION}" --notes-file "$RUNNER_TEMP/release-notes.md"
+          gh release create "v${VERSION}" release-assets/* --target "$SOURCE_COMMIT" --draft "${flags[@]}" --title "iPhone-use ${VERSION}" --notes-file "$RUNNER_TEMP/release-notes.md"
           cat "$RUNNER_TEMP/release-notes.md" >> "$GITHUB_STEP_SUMMARY"

@@ -9,12 +9,12 @@ function blocks(path) {
   return [...readFileSync(new URL(path, root), 'utf8').matchAll(/```javascript\n([\s\S]*?)```/g)]
     .map(match => match[1]);
 }
-const [start, resume, readObservation] = blocks('skills/agentsoma/references/codex-calls.md');
-const [combined] = blocks('skills/agentsoma/references/action-observation.md');
+const [start, resume, readObservation] = blocks('skills/iphone-use/references/codex-calls.md');
+const [combined] = blocks('skills/iphone-use/references/action-observation.md');
 const session = 'test-session';
 const observed = {exit_code: 0, output: 'observation=o2 refs=current\nscreenshot="/fixture/screen.png"\n'};
 function memory(initial) {
-  const values = new Map([['agentsoma.execution', initial]]);
+  const values = new Map([['iphone-use.execution', initial]]);
   return {store: (key, value) => values.set(key, value), load: key => values.get(key)};
 }
 function reply(outcome, fields = {}) {
@@ -51,14 +51,14 @@ test('basic template preserves literal shell arguments and the background handle
     const pending = {output: 'partial', session_id: 42};
     const output = [];
     const state = memory();
-    const code = start.replace('const argv = ["agentsoma", "devices"];',
+    const code = start.replace('const argv = ["iphone-use", "devices"];',
       `const argv = ${JSON.stringify(['/usr/bin/printf', '%s', value])};`);
     await new AsyncFunction('tools', 'text', 'store', code)({exec_command: async options => {
       assert.equal(execFileSync('/bin/sh', ['-c', options.cmd], {encoding: 'utf8'}), value);
       return pending;
     }}, value => output.push(value), state.store);
     assert.strictEqual(output[0], pending);
-    assert.strictEqual(state.load('agentsoma.execution'), pending);
+    assert.strictEqual(state.load('iphone-use.execution'), pending);
   }
 });
 
@@ -75,7 +75,7 @@ test('basic continuation preserves pending, failed, and successful results', asy
     }}, value => output.push(value), state.store, state.load);
     assert.equal(calls, 1);
     assert.strictEqual(output[0], result);
-    assert.deepEqual(state.load('agentsoma.execution'), {...result, output: 'earlier chunk' + result.output});
+    assert.deepEqual(state.load('iphone-use.execution'), {...result, output: 'earlier chunk' + result.output});
   }
 });
 
@@ -123,7 +123,7 @@ test('observe reader waits for full accumulated JSON and never repeats input', a
   let images = 0;
   await reader({view_image: async () => ({image_url: 'fixture'})}, emit, () => images++, state.load);
   assert.equal(images, 1);
-  assert.equal(state.load('agentsoma.execution').output, json);
+  assert.equal(state.load('iphone-use.execution').output, json);
 });
 
 test('failed observations or image loading preserve action facts without device calls', async () => {
@@ -147,7 +147,7 @@ test('completed and unknown actions each get one new observation', async () => {
     const {calls, output} = await run([action, observed]);
     assert.deepEqual(calls.map(call => call.kind), ['exec', 'exec']);
     assert.ok(calls[0].options.cmd.includes("'tap' 'o1:e2'"));
-    assert.equal(calls[1].options.cmd, "'agentsoma' '--session' 'test-session' 'observe'");
+    assert.equal(calls[1].options.cmd, "'iphone-use' '--session' 'test-session' 'observe'");
     assert.deepEqual(output, [{phase: 'action', execution: action}, {phase: 'observation', execution: observed}]);
   }
 });
@@ -157,7 +157,7 @@ test('all supported input commands use literal arguments and the same session', 
     ['type', 'o1:e2', '--mode', 'replace', '--text', "O'Brien $(printf WRONG)"],
     ['press', 'o1:e2', '--key', 'return']]) {
     const {calls} = await run([reply('completed'), observed], [], action);
-    const literal = execFileSync('/bin/sh', ['-c', calls[0].options.cmd.replace("'agentsoma'", "'/usr/bin/printf' '%s\\0'")]);
+    const literal = execFileSync('/bin/sh', ['-c', calls[0].options.cmd.replace("'iphone-use'", "'/usr/bin/printf' '%s\\0'")]);
     assert.deepEqual(literal.toString().split('\0').slice(0, -1), ['--session', session, ...action]);
   }
 });

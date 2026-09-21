@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 import unittest
 
-CLI = Path(__file__).resolve().parents[2] / ".build/debug/agentsoma"
+CLI = Path(__file__).resolve().parents[2] / ".build/debug/iphone-use"
 
 
 @unittest.skipUnless(CLI.is_file(), "Build the CLI first")
@@ -21,7 +21,7 @@ class ModeCLITests(unittest.TestCase):
     def test_get_set_round_trip_in_isolated_home(self):
         with tempfile.TemporaryDirectory(prefix="as-mode-", dir="/private/tmp") as temporary:
             home = Path(temporary)
-            path = home / ".agentsoma/config.json"
+            path = home / ".iphone-use/config.json"
             code, reply = self.call(["config", "get", "mode"], home)
             self.assertEqual(code, 0)
             # Verify Foundation home isolation BEFORE permitting any write command.
@@ -54,7 +54,7 @@ class ModeCLITests(unittest.TestCase):
                 code, reply = self.call(["connect", "--device", "not-a-real-device", *options], temporary)
                 self.assertNotEqual(code, 0)
                 self.assertEqual(reply["error"]["code"], error)
-            self.assertFalse((Path(temporary) / ".agentsoma/config.json").exists())
+            self.assertFalse((Path(temporary) / ".iphone-use/config.json").exists())
 
     def test_runner_source_option_still_validates_path_without_starting_host(self):
         with tempfile.TemporaryDirectory(prefix="as-mode-", dir="/private/tmp") as temporary:
@@ -64,13 +64,54 @@ class ModeCLITests(unittest.TestCase):
                                          "--xctestrun", "/missing/Runner.xctestrun", *options], temporary)
                 self.assertNotEqual(code, 0)
                 self.assertEqual(reply["error"]["code"], "runner_not_built")
-            self.assertFalse((Path(temporary) / ".agentsoma/config.json").exists())
+            self.assertFalse((Path(temporary) / ".iphone-use/config.json").exists())
+
+    def test_old_command_reads_new_config_and_old_preference_is_visible(self):
+        with tempfile.TemporaryDirectory(prefix="ip-use-", dir="/private/tmp") as temporary:
+            home = Path(temporary)
+            code, reply = self.call(["config", "get", "mode"], home)
+            self.assertEqual(code, 0)
+            self.assertEqual(Path(reply["result"]["configPath"]).resolve(), (home / ".iphone-use/config.json").resolve())
+            old = home / ".agentsoma/config.json"
+            old.parent.mkdir(mode=0o700)
+            old.write_text('{"version":1,"mode":"runner"}')
+            code, reply = self.call(["config", "get", "mode"], home)
+            self.assertEqual(code, 0)
+            self.assertEqual(reply["result"]["modeSource"], "legacy_configuration_migration")
+            self.assertFalse((home / ".iphone-use/config.json").exists())
+            code, _ = self.call(["config", "set", "mode", "standard"], home)
+            self.assertEqual(code, 0)
+            result = subprocess.run([str(CLI.with_name("agentsoma")), "config", "get", "mode"],
+                                    env={**os.environ, "CFFIXED_USER_HOME": str(home)}, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)["result"]["mode"], "standard")
+            self.assertEqual(json.loads(old.read_text())["mode"], "runner")
+
+    def test_old_runner_preparation_never_silently_selects_standard(self):
+        with tempfile.TemporaryDirectory(prefix="ip-use-", dir="/private/tmp") as temporary:
+            home = Path(temporary)
+            _, reply = self.call(["config", "get", "mode"], home)
+            self.assertEqual(Path(reply["result"]["configPath"]).resolve(), (home / ".iphone-use/config.json").resolve())
+            old = home / "Library/Application Support/AgentSoma/devices"
+            old.mkdir(parents=True)
+            (old / "old-device.json").write_text('{}')
+            for empty_new_directory in [False, True]:
+                if empty_new_directory:
+                    (home / "Library/Application Support/iphone-use/devices").mkdir(parents=True)
+                code, reply = self.call(["config", "get", "mode"], home)
+                self.assertNotEqual(code, 0)
+                self.assertEqual(reply["error"]["code"], "mode_selection_required")
+            code, _ = self.call(["config", "set", "mode", "runner"], home)
+            self.assertEqual(code, 0)
+            code, reply = self.call(["config", "get", "mode"], home)
+            self.assertEqual(code, 0)
+            self.assertEqual(reply["result"]["mode"], "runner")
 
     def test_bad_config_and_keys_fail_closed(self):
         with tempfile.TemporaryDirectory(prefix="as-mode-", dir="/private/tmp") as temporary:
             root = Path(temporary)
             _, reply = self.call(["config", "get", "mode"], root)
-            path = root / ".agentsoma/config.json"
+            path = root / ".iphone-use/config.json"
             self.assertEqual(Path(reply["result"]["configPath"]).resolve(), path.resolve())
             for args in [["config", "get", "unknown"], ["config", "set", "mode", "auto"]]:
                 code, _ = self.call(args, root)

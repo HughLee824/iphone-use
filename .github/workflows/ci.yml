@@ -33,7 +33,7 @@ jobs:
       - name: Compile the iPhone Runner without signing
         run: |
           xcodebuild build-for-testing \
-            -project Runner/AgentSomaRunner.xcodeproj -scheme AgentSomaRunner \
+            -project Runner/IPhoneUseRunner.xcodeproj -scheme IPhoneUseRunner \
             -configuration Debug -sdk iphoneos -destination 'generic/platform=iOS' \
             -derivedDataPath .build/ci-runner \
             CODE_SIGNING_ALLOWED=NO IPHONEOS_DEPLOYMENT_TARGET=17.0

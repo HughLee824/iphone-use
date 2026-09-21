@@ -9,12 +9,12 @@
 ## 调用方式
 
 ```sh
-agentsoma --session "$SESSION" tap o1:e10
-agentsoma --session "$SESSION" tap o2 --x 195 --y 380
-agentsoma --session "$SESSION" swipe o3:e50 --direction up
-agentsoma --session "$SESSION" swipe o4 --from-x 97 --from-y 405 --to-x 97 --to-y 365
-agentsoma --session "$SESSION" tap o5:e10 --protect o5:e20 --protect o5:e21
-agentsoma --session "$SESSION" tap o6:e10 --max-screen-change 0.01 --max-region-change 0
+iphone-use --session "$SESSION" tap o1:e10
+iphone-use --session "$SESSION" tap o2 --x 195 --y 380
+iphone-use --session "$SESSION" swipe o3:e50 --direction up
+iphone-use --session "$SESSION" swipe o4 --from-x 97 --from-y 405 --to-x 97 --to-y 365
+iphone-use --session "$SESSION" tap o5:e10 --protect o5:e20 --protect o5:e21
+iphone-use --session "$SESSION" tap o6:e10 --max-screen-change 0.01 --max-region-change 0
 ```
 
 上面的引用、坐标均为示例，不能直接用于当前设备。`--protect` 可重复最多三次，引用必须属于这次动作的同一观察；适合显式保护要保存的日期、数量、对象名称等。默认不会推断哪些业务字段重要。

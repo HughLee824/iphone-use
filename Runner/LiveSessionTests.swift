@@ -46,7 +46,7 @@ private final class CommandServer {
     let requests: AsyncStream<Request>
     private let continuation: AsyncStream<Request>.Continuation
     private let listener: NWListener
-    private let queue = DispatchQueue(label: "agentsoma.commands")
+    private let queue = DispatchQueue(label: "iphone-use.commands")
     private var connections: [NWConnection] = []
 
     init() throws {
@@ -54,16 +54,16 @@ private final class CommandServer {
         requests = AsyncStream { sink = $0 }
         continuation = sink
         let parameters = NWParameters.tcp
-        let host = ProcessInfo.processInfo.environment["AGENTSOMA_LISTEN_HOST"] ?? "127.0.0.1"
+        let host = ProcessInfo.processInfo.environment["IPHONE_USE_LISTEN_HOST"] ?? "127.0.0.1"
         guard host == "127.0.0.1" || (IPv6Address(host) != nil && host != "::") else {
             throw CommandError("invalid_listen_address")
         }
         parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(host), port: 47821)
         listener = try NWListener(using: parameters)
         listener.stateUpdateHandler = { [weak self] state in
-            if case .ready = state { print("AGENTSOMA_LIVE_READY host=\(host) port=47821") }
+            if case .ready = state { print("IPHONE_USE_LIVE_READY host=\(host) port=47821") }
             if case .failed(let error) = state {
-                print("AGENTSOMA_LISTENER_FAILED \(error)")
+                print("IPHONE_USE_LISTENER_FAILED \(error)")
                 self?.continuation.finish()
             }
         }
@@ -133,8 +133,8 @@ final class LiveSessionTests: XCTestCase {
 
     @MainActor
     func testCommandSession() async throws {
-        guard let token = ProcessInfo.processInfo.environment["AGENTSOMA_SESSION_TOKEN"], token.count >= 32 else {
-            throw XCTSkip("Start through agentsoma connect to enable the command session", file: #fileID)
+        guard let token = ProcessInfo.processInfo.environment["IPHONE_USE_SESSION_TOKEN"], token.count >= 32 else {
+            throw XCTSkip("Start through iphone-use connect to enable the command session", file: #fileID)
         }
         continueAfterFailure = true
         let server = try CommandServer()
@@ -142,7 +142,7 @@ final class LiveSessionTests: XCTestCase {
         let started = ProcessInfo.processInfo.systemUptime
         var sequence = 0
         var didShutdown = false
-        let hostManaged = ProcessInfo.processInfo.environment["AGENTSOMA_HOST_MANAGED"] == "1"
+        let hostManaged = ProcessInfo.processInfo.environment["IPHONE_USE_HOST_MANAGED"] == "1"
         let expiry: Task<Void, Never>? = hostManaged ? nil : Task {
             try? await Task.sleep(nanoseconds: 900_000_000_000)
             if !Task.isCancelled { server.stop() }
@@ -195,7 +195,7 @@ final class LiveSessionTests: XCTestCase {
             }
             response["runnerMs"] = (ProcessInfo.processInfo.systemUptime - began) * 1000
             try await server.reply(response, to: request)
-            print("AGENTSOMA_COMMAND id=\(command["id"] ?? "missing") sequence=\(sequence) op=\(command["op"] ?? "missing") ok=\(response["ok"] ?? false) runnerMs=\(response["runnerMs"] ?? 0) beganUptime=\(began) repliedUptime=\(ProcessInfo.processInfo.systemUptime)")
+            print("IPHONE_USE_COMMAND id=\(command["id"] ?? "missing") sequence=\(sequence) op=\(command["op"] ?? "missing") ok=\(response["ok"] ?? false) runnerMs=\(response["runnerMs"] ?? 0) beganUptime=\(began) repliedUptime=\(ProcessInfo.processInfo.systemUptime)")
             if stopping { didShutdown = true; break }
         }
         XCTAssertTrue(didShutdown, "Session ended without an explicit shutdown command", file: #fileID)
@@ -205,7 +205,7 @@ final class LiveSessionTests: XCTestCase {
     private func execute(_ command: [String: Any]) async throws -> [String: Any] {
         let op = command["op"] as? String ?? ""
         if op == "ping" {
-            let hostManaged = ProcessInfo.processInfo.environment["AGENTSOMA_HOST_MANAGED"] == "1"
+            let hostManaged = ProcessInfo.processInfo.environment["IPHONE_USE_HOST_MANAGED"] == "1"
             return ["protocol": "agentsoma-spike-jsonl-v1", "lifecycleOwner": hostManaged ? "host" : "spike",
                     "lifetimeLimitSeconds": hostManaged ? NSNull() : 900, "observationVersion": 2,
                     "actionVersion": 5, "launchVersion": 1, "frameStabilityVersion": 1, "screenGuardVersion": 1,
@@ -261,7 +261,7 @@ final class LiveSessionTests: XCTestCase {
         // Idle may exceed this short budget during normal deceleration. Avoid synchronous
         // timeout diagnostics; the caller still checks XCTest errors and frame stability.
         XCTestDiagnostics.withoutAutomaticSpindump { stateTimeout.perform(body) }
-        print("AGENTSOMA_INPUT beganUptime=\(began) finishedUptime=\(ProcessInfo.processInfo.systemUptime)")
+        print("IPHONE_USE_INPUT beganUptime=\(began) finishedUptime=\(ProcessInfo.processInfo.systemUptime)")
         try checkIssues()       // Never continue a multi-primitive input after an XCTest failure.
     }
 

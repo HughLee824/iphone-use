@@ -1,7 +1,7 @@
 <h1>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/brand/agentsoma-wordmark-dark.svg">
-    <img src="assets/brand/agentsoma-wordmark.svg" alt="AgentSoma" width="420">
+    <img src="assets/brand/agentsoma-wordmark.svg" alt="iPhone-use" width="420">
   </picture>
 </h1>
 
@@ -9,23 +9,25 @@
 
 [English](README.md) · **简体中文**
 
-[![CI](https://github.com/HughLee824/AgentSoma/actions/workflows/ci.yml/badge.svg)](https://github.com/HughLee824/AgentSoma/actions/workflows/ci.yml)
+[![CI](https://github.com/HughLee824/iphone-use/actions/workflows/ci.yml/badge.svg)](https://github.com/HughLee824/iphone-use/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Swift](https://img.shields.io/badge/Swift-5.9%2B-F05138.svg)](Package.swift)
 
-AgentSoma 是一个 macOS CLI，让外部 agent 能够发现 App、读取截图与辅助功能数据，并操作连接的 iPhone。自然语言理解、任务规划和结果判断由调用 agent 负责；AgentSoma 通过持续运行的 XCTest 会话提供设备观察与动作能力。
+iPhone-use 是一个 macOS CLI，让外部 agent 能够发现 App、读取截图与辅助功能数据，并操作连接的 iPhone。自然语言理解、任务规划和结果判断由调用 agent 负责；iPhone-use 通过持续运行的 XCTest 会话提供设备观察与动作能力。
 
 调用 agent 需要具备本机命令执行和 PNG 读图能力。设备控制链路在你的 Mac 和 iPhone 上本地运行。
 
 [网站](https://agentsoma.dev) · [首个 iPhone 任务](docs/first-task.md) · [客户端插件](docs/plugins.md) · [命令概览](#命令概览) · [文档导航](#文档导航)
 
+当前源码已完成 AgentSoma → iPhone-use 本地改名，远端仓库、Tap、官网和插件发布尚未切换。现有 Logo 按要求保留，详见[改名与升级说明](docs/rename-to-iphone-use.md)。
+
 ## 控制模式（当前源码，尚未发布）
 
-当前源码提供 **standard**（截图 + 原生 HID）和 **runner**（XCTest）两种模式。用 `agentsoma config set mode standard` 或 `runner` 设置默认，再运行 `agentsoma connect --device "$DEVICE"`；单次覆盖使用 `--mode standard|runner`。偏好保存在 `~/.agentsoma/config.json`，原有 `--backend` 和签名 `--xctestrun` 用法保持兼容。新用户默认 standard，有效的旧 Runner 配置迁移为 runner；修改偏好不会改变已有会话。
+当前源码提供 **standard**（截图 + 原生 HID）和 **runner**（XCTest）两种模式。用 `iphone-use config set mode standard` 或 `runner` 设置默认，再运行 `iphone-use connect --device "$DEVICE"`；单次覆盖使用 `--mode standard|runner`。偏好保存在 `~/.iphone-use/config.json`，原有 `--backend` 和签名 `--xctestrun` 用法保持兼容。新用户默认 standard，有效的旧 Runner 配置迁移为 runner；修改偏好不会改变已有会话。
 
 标准模式目前仍要求已记录的 macOS/Xcode/iOS 27 环境、配对、Developer Mode 和解锁，但不需要 Runner 签名。Runner 后续逐步对齐功能，当前以会话返回的支持能力和就绪状态为准。详见[模式配置、迁移与 Agent 规则](docs/control-modes.md)。下方安装与签名引导描述已有 **Runner** 发布流程，不是标准模式的前置步骤。
 
-## 为什么选择 AgentSoma？
+## 为什么选择 iPhone-use？
 
 - **同时观察画面与界面结构。** 观察返回 PNG 路径、紧凑的辅助功能（AX）文本和元素引用，可用 `inspect` 展开或搜索缓存快照。
 - **操作真实 App。** 发现已安装 App、切换前台、点击、滑动、拖动、编辑文本，以及发送 Return。
@@ -54,13 +56,13 @@ AgentSoma 是一个 macOS CLI，让外部 agent 能够发现 App、读取截图�
 #### 从源码运行
 
 ```sh
-git clone https://github.com/HughLee824/AgentSoma.git
-cd AgentSoma
+git clone https://github.com/HughLee824/iphone-use.git
+cd iphone-use
 swift build
 export PATH="$PWD/.build/debug:$PATH"
 
-agentsoma --help
-agentsoma devices
+iphone-use --help
+iphone-use devices
 ```
 
 先在 Xcode 中完成[源码签名配置](docs/onboarding.md#源码开发入口)，再填写自己的开发团队 ID 和 `devices` 返回的设备 ID：
@@ -69,32 +71,32 @@ agentsoma devices
 export APPLE_TEAM_ID="YOUR_TEAM_ID"
 export IOS_UDID="DEVICE_ID_FROM_DEVICES"
 
-agentsoma build-runner --team "$APPLE_TEAM_ID"
+iphone-use build-runner --team "$APPLE_TEAM_ID"
 
 # 使用 build-runner 成功响应中的 result.xctestrun。
 export SIGNED_XCTESTRUN="/absolute/path/from/build-runner.xctestrun"
-agentsoma connect --device "$IOS_UDID" --xctestrun "$SIGNED_XCTESTRUN"
+iphone-use connect --device "$IOS_UDID" --xctestrun "$SIGNED_XCTESTRUN"
 ```
 
 `build-runner` 使用仓库内的独立 Xcode 工程构建并校验已签名 Runner。兼容的构建可供后续连接复用；修改 Runner、共享源码、Xcode 或签名配置后需要重新构建。
 
 #### 使用发布包
 
-分发流程面向 **Apple Silicon / macOS 15+**。可用安装包以 [GitHub Releases](https://github.com/HughLee824/AgentSoma/releases) 为准。稳定版 Release 发布且 Tap formula 更新后，可运行：
+分发流程面向 **Apple Silicon / macOS 15+**。可用安装包以 [GitHub Releases](https://github.com/HughLee824/iphone-use/releases) 为准。稳定版 Release 发布且 Tap formula 更新后，可运行：
 
 ```sh
-brew install HughLee824/tap/agentsoma
-agentsoma --version
+brew install HughLee824/tap/iphone-use
+iphone-use --version
 ```
 
-也可以从 [GitHub Releases](https://github.com/HughLee824/AgentSoma/releases) 下载归档及配套 SHA-256 文件，校验后保留完整包目录。手动安装、升级和卸载步骤见[安装说明](docs/install.md)。
+也可以从 [GitHub Releases](https://github.com/HughLee824/iphone-use/releases) 下载归档及配套 SHA-256 文件，校验后保留完整包目录。手动安装、升级和卸载步骤见[安装说明](docs/install.md)。
 
 ```sh
-agentsoma devices
+iphone-use devices
 export IOS_UDID="DEVICE_ID_FROM_DEVICES"
 
-agentsoma setup --device "$IOS_UDID"
-agentsoma connect --device "$IOS_UDID"
+iphone-use setup --device "$IOS_UDID"
+iphone-use connect --device "$IOS_UDID"
 ```
 
 `setup` 在本机重签预编译 Runner，验证设备握手、截图采集及正常退出后保存准备状态。它不编译源码、不登录 Apple，也不创建证书或 profile。需要明确签名选择时，可使用 `--profile`、`--team` 或 `--identity`，详见[首次接入](docs/onboarding.md)。
@@ -106,32 +108,32 @@ agentsoma connect --device "$IOS_UDID"
 ```sh
 export SESSION="SESSION_FROM_CONNECT"
 
-agentsoma --session "$SESSION" status
-agentsoma --session "$SESSION" apps --query Settings
-agentsoma --session "$SESSION" open com.apple.Preferences
-agentsoma --session "$SESSION" observe
+iphone-use --session "$SESSION" status
+iphone-use --session "$SESSION" apps --query Settings
+iphone-use --session "$SESSION" open com.apple.Preferences
+iphone-use --session "$SESSION" observe
 ```
 
 读取返回的 `screenshot` 路径对应的 PNG，并结合 AX 文本判断界面。下方 ID 仅为示例，须替换为本次观察中实际返回的引用。
 
 ```sh
 # 搜索已采集的快照，或直接查看已知元素。
-agentsoma --session "$SESSION" inspect o1 --query General
-agentsoma --session "$SESSION" inspect o1:e9
+iphone-use --session "$SESSION" inspect o1 --query General
+iphone-use --session "$SESSION" inspect o1:e9
 
 # 使用当前有效引用操作，再次观察并核对结果。
-agentsoma --session "$SESSION" tap o1:e9
-agentsoma --session "$SESSION" observe
+iphone-use --session "$SESSION" tap o1:e9
+iphone-use --session "$SESSION" observe
 
 # 完成后释放会话。
-agentsoma --session "$SESSION" disconnect
+iphone-use --session "$SESSION" disconnect
 ```
 
 基本循环是 **observe → 读取截图 → 按需 inspect → 执行动作 → 再次 observe**。动作完成不代表 agent 的业务任务已经成功。
 
 ## 命令概览
 
-使用 `agentsoma --help` 或 `agentsoma <command> --help` 查看全部参数。会话命令采用 `agentsoma --session "$SESSION" <command>`。
+使用 `iphone-use --help` 或 `iphone-use <command> --help` 查看全部参数。会话命令采用 `iphone-use --session "$SESSION" <command>`。
 
 | 命令 | 用途 |
 | --- | --- |
@@ -154,25 +156,25 @@ agentsoma --session "$SESSION" disconnect
 
 ## Agent 接入约定
 
-推荐从项目自有公开 Git marketplace 安装自包含 [AgentSoma 插件](plugins/agentsoma/README.md)：
+推荐从项目自有公开 Git marketplace 安装自包含 [iPhone-use 插件](plugins/iphone-use/README.md)：
 
 ```sh
 # Codex：命令名已核对 CLI 0.146.0
-codex plugin marketplace add HughLee824/AgentSoma
-codex plugin add agentsoma@agentsoma
+codex plugin marketplace add HughLee824/iphone-use
+codex plugin add iphone-use@iphone-use
 
 # Claude Code
-claude plugin marketplace add HughLee824/AgentSoma
-claude plugin install agentsoma@agentsoma
+claude plugin marketplace add HughLee824/iphone-use
+claude plugin install iphone-use@iphone-use
 ```
 
-在新会话中分别调用 Codex 的 `$agentsoma:agentsoma` 或 Claude Code 的 `/agentsoma:agentsoma`。插件共用设备规则，包含只读前置检查、[Codex 模板](skills/agentsoma/references/codex-calls.md)及 [Claude Code Bash/Read 指引](skills/agentsoma/references/claude-code.md)。它不安装 CLI 或准备签名。Xcode、setup、首个任务和升级步骤见[插件指南](docs/plugins.md)与[完整首次任务路径](docs/first-task.md)。自有 marketplace 分发不代表已进入官方目录。
+在新会话中分别调用 Codex 的 `$iphone-use:iphone-use` 或 Claude Code 的 `/iphone-use:iphone-use`。插件共用设备规则，包含只读前置检查、[Codex 模板](skills/iphone-use/references/codex-calls.md)及 [Claude Code Bash/Read 指引](skills/iphone-use/references/claude-code.md)。它不安装 CLI 或准备签名。Xcode、setup、首个任务和升级步骤见[插件指南](docs/plugins.md)与[完整首次任务路径](docs/first-task.md)。自有 marketplace 分发不代表已进入官方目录。
 
-仍支持手动将完整 `skills/agentsoma` 复制到客户端 skill 目录（Codex 为 `$CODEX_HOME/skills`，未设置时为 `~/.codex/skills`），在新任务中调用 `$agentsoma`。同时安装了两种形式时，用插件的命名空间调用避免混淆。明确选择源码流程时，前置检查支持 `--source`，连接使用已提供的签名 `.xctestrun`。
+仍支持手动将完整 `skills/iphone-use` 复制到客户端 skill 目录（Codex 为 `$CODEX_HOME/skills`，未设置时为 `~/.codex/skills`），在新任务中调用 `$iphone-use`。同时安装了两种形式时，用插件的命名空间调用避免混淆。明确选择源码流程时，前置检查支持 `--source`，连接使用已提供的签名 `.xctestrun`。
 
 在 `open/tap/swipe/type/press` 后添加 `--observe`，即可返回包含独立 `action` 与 `observation` 回执的单个 JSON。两者均成功才退出 0；观察失败不会覆盖动作结果或重放输入。明确未派发且无需刷新时跳过观察。客户端顺序调用既有协议，兼容旧宿主，但不在两次请求之间独占设备。读取 `observation.result.text` 和其中的 `screenshot` 后再选择下一动作。详见[契约与示例](docs/actions.md#动作后观察)。
 
-先通过已安装命令的 `--help` 确认是否支持 `--observe`；旧 CLI 可使用 skill 中保留的[动作与观察回退模板](skills/agentsoma/references/action-observation.md)。
+先通过已安装命令的 `--help` 确认是否支持 `--observe`；旧 CLI 可使用 skill 中保留的[动作与观察回退模板](skills/iphone-use/references/action-observation.md)。
 
 `observe` 和 `inspect` 成功时输出多行文本；其他结果及运行时错误为单行 JSON。成功退出码为 `0`，运行失败为 `1`。参数语法错误输出到 stderr，并以非零状态退出。
 
@@ -191,7 +193,7 @@ claude plugin install agentsoma@agentsoma
 - **动作后更新观察。** App 或设备动作完成、结果为 unknown 后，旧引用失效；检测到目标或上下文变化时也可能失效。动作结果截图不包含新 AX 引用，下一次按引用操作前需要 `observe`。
 - **搜索已有快照。** `inspect --query` 先搜索全部已采集节点，再分页输出。它不会补采缺失数据，也不会恢复旧引用的有效性。
 - **实际读取图片。** stdout 中的路径不会自动成为视觉输入，agent 必须通过自己的读图工具打开 PNG。
-- **跟踪命令完成状态。** 如果命令工具返回后台任务 ID，须使用该工具的续读机制获取原命令的退出码和输出。这个 ID 与 AgentSoma 的设备 `session` 不同。
+- **跟踪命令完成状态。** 如果命令工具返回后台任务 ID，须使用该工具的续读机制获取原命令的退出码和输出。这个 ID 与 iPhone-use 的设备 `session` 不同。
 - **保留守卫默认值。** 画面变化阈值比较输入前画面与观察时画面，预计的滚动或动画幅度不是放宽理由。
 - **结束后释放会话。** 默认空闲时限为 30 分钟，`status` 不续期，已接收或执行中的命令不会被空闲回收打断。断开或到期后删除 socket 和观察缓存。
 
@@ -201,7 +203,7 @@ claude plugin install agentsoma@agentsoma
 
 ```mermaid
 flowchart LR
-    Agent[外部 AI agent] --> CLI[agentsoma CLI]
+    Agent[外部 AI agent] --> CLI[iphone-use CLI]
     CLI <-->|Unix socket| Host[Mac 上的 Swift 会话宿主]
     Host <-->|CoreDevice IPv6| Runner[iPhone 上的 XCTest Runner]
     Runner <--> Apps[iPhone App]
@@ -209,12 +211,12 @@ flowchart LR
 
 `connect` 启动宿主，并通过 Xcode 的 `test-without-building` 安装和启动 Runner，在两端均可响应后返回。宿主在各次 CLI 调用之间持有 XCTest 会话，串行处理设备请求、缓存观察并管理清理，无需单独启动服务。
 
-会话文件默认位于 `/private/tmp/agentsoma-<uid>`，目录权限为 `0700`，可通过 `AGENTSOMA_STATE_DIR` 更换路径。发布包 Runner 的准备状态位于 `~/Library/Application Support/AgentSoma`。签名私钥留在 Keychain，设备 token 仅保存在宿主内存和 XCTest 子进程环境中。
+会话文件默认位于 `/private/tmp/agentsoma-<uid>`，目录权限为 `0700`，可通过 `IPHONE_USE_STATE_DIR` 更换路径。发布包 Runner 的准备状态位于 `~/Library/Application Support/iphone-use`。签名私钥留在 Keychain，设备 token 仅保存在宿主内存和 XCTest 子进程环境中。
 
 | 目录 | 职责 |
 | --- | --- |
-| [`Sources/AgentSoma`](Sources/AgentSoma) | CLI 命令与参数解析。 |
-| [`Sources/AgentSomaCore`](Sources/AgentSomaCore) | 会话、通信、观察、动作、签名和设备发现。 |
+| [`Sources/IPhoneUse`](Sources/IPhoneUse) | CLI 命令与参数解析。 |
+| [`Sources/IPhoneUseCore`](Sources/IPhoneUseCore) | 会话、通信、观察、动作、签名和设备发现。 |
 | [`Runner`](Runner) | 薄 iOS XCTest Runner 与独立 Xcode 工程。 |
 | [`Tests`](Tests) | 宿主行为与设备契约的 Swift 测试，以及脱敏测试数据。 |
 | [`scripts`](scripts) / [`packaging`](packaging) | 发布打包、校验与 Homebrew 工具。 |
@@ -222,7 +224,7 @@ flowchart LR
 
 ## 当前限制
 
-AgentSoma 处于早期开发阶段。真机验收覆盖上述实测环境，不代表所有 Mac、Xcode、iOS 版本或 App 均受支持。
+iPhone-use 处于早期开发阶段。真机验收覆盖上述实测环境，不代表所有 Mac、Xcode、iOS 版本或 App 均受支持。
 
 - Swift 包目标为 macOS 13+，发布 Runner 的 iOS 编译下限为 17。这些是构建下限，不是完整链路的支持承诺。二进制分发面向 Apple Silicon / macOS 15+。
 - 需要完整 Xcode 和本机开发签名。全新 Mac 接入及免费 Personal Team 的首次 provisioning、续签尚未验收。Mac CLI 使用 ad-hoc 签名，当前发布流程未包含 Developer ID 签名和公证。
@@ -247,7 +249,7 @@ AgentSoma 处于早期开发阶段。真机验收覆盖上述实测环境，不�
 
 ## 参与贡献
 
-欢迎提交 issue、聚焦的 pull request 和可复现的设备问题报告。较大改动建议先通过 [issue](https://github.com/HughLee824/AgentSoma/issues) 讨论范围。
+欢迎提交 issue、聚焦的 pull request 和可复现的设备问题报告。较大改动建议先通过 [issue](https://github.com/HughLee824/iphone-use/issues) 讨论范围。
 
 提交前运行与 [CI](.github/workflows/ci.yml) 一致的检查：
 
@@ -258,7 +260,7 @@ node --test scripts/tests/test_agent_templates.mjs
 python3 scripts/sync-plugin.py --check
 ```
 
-Python 3.9+ 仅用于发布工具和开发测试，不是已安装 CLI 的运行依赖。按上述顺序执行：CLI 集成测试使用 Swift 构建生成的 `.build/debug/agentsoma`，缺失时会跳过。唯一 Swift 包依赖为 [Swift ArgumentParser](https://github.com/apple/swift-argument-parser/tree/1.5.0)，锁定版本 `1.5.0`。
+Python 3.9+ 仅用于发布工具和开发测试，不是已安装 CLI 的运行依赖。按上述顺序执行：CLI 集成测试使用 Swift 构建生成的 `.build/debug/iphone-use`，缺失时会跳过。唯一 Swift 包依赖为 [Swift ArgumentParser](https://github.com/apple/swift-argument-parser/tree/1.5.0)，锁定版本 `1.5.0`。
 
 CI 使用 Node.js 22+ 将文档中的调用模板用于受控工具响应；Node 仅为开发测试所需。修改 canonical skill 后运行 `python3 scripts/sync-plugin.py` 更新包内副本；发布变更时同步提升两份插件清单版本。CI 还会无签名编译 Runner，并打包插件供审阅。官网源码、测试和 Cloudflare 部署独立维护于 [agentsoma-website](https://github.com/HughLee824/agentsoma-website)。具体命令和真机验收要求见[公开接入发布检查](docs/public-access-release.md)。
 
@@ -266,4 +268,4 @@ CI 没有真实 iPhone。涉及设备行为的改动还需重新构建 Runner，
 
 ## 许可证
 
-[MIT](LICENSE) © AgentSoma contributors。
+[MIT](LICENSE) © iPhone-use contributors。

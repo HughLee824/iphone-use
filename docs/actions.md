@@ -1,10 +1,10 @@
 # 设备动作与引用校验
 
-当前提供按引用或明确坐标的画面校验点击/滑动，以及按输入框引用的光标插入、整段替换和独立 Return；文本可从参数或 stdin 读取。用户或调用 agent 负责选择动作并观察结果；AgentSoma 不解释自然语言任务。
+当前提供按引用或明确坐标的画面校验点击/滑动，以及按输入框引用的光标插入、整段替换和独立 Return；文本可从参数或 stdin 读取。用户或调用 agent 负责选择动作并观察结果；iPhone-use 不解释自然语言任务。
 
 ## 实验性原生文字输入
 
-推荐先执行 `agentsoma --session "$SESSION" text-prepare`：显式注册本会话的自有键盘，使旧观察失效并附带新截图。该操作不要求输入框引用、不聚焦、不发送按键、不访问剪贴板。检查新图后，再点击目标字段并用新观察确认焦点。已准备的键盘不会重复创建；每次显式 prepare 仍返回新图。原有 type 的按需准备行为保留，未显式准备时仍可能因软键盘收起而拒绝旧截图。
+推荐先执行 `iphone-use --session "$SESSION" text-prepare`：显式注册本会话的自有键盘，使旧观察失效并附带新截图。该操作不要求输入框引用、不聚焦、不发送按键、不访问剪贴板。检查新图后，再点击目标字段并用新观察确认焦点。已准备的键盘不会重复创建；每次显式 prepare 仍返回新图。原有 type 的按需准备行为保留，未显式准备时仍可能因软键盘收起而拒绝旧截图。
 
 `text-prepare` 的 `keyboardPrepared` 和 `inputReportsSent=0` 描述服务准备事实，不证明焦点；截图失败时命令返回非零并保留准备结果，需要另行 observe。注册结果不确定时保留键盘状态和清理要求，不自动重复注册。仅适用于 apple-native，旧宿主拒绝未知命令。
 
@@ -33,16 +33,16 @@ Unicode 输入会读取并在内存中备份设备通用剪贴板，写入整段
 下面的会话和引用需要替换为实际返回值，每次派发动作后重新 observe。
 
 ```sh
-agentsoma --session "$SESSION" tap o4:e10
-agentsoma --session "$SESSION" swipe o5:e18 --direction up
-agentsoma --session "$SESSION" type o6:e8 --mode insert --text '北京'
-agentsoma --session "$SESSION" type o7:e8 --mode replace --text '完整的新内容'
-agentsoma --session "$SESSION" type o8:e8 --mode replace --text ''
-agentsoma --session "$SESSION" type o9:e8 --mode replace --stdin < text.txt
-agentsoma --session "$SESSION" press o10:e8 --key return
-agentsoma --session "$SESSION" tap o11 --x 100 --y 200
-agentsoma --session "$SESSION" swipe o12 --from-x 100 --from-y 420 --to-x 100 --to-y 380
-agentsoma --session "$SESSION" tap o13:e10 --protect o13:e20
+iphone-use --session "$SESSION" tap o4:e10
+iphone-use --session "$SESSION" swipe o5:e18 --direction up
+iphone-use --session "$SESSION" type o6:e8 --mode insert --text '北京'
+iphone-use --session "$SESSION" type o7:e8 --mode replace --text '完整的新内容'
+iphone-use --session "$SESSION" type o8:e8 --mode replace --text ''
+iphone-use --session "$SESSION" type o9:e8 --mode replace --stdin < text.txt
+iphone-use --session "$SESSION" press o10:e8 --key return
+iphone-use --session "$SESSION" tap o11 --x 100 --y 200
+iphone-use --session "$SESSION" swipe o12 --from-x 100 --from-y 420 --to-x 100 --to-y 380
+iphone-use --session "$SESSION" tap o13:e10 --protect o13:e20
 ```
 
 - tap 元素用完整 `oN:eN`。点坐标形式用 `oN --x --y`，单位为屏幕点；不是 PNG 像素，不能同时指定元素引用。点击范围限制在当前已确认的 App 或弹窗内。
@@ -58,9 +58,9 @@ agentsoma --session "$SESSION" tap o13:e10 --protect o13:e20
 `open/tap/swipe/type/press` 均接受可选 `--observe`，例如：
 
 ```sh
-agentsoma --session "$SESSION" open com.example.app --observe
-agentsoma --session "$SESSION" tap o1:e10 --observe
-agentsoma --session "$SESSION" type o2:e8 --mode replace --text '新内容' --observe
+iphone-use --session "$SESSION" open com.example.app --observe
+iphone-use --session "$SESSION" tap o1:e10 --observe
+iphone-use --session "$SESSION" type o2:e8 --mode replace --text '新内容' --observe
 ```
 
 每条命令只执行一个已选择的动作，再根据回执调用一次既有 `observe`。返回单行 JSON：
@@ -93,16 +93,16 @@ agentsoma --session "$SESSION" type o2:e8 --mode replace --text '新内容' --ob
 
 ```sh
 # 滚轮微调：降低速度，到达终点后短暂停留，再抬手。
-agentsoma --session "$SESSION" swipe o12 \
+iphone-use --session "$SESSION" swipe o12 \
   --from-x 98 --from-y 385 --to-x 98 --to-y 337 \
   --velocity 100 --hold-duration 0.2
-agentsoma --session "$SESSION" observe
+iphone-use --session "$SESSION" observe
 
 # 已重新观察的事件块：先按住，再慢速移动。
-agentsoma --session "$SESSION" swipe o13 \
+iphone-use --session "$SESSION" swipe o13 \
   --from-x 110 --from-y 536 --to-x 110 --to-y 561 \
   --velocity 100 --press-duration 0.5 --hold-duration 0.2
-agentsoma --session "$SESSION" observe
+iphone-use --session "$SESSION" observe
 ```
 
 上述参数是试验起点，尚未证明能让任意 App 的滚轮恰好移动一格。到达目标附近时优先使用明确端点；方向形式移动可见区域的 60%，可能跨多格，降低速度不会缩短距离。例如可见高度 240 点、行距 48 点的滚轮，方向滑动的手指位移为 144 点，约三个行距。
@@ -147,7 +147,7 @@ Runner 没有跨请求观察缓存、短引用、续期计时或任务策略。�
 进入会话的动作结果均为单行 JSON，并保留请求 ID 和 session。stdin 的读取、编码或字节上限错误在 CLI 创建请求前返回 `session`、`ok=false`、`outcome=not_dispatched` 和 error，此时没有请求 ID；带 `--observe` 时同样跳过采集。文本源选择等语法错误继续由 ArgumentParser 输出到 stderr 并非零退出。
 
 ```json
-{"id":"example-request","session":"example-session","ok":true,"outcome":"completed","result":{"kind":"tap","execution":{"started":true,"inputCompleted":true,"completed":true},"screenGuard":{"algorithm":"srgb-grid-v1","accepted":true,"screenChange":0,"regionChanges":[0],"maxScreenChange":0.01,"maxRegionChange":0,"pixelTolerance":8},"stability":{"stable":true,"samples":4,"consecutiveFrames":4,"stableForMs":563,"elapsedMs":750,"hash":"example-sha256","algorithm":"sha256-rgba8-srgb","sampleIntervalMs":200,"requiredStableMs":400,"timeoutMs":5000},"frame":{"screenshot":"/private/tmp/agentsoma-501/example-session/observations/action/screen.png","hash":"example-sha256","capturedAt":1788608247.676,"width":1170,"height":2532},"runnerMs":3634}}
+{"id":"example-request","session":"example-session","ok":true,"outcome":"completed","result":{"kind":"tap","execution":{"started":true,"inputCompleted":true,"completed":true},"screenGuard":{"algorithm":"srgb-grid-v1","accepted":true,"screenChange":0,"regionChanges":[0],"maxScreenChange":0.01,"maxRegionChange":0,"pixelTolerance":8},"stability":{"stable":true,"samples":4,"consecutiveFrames":4,"stableForMs":563,"elapsedMs":750,"hash":"example-sha256","algorithm":"sha256-rgba8-srgb","sampleIntervalMs":200,"requiredStableMs":400,"timeoutMs":5000},"frame":{"screenshot":"/private/tmp/iphone-use-501/example-session/observations/action/screen.png","hash":"example-sha256","capturedAt":1788608247.676,"width":1170,"height":2532},"runnerMs":3634}}
 ```
 
 | outcome | 判定 | 引用处理 |
@@ -168,7 +168,7 @@ Runner 在每个输入原语调用期间，将 XCTest application-state 等待�
 
 XCTest 的命令错误经 Runner 转成响应；不再把已经返回给调用方的正常运行时错误一并算作 Runner 整个持续会话的 XCTest 失败。会话外的测试断言和异常结束仍由 XCTest 记录。
 
-无焦点的 typeText 本轮确实发生了 XCTest 内部重试，最终没有写入文字。AgentSoma 的宿主与 Runner 不重新调用结果未知的动作，但单次调用不构成 Apple 内部严格只发送一次底层事件的保证。请求 ID 同样不是去重承诺。
+无焦点的 typeText 本轮确实发生了 XCTest 内部重试，最终没有写入文字。iPhone-use 的宿主与 Runner 不重新调用结果未知的动作，但单次调用不构成 Apple 内部严格只发送一次底层事件的保证。请求 ID 同样不是去重承诺。
 
 ## 兼容性与验证边界
 
@@ -200,7 +200,7 @@ XCTest 的命令错误经 Runner 转成响应；不再把已经返回给调用�
 
 ## 原生双击
 
-`agentsoma --session SESSION double-tap oN --x X --y Y --observe` 在当前截图的一点执行两次按下/释放，仅用于 `apple-native`。坐标为原 PNG 对应的屏幕点，支持竖屏和左右横屏；沿用 tap 的触点邻域、全屏检查及观察/设备/会话绑定。没有元素双击、任意连点次数或间隔配置；现有 XCTest 路径不变。
+`iphone-use --session SESSION double-tap oN --x X --y Y --observe` 在当前截图的一点执行两次按下/释放，仅用于 `apple-native`。坐标为原 PNG 对应的屏幕点，支持竖屏和左右横屏；沿用 tap 的触点邻域、全屏检查及观察/设备/会话绑定。没有元素双击、任意连点次数或间隔配置；现有 XCTest 路径不变。
 
 整个序列属于一个动作，发送前做一次截图预检，两次点击之间不采集截图。每次按下后保持至少 60ms、第一次释放后等待至少 100ms；第二次按下必须在动作起始 300ms 内开始，整个序列受 600ms 执行期限约束。宿主调度和传输可能增加间隔；错过窗口就停止，不把迟到的第二次点击补发成独立点击。持续检查取消和媒体健康，失败时沿用同通道触点释放。
 
@@ -209,7 +209,7 @@ XCTest 的命令错误经 Runner 转成响应；不再把已经返回给调用�
 ## 原生双指缩放
 
 ```sh
-agentsoma --session "$SESSION" pinch oN --x 195 --y 350 \
+iphone-use --session "$SESSION" pinch oN --x 195 --y 350 \
   --from-distance 80 --to-distance 200 --duration 0.5 --observe
 ```
 
@@ -225,8 +225,8 @@ agentsoma --session "$SESSION" pinch oN --x 195 --y 350 \
 ## 原生 App 生命周期
 
 ```bash
-agentsoma --session "$SESSION" terminate com.example.probe --observe
-agentsoma --session "$SESSION" relaunch com.example.probe --observe
+iphone-use --session "$SESSION" terminate com.example.probe --observe
+iphone-use --session "$SESSION" relaunch com.example.probe --observe
 ```
 
 仅适用于 `apple-native`，bundle ID 来自 `apps`；不是坐标动作，无需引用旧截图。操作串行执行，使先前观察失效；成功或可能执行后，在同一设备工作队列内附加新截图。`--observe` 沿用动作与截图分开的响应，截图失败不丢失进程事实、不重放命令。现有 `open` 保留启动/激活语义，XCTest 拒绝新增命令。
