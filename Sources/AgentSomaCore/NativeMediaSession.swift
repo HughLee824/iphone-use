@@ -83,6 +83,9 @@ final class NativeRTPReceiver: NativeMediaReceiver {
     private var reportInterval: TimeInterval?
     private let now: () -> TimeInterval
     private var failed: String?
+    private var videoHandler: ((Data) -> Void)?
+    private var videoConfiguration: [String: Any] = [:]
+    private var videoClock = NativeRTPClock()
 
     init(deviceAddress: String, now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) throws {
         self.now = now
@@ -136,6 +139,7 @@ final class NativeRTPReceiver: NativeMediaReceiver {
             throw SomaError("native_media_unsupported", "Unsupported media/RTCP configuration")
         }
         queue.sync {
+            videoConfiguration = configuration
             peer.sin6_port = UInt16(sourcePort.intValue).bigEndian
             expectedSSRC = remote.uint32Value; localSSRC = local.uint32Value
             reportInterval = interval
@@ -163,7 +167,9 @@ final class NativeRTPReceiver: NativeMediaReceiver {
             if (192...223).contains(bytes[1]) {
                 incomingReports += 1; lastIncomingReport = now()
                 switch NativeRTCPReport.parse(Array(bytes.prefix(count)), expectedSSRC: expectedSSRC) {
-                case .report: validatedReports += 1; lastValidatedReport = now()
+                case .report:
+                    validatedReports += 1; lastValidatedReport = now()
+                    videoClock.receive(Data(bytes.prefix(count)), ssrc: expectedSSRC)
                 case .goodbye: peerEnded = true
                 case nil: rejectedDatagrams += 1
                 }
@@ -177,9 +183,31 @@ final class NativeRTPReceiver: NativeMediaReceiver {
             if received == 0 { highest = sequence }
             else if delta > 0 { highest &+= UInt32(delta) }
             received += 1; lastPacket = now()
+            videoHandler?(Data(bytes.prefix(count)))
         }
     }
-    private func feedback() {
+    // The handler must only enqueue bounded work; it runs on the RTP/RTCP queue.
+    func setVideoHandler(_ handler: ((Data) -> Void)?) { queue.sync { videoHandler = handler } }
+    func recordingConfiguration() -> [String: Any] {
+        queue.sync {
+            var result = videoConfiguration
+            result["RTPClockRate"] = videoClock.rate
+            return result
+        }
+    }
+    func requestKeyframe() {
+        queue.async { [self] in
+            guard socketFD >= 0, let expectedSSRC else { return }
+            // RFC 4585 PLI on the existing owned RTP/RTCP socket. No stream restart.
+            var packet = Data([0x81, 206, 0, 2])
+            for value in [localSSRC, expectedSSRC] {
+                var big = value.bigEndian; withUnsafeBytes(of: &big) { packet.append(contentsOf: $0) }
+            }
+            feedback(extra: packet)
+        }
+    }
+
+    private func feedback(extra: Data = Data()) {
         guard socketFD >= 0, let expectedSSRC else { return }
         var packet = Data([0x81, 201, 0, 7])
         func append(_ value: UInt32) { var big = value.bigEndian; withUnsafeBytes(of: &big) { packet.append(contentsOf: $0) } }
@@ -191,7 +219,7 @@ final class NativeRTPReceiver: NativeMediaReceiver {
         sdes.append(contentsOf: [1, UInt8(cname.count)]); sdes.append(contentsOf: cname); sdes.append(0)
         while sdes.count % 4 != 0 { sdes.append(0) }
         let words = UInt16(sdes.count / 4 - 1); sdes[2] = UInt8(words >> 8); sdes[3] = UInt8(words & 255)
-        packet.append(sdes)
+        packet.append(sdes); packet.append(extra)
         lastReportAttempt = now()
         let sent = packet.withUnsafeBytes { bytes in
             withUnsafePointer(to: &peer) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
@@ -232,7 +260,7 @@ final class NativeRTPReceiver: NativeMediaReceiver {
         }
     }
     func close() {
-        let finish = { self.timer?.cancel(); self.timer = nil; self.reader?.cancel(); self.reader = nil; self.socketFD = -1 }
+        let finish = { self.videoHandler = nil; self.timer?.cancel(); self.timer = nil; self.reader?.cancel(); self.reader = nil; self.socketFD = -1 }
         if DispatchQueue.getSpecific(key: queueKey) == true { finish() } else { queue.sync(execute: finish) }
     }
     deinit { close() }
@@ -281,6 +309,7 @@ final class NativeMediaSession {
             try receiver.configure(config)
         } catch { _ = close(); throw error }
     }
+    var recordingReceiver: NativeRTPReceiver? { receiver as? NativeRTPReceiver }
     func health() -> [String: Any] {
         var result = receiver.health()
         result["displayConnection"] = client.transport.diagnostics

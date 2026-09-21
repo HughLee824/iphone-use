@@ -104,7 +104,7 @@ final class SessionHost {
         if operation == "record-start" || operation == "record-stop" {
             do {
                 guard config.backend == "apple-native" else { throw SomaError("native_action_unsupported", "Recording applies only to apple-native") }
-                if operation == "record-start" { _ = try NativeScreenRecording.duration(request) }
+                if operation == "record-start" { _ = try NativeRecordingOptions.duration(request) }
                 else if UUID(uuidString: request["recordingID"] as? String ?? "") == nil {
                     throw SomaError("invalid_recording_id", "Use the recording ID returned by record-start or status")
                 }
@@ -183,7 +183,7 @@ final class SessionHost {
                 case "record-start":
                     observations.invalidate("recording_started")
                     response["requiresObservation"] = true
-                    response["result"] = try backend.startRecording(duration: NativeScreenRecording.duration(request))
+                    response["result"] = try backend.startRecording(duration: NativeRecordingOptions.duration(request))
                     effective = true
                 case "record-stop":
                     observations.invalidate("recording_stopped")

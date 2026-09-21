@@ -111,7 +111,7 @@ final class AppleDeviceBackend: SessionBackend {
     private var controlErrorCode: String?
     private var cleanupFacts: [String: Any] = [:]
     private var stopped = false
-    private var recording: NativeScreenRecording?
+    private var recording: NativeStreamRecording?
     private var recordingSupported = false
 
     private let makeHID: (NativeTransport, NativeCancellation) -> NativeHIDAdapter
@@ -124,7 +124,7 @@ final class AppleDeviceBackend: SessionBackend {
     }
     func start() throws -> [String: Any] {
         let details = try CoreDevice.read(["device", "info", "details", "--device", config.device])
-        recordingSupported = NativeScreenRecording.supported(by: details)
+        recordingSupported = NativeRecordingOptions.supported(by: details)
         guard let hardware = details["hardwareProperties"] as? [String: Any], hardware["reality"] as? String == "physical",
               let udid = hardware["udid"] as? String,
               let properties = details["deviceProperties"] as? [String: Any], properties["developerModeStatus"] as? String == "enabled",
@@ -135,7 +135,7 @@ final class AppleDeviceBackend: SessionBackend {
         }
         deviceLock = try DeviceLock(root: paths.directory.deletingLastPathComponent(), device: udid)
         cli = AppleDeviceCLI(device: udid, cancellation: cancellation)
-        recording = NativeScreenRecording(root: paths.directory.appendingPathComponent("recordings"), device: udid)
+        recording = NativeStreamRecording(root: paths.directory.appendingPathComponent("recordings"))
         do {
             guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 27,
                   (properties["osVersionNumber"] as? String)?.hasPrefix("27.") == true else {
@@ -190,17 +190,16 @@ final class AppleDeviceBackend: SessionBackend {
     func status() throws -> [String: Any] {
         guard !stopped else { throw SomaError("backend_unavailable", "Native session closed") }
         let health = media?.health() ?? [:]
+        let streamRecordingSupported = media?.recordingReceiver.map { NativeStreamRecording.supports($0.recordingConfiguration()) } ?? false
         let hidState = hid?.state
         let closing = cancellation.isCancelled
         let control = NativeControlStatus.resolve(hid: hidState, media: health, closing: closing,
                                                    startupCode: controlErrorCode, startupError: controlError)
         var result: [String: Any] = ["backend": "apple-native", "sessionGeneration": generation, "deviceID": cli?.device ?? config.device,
                 "recording": recording?.status() ?? ["state": "idle"],
-                "recordingSupport": ["supported": recordingSupported, "source": "apple_device_capabilities",
-                    "featureIdentifier": "com.apple.coredevice.feature.screenrecording",
-                    "errorCode": recordingSupported ? NSNull() : "native_recording_unsupported" as Any,
-                    "coexistenceValidation": "unverified_on_supported_device"],
-                "capabilities": ["recording": recordingSupported, "screenshot": true, "tap": control.available, "ax": false, "swipe": control.available,
+                "recordingSupport": ["supported": streamRecordingSupported, "source": "owned_native_rtp",
+                    "appleCLIAvailable": recordingSupported, "codec": "hevc", "method": "native_rtp"],
+                "capabilities": ["recording": streamRecordingSupported && control.available, "screenshot": true, "tap": control.available, "ax": false, "swipe": control.available,
                     "pinch": control.available, "doubleTap": control.available, "longPress": control.available, "home": control.available && buttonError == nil,
                     "text": control.available && hid?.canType == true, "press": control.available && hid?.canType == true],
                 "systemButtons": ["servicePrepared": buttonTransport != nil, "error": buttonError as Any? ?? NSNull()],
@@ -245,7 +244,7 @@ final class AppleDeviceBackend: SessionBackend {
             // a failed display rebind cannot silently return an unsafe image.
             if self.controlError == nil {
                 if self.recording?.isActive == true, self.media?.matchesDisplay(display) == false {
-                    throw SomaError("recording_display_changed", "Stop the recording before rebinding control media after a display change; no input was sent")
+                    self.recording?.endSegment(reason: "display_changed")
                 }
                 try self.media?.ensureDisplay(display, mayReplace: self.hid?.state == .ready)
             }
@@ -468,14 +467,21 @@ final class AppleDeviceBackend: SessionBackend {
     func startRecording(duration: Double) throws -> [String: Any] {
         guard let cli, let recording, !stopped else { throw SomaError("backend_unavailable", "Native backend not started") }
         try cancellation.check()
-        guard recordingSupported else {
-            throw SomaError("native_recording_unsupported", "Apple device capabilities do not advertise Screen Recording; no recording process was started")
+        guard let receiver = media?.recordingReceiver, let mediaID = media?.health()["mediaSessionID"] as? String,
+              media?.health()["healthy"] as? Bool == true, hid?.state == .ready else {
+            throw SomaError("native_recording_unavailable", "Need a healthy owned native media session and ready HID")
         }
         guard try cli.read(["device", "info", "lockState"])["passcodeRequired"] as? Bool == false else {
             throw SomaError("device_locked", "Unlock the device before recording")
         }
-        guard try cli.display().backlightOn else { throw SomaError("capture_unavailable", "Wake the display before recording") }
-        return try recording.start(duration: duration)
+        let display = try cli.display()
+        guard display.backlightOn else { throw SomaError("capture_unavailable", "Wake the display before recording") }
+        guard media?.matchesDisplay(display) == true else { throw SomaError("stale_observation", "Observe the changed display before starting recording") }
+        let deadline = ProcessInfo.processInfo.systemUptime + 3
+        while receiver.recordingConfiguration()["RTPClockRate"] == nil, ProcessInfo.processInfo.systemUptime < deadline {
+            try cancellation.check(); Thread.sleep(forTimeInterval: 0.05)
+        }
+        return try recording.start(duration: duration, receiver: receiver, mediaID: mediaID, rotation: display.rotation)
     }
     func stopRecording(id: String) throws -> [String: Any] {
         guard let recording else { throw SomaError("backend_unavailable", "Native backend not started") }

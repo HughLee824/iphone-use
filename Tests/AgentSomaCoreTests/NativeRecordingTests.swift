@@ -3,119 +3,49 @@ import AVFoundation
 import CoreVideo
 @testable import AgentSomaCore
 
+private final class RecordingSource: NativeRecordingSource {
+    private let lock = NSLock()
+    private var handler: ((Data) -> Void)?
+    var configuration: [String: Any] = ["RxPayloadType": 100, "TilesPerFrame": 1, "SRTPCipherSuite": 0, "RTPClockRate": Int32(24000), "LocalSSRC": 123]
+    private(set) var keyframeRequests = 0
+    func recordingConfiguration() -> [String: Any] { configuration }
+    func setVideoHandler(_ handler: ((Data) -> Void)?) { lock.lock(); self.handler = handler; lock.unlock() }
+    func requestKeyframe() { keyframeRequests += 1 }
+    func health() -> [String: Any] { ["healthy": true] }
+    var attached: Bool { lock.lock(); defer { lock.unlock() }; return handler != nil }
+    func send(_ data: Data) { lock.lock(); let callback = handler; lock.unlock(); callback?(data) }
+}
+
 final class NativeRecordingTests: XCTestCase {
     func testCapabilityAndDurationFailClosed() throws {
-        XCTAssertFalse(NativeScreenRecording.supported(by: [:]))
-        XCTAssertFalse(NativeScreenRecording.supported(by: ["capabilities": [["featureIdentifier": "com.apple.coredevice.feature.capturescreenshot"]]]))
-        XCTAssertTrue(NativeScreenRecording.supported(by: ["capabilities": [["featureIdentifier": "com.apple.coredevice.feature.screenrecording"]]]))
+        XCTAssertFalse(NativeRecordingOptions.supported(by: [:]))
+        XCTAssertTrue(NativeRecordingOptions.supported(by: ["capabilities": [["featureIdentifier": "com.apple.coredevice.feature.screenrecording"]]]))
         for value: Any in [true, 0, -1, 301, Double.infinity, "5"] {
-            XCTAssertThrowsError(try NativeScreenRecording.duration(["duration": value]))
+            XCTAssertThrowsError(try NativeRecordingOptions.duration(["duration": value]))
         }
-        XCTAssertEqual(try NativeScreenRecording.duration(["duration": 5]), 5)
+        XCTAssertEqual(try NativeRecordingOptions.duration(["duration": 5]), 5)
+        let source = RecordingSource()
+        XCTAssertTrue(NativeStreamRecording.supports(source.configuration))
+        source.configuration["TilesPerFrame"] = 2
+        XCTAssertFalse(NativeStreamRecording.supports(source.configuration))
     }
-
     private func root() throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("recording-test-\(UUID().uuidString)")
         try SessionPaths.secureDirectory(root)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         return root
     }
-
-    private func recorder(root: URL, script: String, grace: Double = 1,
-                          validate: @escaping (URL) throws -> [String: Any] = { _ in ["decodedFrames": 2] }) -> NativeScreenRecording {
-        NativeScreenRecording(root: root, device: "test-device", grace: grace, configure: { process, movie, _, report in
-            process.executableURL = URL(fileURLWithPath: "/bin/sh")
-            process.arguments = ["-c", script, "recording-test", movie.path, report.path]
-        }, validate: validate)
-    }
-
-    private func complete(_ recorder: NativeScreenRecording, timeout: Double = 5) throws -> [String: Any] {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            let value = recorder.status()
-            if ["completed", "failed"].contains(value["state"] as? String ?? "") { return value }
-            Thread.sleep(forTimeInterval: 0.02)
-        }
-        XCTFail("Recording did not terminate")
-        return recorder.status()
-    }
-
-    func testTimedCompletionPreservesArtifactsAndDoesNotEquateExitWithVideo() throws {
-        let dir = try root()
-        let recorder = recorder(root: dir, script: "printf invalid > \"$1\"", validate: NativeRecordingValidation.inspect)
-        defer { _ = recorder.close() }
-        let started = try recorder.start(duration: 2)
-        XCTAssertEqual(started["fileValidated"] as? Bool, false)
-        let result = try complete(recorder)
-        XCTAssertEqual(result["state"] as? String, "failed")
-        XCTAssertEqual(result["exitCode"] as? Int32, 0)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: started["path"] as! String))
-        XCTAssertEqual(try recorder.stop(id: started["recordingID"] as! String)["state"] as? String, "failed")
-    }
-
-    func testOwnedStopIsIdempotentAndCannotStopNewRecording() throws {
-        let dir = try root()
-        let recorder = recorder(root: dir, script: "trap 'exit 0' INT; while :; do sleep 0.1; done")
-        defer { _ = recorder.close() }
-        let first = try recorder.start(duration: 30)
-        Thread.sleep(forTimeInterval: 0.15) // Allow the host fixture to install its signal handler.
-        XCTAssertThrowsError(try recorder.start(duration: 30))
-        XCTAssertThrowsError(try recorder.stop(id: UUID().uuidString))
-        let stopped = try recorder.stop(id: first["recordingID"] as! String)
-        XCTAssertEqual(stopped["state"] as? String, "completed")
-        XCTAssertEqual(stopped["forced"] as? Bool, false)
-        let second = try recorder.start(duration: 30)
-        Thread.sleep(forTimeInterval: 0.15)
-        XCTAssertNotEqual(first["recordingID"] as? String, second["recordingID"] as? String)
-        _ = try recorder.stop(id: first["recordingID"] as! String)
-        XCTAssertTrue(recorder.isActive)
-        XCTAssertEqual(recorder.status()["recordingID"] as? String, second["recordingID"] as? String)
-        let cleanup = recorder.close()
-        XCTAssertEqual(cleanup["recordingProcessExited"] as? Bool, true)
-        XCTAssertEqual((cleanup["recording"] as? [String: Any])?["stopReason"] as? String, "session_closed")
-        XCTAssertThrowsError(try recorder.start(duration: 1))
-    }
-
-    func testForcedExitNeverClaimsCompleteEvenWithDecodableArtifact() throws {
-        let recorder = recorder(root: try root(), script: "trap '' INT TERM; while :; do sleep 0.1; done", grace: 0.1)
-        let start = try recorder.start(duration: 30)
-        Thread.sleep(forTimeInterval: 0.15)
-        let result = try recorder.stop(id: start["recordingID"] as! String)
-        XCTAssertEqual(result["state"] as? String, "failed")
-        XCTAssertEqual(result["forced"] as? Bool, true)
-        XCTAssertEqual(result["processExited"] as? Bool, true)
-        XCTAssertEqual(recorder.close()["recordingProcessExited"] as? Bool, true)
-    }
-
-    func testPrematureNaturalCompletionIsNotAcceptedForLongRecording() throws {
-        let recorder = recorder(root: try root(), script: "exit 0", validate: { _ in ["durationSeconds": 1.0, "decodedFrames": 10] })
-        defer { _ = recorder.close() }
-        _ = try recorder.start(duration: 30)
-        let result = try complete(recorder)
-        XCTAssertEqual(result["state"] as? String, "failed")
-        XCTAssertEqual((result["error"] as? [String: Any])?["code"] as? String, "recording_duration_mismatch")
-    }
-
-    func testAppleUnsupportedFailureIsReportedWithoutRetry() throws {
-        let recorder = recorder(root: try root(), script: """
-        printf '%s' '{"error":{"code":1001,"domain":"com.apple.dt.CoreDeviceError","userInfo":{"CapabilityFeatureIdentifier":{"string":"com.apple.coredevice.feature.screenrecording"}}}}' > "$2"
-        exit 1
-        """)
-        defer { _ = recorder.close() }
-        let start = try recorder.start(duration: 1)
-        let result = try complete(recorder)
-        XCTAssertEqual((result["error"] as? [String: Any])?["code"] as? String, "native_recording_unsupported")
-        _ = try recorder.stop(id: start["recordingID"] as! String)
-        XCTAssertEqual(recorder.status()["recordingID"] as? String, start["recordingID"] as? String)
-    }
-
-    func testCompleteMovieIsDecodedAndTruncationRejected() throws {
-        let dir = try root(), url = dir.appendingPathComponent("fixture.mp4")
+    // Generate actual HEVC with Apple's encoder, including inter-frame samples.
+    // No captured device data or third-party codec fixture is needed.
+    private func fixture(_ root: URL) throws -> [NativeVideoAccessUnit] {
+        let url = root.appendingPathComponent("fixture.mp4")
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 64, AVVideoHeightKey: 64])
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [AVVideoCodecKey: AVVideoCodecType.hevc,
+            AVVideoWidthKey: 64, AVVideoHeightKey: 64,
+            AVVideoCompressionPropertiesKey: [AVVideoAllowFrameReorderingKey: false, AVVideoMaxKeyFrameIntervalKey: 10]])
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey as String: 64, kCVPixelBufferHeightKey as String: 64])
         writer.add(input); XCTAssertTrue(writer.startWriting()); writer.startSession(atSourceTime: .zero)
-        for frame in 0..<10 {
+        for frame in 0..<20 {
             let deadline = Date().addingTimeInterval(2)
             while !input.isReadyForMoreMediaData, Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
             XCTAssertTrue(input.isReadyForMoreMediaData)
@@ -123,7 +53,7 @@ final class NativeRecordingTests: XCTestCase {
             XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 64, 64, kCVPixelFormatType_32BGRA, nil, &buffer), kCVReturnSuccess)
             let pixels = try XCTUnwrap(buffer)
             CVPixelBufferLockBaseAddress(pixels, [])
-            memset(CVPixelBufferGetBaseAddress(pixels), Int32(frame * 20), CVPixelBufferGetBytesPerRow(pixels) * 64)
+            memset(CVPixelBufferGetBaseAddress(pixels), Int32(frame * 10), CVPixelBufferGetBytesPerRow(pixels) * 64)
             CVPixelBufferUnlockBaseAddress(pixels, [])
             XCTAssertTrue(adaptor.append(pixels, withPresentationTime: CMTime(value: Int64(frame), timescale: 10)))
         }
@@ -131,21 +61,127 @@ final class NativeRecordingTests: XCTestCase {
         let finished = expectation(description: "movie finished")
         writer.finishWriting { finished.fulfill() }; wait(for: [finished], timeout: 5)
         XCTAssertEqual(writer.status, .completed)
+        let asset = AVURLAsset(url: url)
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: asset.tracks(withMediaType: .video)[0], outputSettings: nil)
+        reader.add(output); XCTAssertTrue(reader.startReading())
+        var units: [NativeVideoAccessUnit] = []
+        while let sample = output.copyNextSampleBuffer() {
+            if CMSampleBufferGetNumSamples(sample) == 0 { continue }
+            let format = try XCTUnwrap(CMSampleBufferGetFormatDescription(sample))
+            var nals: [Data] = []
+            for index in 0..<3 {
+                var pointer: UnsafePointer<UInt8>?, size = 0
+                XCTAssertEqual(CMVideoFormatDescriptionGetHEVCParameterSetAtIndex(format, parameterSetIndex: index,
+                    parameterSetPointerOut: &pointer, parameterSetSizeOut: &size, parameterSetCountOut: nil, nalUnitHeaderLengthOut: nil), noErr)
+                nals.append(Data(bytes: try XCTUnwrap(pointer), count: size))
+            }
+            let block = try XCTUnwrap(CMSampleBufferGetDataBuffer(sample))
+            var bytes = [UInt8](repeating: 0, count: CMBlockBufferGetDataLength(block))
+            XCTAssertEqual(CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: bytes.count, destination: &bytes), noErr)
+            var offset = 0
+            while offset < bytes.count {
+                let length = bytes[offset..<offset+4].reduce(0) { $0 << 8 | Int($1) }; offset += 4
+                nals.append(Data(bytes[offset..<offset+length])); offset += length
+            }
+            let sync = nals.contains { [19,20].contains(Int(($0[0] >> 1) & 63)) }
+            units.append(NativeVideoAccessUnit(timestamp: UInt32(units.count * 2400), nals: nals, keyframe: sync))
+        }
+        XCTAssertEqual(reader.status, .completed); XCTAssertEqual(units.count, 20)
+        XCTAssertTrue(units[0].keyframe); XCTAssertFalse(units[1].keyframe)
+        return units
+    }
+    private func packets(_ units: [NativeVideoAccessUnit], to source: RecordingSource, omitMarkerAt: UInt32? = nil) {
+        var sequence: UInt16 = 1
+        for unit in units {
+            for (index, nal) in unit.nals.enumerated() {
+                var packet = Data([0x80, index == unit.nals.count - 1 && unit.timestamp != omitMarkerAt ? 0xe4 : 0x64, UInt8(sequence >> 8), UInt8(sequence & 255)])
+                for value in [unit.timestamp, UInt32(123)] { var big = value.bigEndian; withUnsafeBytes(of: &big) { packet.append(contentsOf: $0) } }
+                packet.append(nal); source.send(packet); sequence &+= 1
+            }
+        }
+    }
+    func testHEVCMuxKeepsSyncIndexAndSupportsRandomSeek() throws {
+        let dir = try root(), units = try fixture(dir), url = dir.appendingPathComponent("remux.mp4")
+        let writer = NativeVideoWriter(url: url, timescale: 24000)
+        for unit in units { try writer.append(unit) }
+        try writer.finish()
         let result = try NativeRecordingValidation.inspect(url)
-        XCTAssertEqual(result["decodedFrames"] as? Int, 10)
-        XCTAssertEqual(result["width"] as? Int, 64)
-        let recorder = NativeScreenRecording(root: dir.appendingPathComponent("owned"), device: "fixture", configure: { process, movie, _, _ in
-            process.executableURL = URL(fileURLWithPath: "/bin/cp")
-            process.arguments = [url.path, movie.path]
-        })
-        defer { _ = recorder.close() }
-        _ = try recorder.start(duration: 1)
-        let completed = try complete(recorder)
-        XCTAssertEqual(completed["state"] as? String, "completed")
-        XCTAssertEqual(completed["fileValidated"] as? Bool, true)
-        XCTAssertEqual((completed["video"] as? [String: Any])?["decodedFrames"] as? Int, 10)
+        XCTAssertEqual(result["decodedFrames"] as? Int, units.count)
+        XCTAssertEqual(result["durationSeconds"] as! Double, 1.916666, accuracy: 0.001)
+        let asset = AVURLAsset(url: url)
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: asset.tracks(withMediaType: .video)[0], outputSettings: nil)
+        reader.add(output); XCTAssertTrue(reader.startReading())
+        var index = 0
+        while let sample = output.copyNextSampleBuffer() {
+            if CMSampleBufferGetNumSamples(sample) == 0 { continue }
+            let attachments = try XCTUnwrap(CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false) as? [[String: Any]])
+            let notSync = attachments.first?[kCMSampleAttachmentKey_NotSync as String] as? Bool ?? false
+            XCTAssertEqual(notSync, !units[index].keyframe, "sample \(index)")
+            index += 1
+        }
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.requestedTimeToleranceBefore = .zero; generator.requestedTimeToleranceAfter = .zero
+        let image = try generator.copyCGImage(at: CMTime(value: 18, timescale: 10), actualTime: nil)
+        XCTAssertEqual(image.width, 64)
         let broken = dir.appendingPathComponent("truncated.mp4")
         try Data(contentsOf: url).prefix(100).write(to: broken)
         XCTAssertThrowsError(try NativeRecordingValidation.inspect(broken))
+    }
+    func testOwnedStopCannotStopNewRecordingAndCloseDetachesSink() throws {
+        let dir = try root(), units = try fixture(dir), source = RecordingSource()
+        let recorder = NativeStreamRecording(root: dir.appendingPathComponent("owned"))
+        defer { _ = recorder.close() }
+        let first = try recorder.start(duration: 30, receiver: source, mediaID: "owned", rotation: "rot0")
+        XCTAssertTrue(source.attached); XCTAssertGreaterThan(source.keyframeRequests, 0)
+        XCTAssertThrowsError(try recorder.start(duration: 30, receiver: source, mediaID: "owned", rotation: "rot0"))
+        XCTAssertThrowsError(try recorder.stop(id: "foreign"))
+        packets(units, to: source)
+        let stopped = try recorder.stop(id: first["recordingID"] as! String)
+        XCTAssertEqual(stopped["state"] as? String, "completed")
+        XCTAssertEqual(stopped["writtenFrames"] as? Int, 20)
+        XCTAssertFalse(source.attached)
+        let second = try recorder.start(duration: 30, receiver: source, mediaID: "owned", rotation: "rot0")
+        _ = try recorder.stop(id: first["recordingID"] as! String)
+        XCTAssertTrue(source.attached); XCTAssertTrue(recorder.isActive)
+        packets(units, to: source)
+        recorder.endSegment(reason: "display_changed")
+        XCTAssertEqual(recorder.status()["state"] as? String, "completed")
+        XCTAssertEqual(recorder.status()["stopReason"] as? String, "display_changed")
+        XCTAssertEqual(recorder.status()["recordingID"] as? String, second["recordingID"] as? String)
+        _ = try recorder.start(duration: 30, receiver: source, mediaID: "owned", rotation: "rot90")
+        packets(units, to: source)
+        let cleanup = recorder.close()
+        XCTAssertFalse(source.attached)
+        XCTAssertEqual((cleanup["recording"] as? [String: Any])?["state"] as? String, "completed")
+        XCTAssertEqual((cleanup["recording"] as? [String: Any])?["stopReason"] as? String, "session_closed")
+        XCTAssertThrowsError(try recorder.start(duration: 1, receiver: source, mediaID: "owned", rotation: "rot0"))
+    }
+    func testMissingEndOfFramePreservesPartialFileButCannotClaimCompletion() throws {
+        let dir = try root(), units = try fixture(dir), source = RecordingSource()
+        let recorder = NativeStreamRecording(root: dir.appendingPathComponent("loss"))
+        defer { _ = recorder.close() }
+        let start = try recorder.start(duration: 30, receiver: source, mediaID: "owned", rotation: "rot0")
+        packets(units, to: source, omitMarkerAt: units[1].timestamp)
+        let result = try recorder.stop(id: start["recordingID"] as! String)
+        XCTAssertEqual(result["state"] as? String, "failed")
+        XCTAssertEqual((result["error"] as? [String: Any])?["code"] as? String, "recording_incomplete")
+        XCTAssertNotNil(result["video"])
+        XCTAssertFalse(source.attached)
+    }
+    func testNoKeyframeNeverClaimsCompletedMovieAndClockIsRequired() throws {
+        let source = RecordingSource(), recorder = NativeStreamRecording(root: try root())
+        defer { _ = recorder.close() }
+        source.configuration["RTPClockRate"] = nil
+        XCTAssertThrowsError(try recorder.start(duration: 1, receiver: source, mediaID: "owned", rotation: "rot0"))
+        XCTAssertFalse(source.attached)
+        source.configuration["RTPClockRate"] = Int32(24000)
+        let start = try recorder.start(duration: 1, receiver: source, mediaID: "owned", rotation: "rot0")
+        let deadline = Date().addingTimeInterval(3)
+        while recorder.isActive, Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
+        let result = try recorder.stop(id: start["recordingID"] as! String)
+        XCTAssertEqual(result["state"] as? String, "failed"); XCTAssertFalse(source.attached)
+        XCTAssertEqual(result["fileValidated"] as? Bool, false)
     }
 }

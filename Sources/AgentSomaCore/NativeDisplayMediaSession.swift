@@ -28,6 +28,8 @@ final class NativeDisplayMediaSession {
         self.makeSession = makeSession; self.startSession = startSession
     }
 
+    var recordingReceiver: NativeRTPReceiver? { session?.recordingReceiver }
+
     func matchesDisplay(_ display: NativeDisplay) -> Bool { geometry == Geometry(display) }
 
     func ensureDisplay(_ display: NativeDisplay, mayReplace: Bool) throws {
