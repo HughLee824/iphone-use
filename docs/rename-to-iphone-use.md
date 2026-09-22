@@ -33,3 +33,12 @@ After accepting the local build:
 4. Update the independent website, links and later the approved Logo assets. No new domain is assumed.
 
 The GitHub/Tap/website and plugin rollout are separate from local code changes. Host tests, unsigned builds and relocatable archive checks do not establish signed installation or real-device control under the new bundle IDs.
+
+
+## Physical acceptance (2026-09-22)
+
+The signed products from commit `cbe37b5` were exercised on a paired wired iPhone 12 Pro / iOS 27.0, using macOS 27.0 and Xcode 27.0. Both renamed bundle IDs installed/launched. Explicit Runner opened the new Probe, tapped its sample and entered `头🙂尾`; the subsequent screenshot and element snapshot confirmed exact UTF-8 content. The type command nevertheless reported `frame_stability_timeout` after input, so its outcome remained unknown and was not replayed. Runner's whole-frame stability behavior remains an open limitation, not a proven rename regression.
+
+Explicit standard mode connected without starting Runner, used a screenshot-bound coordinate tap and owned clipboard/HID paste, and produced the same exact Probe result with one edit. The source-anchored caret fade exception admitted the input. Ownership-checked clipboard restoration completed. A preceding expired-observation tap was rejected before dispatch; a new action was chosen only after inspecting its returned current screenshot.
+
+Standard → Runner → standard reconnect/observe/shutdown completed with distinct sessions and native media ownership. All owned host/xcodebuild processes were independently confirmed absent after cleanup. No default mode change, implicit fallback, `stopAll`, unknown-input replay or publication occurred. An earlier native RemoteXPC startup failure did not recur, but its cause remains unproven. This is a controlled smoke test, not all-feature regression coverage. Detailed commands, screenshots, failed attempts and cleanup evidence are local under `.local/research/iphone-use-device-20260922/RESULT.md`; raw evidence is not committed.
