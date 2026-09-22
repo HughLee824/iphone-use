@@ -102,10 +102,6 @@ final class SessionHost {
                 return
             }
         }
-        if appLifecycle, config.backend != "apple-native" {
-            reject("native_action_unsupported", "terminate/relaunch apply only to apple-native")
-            return
-        }
         if operation == "apps" {
             guard let offset = request["offset"] as? Int, offset >= 0,
                   request["query"] == nil || request["query"] is String else {

@@ -16,9 +16,6 @@ struct DeviceAction {
     init(operation: String, request: [String: Any], allowScreenText: Bool = false) throws {
         guard Self.operations.contains(operation) else { throw IPhoneUseError("invalid_action", "Unknown device action") }
         kind = operation
-        if operation == "home", !allowScreenText {
-            throw IPhoneUseError("native_action_unsupported", "This action requires apple-native")
-        }
         if let method = request["textMethod"] {
             guard allowScreenText, operation == "type", let method = method as? String,
                   ["auto", "keys", "paste"].contains(method) else {
@@ -44,7 +41,7 @@ struct DeviceAction {
                 guard let value = Self.number(request[key]) else { throw IPhoneUseError("invalid_coordinates", "Supply every coordinate as a finite number of screen points") }
                 fields[key] = value
             }
-        } else if reference.node == nil && !(allowScreenText && ["type", "press", "home"].contains(operation)) {
+        } else if reference.node == nil && !(operation == "home" || (allowScreenText && ["type", "press"].contains(operation))) {
             throw IPhoneUseError("element_required", "Use an element reference such as o1:e2")
         }
         if operation == "swipe", coordinate {

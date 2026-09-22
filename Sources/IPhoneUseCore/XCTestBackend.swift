@@ -21,7 +21,7 @@ protocol SessionBackend: AnyObject {
 
 extension SessionBackend {
     func appLifecycle(bundle: String, relaunch: Bool) throws -> [String: Any] {
-        throw IPhoneUseError("native_action_unsupported", "terminate/relaunch apply only to apple-native")
+        throw IPhoneUseError("native_action_unsupported", "This backend does not implement terminate/relaunch")
     }
     func cancelCurrent() {}
     func startRecording(duration: Double) throws -> [String: Any] {
@@ -152,6 +152,39 @@ final class XCTestBackend: SessionBackend {
         return try ActionReply.decode(response)
     }
 
+    func appLifecycle(bundle: String, relaunch: Bool) throws -> [String: Any] {
+        try apps().requireInstalled(bundle)
+        let response = try request("app-lifecycle", fields: ["bundleId": bundle, "relaunch": relaunch])
+        return try Self.lifecycleResponse(response, bundle: bundle, relaunch: relaunch)
+    }
+
+    static func lifecycleResponse(_ response: [String: Any], bundle: String, relaunch: Bool) throws -> [String: Any] {
+        let facts = response["result"] as? [String: Any] ?? [:]
+        let execution = response["execution"] as? [String: Any] ?? [:]
+        guard response["ok"] as? Bool == true else {
+            var failure = response; var result = facts; result["execution"] = execution; failure["result"] = result
+            return try ActionReply.decode(failure)
+        }
+        // An already-stopped terminate is a verified no-op, with started=false.
+        // Do not manufacture an input event merely to satisfy ActionReply.
+        let alreadyStopped = facts["alreadyStopped"] as? Bool
+        let expectedMutation = relaunch || alreadyStopped == false
+        guard execution["started"] as? Bool == expectedMutation, execution["completed"] as? Bool == true,
+              alreadyStopped != nil, facts["bundleId"] as? String == bundle,
+              facts["operation"] as? String == (relaunch ? "relaunch" : "terminate"),
+              facts["stoppedConfirmed"] as? Bool == true,
+              facts["terminationRequested"] as? Bool == (alreadyStopped == false),
+              facts["terminationAcknowledged"] as? Bool == (alreadyStopped == false),
+              facts["launchRequested"] as? Bool == relaunch, facts["launchAcknowledged"] as? Bool == relaunch,
+              facts["foregroundConfirmed"] as? Bool == relaunch,
+              facts["appState"] as? Int == (relaunch ? 4 : 1) else {
+            throw ActionFailure(code: "missing_app_lifecycle_facts", description: "Runner did not confirm the requested lifecycle transition; observe without replay",
+                                possiblyExecuted: true, requiresObservation: true, result: facts)
+        }
+        var result = facts; result["execution"] = execution
+        return result
+    }
+
     func apps() throws -> AppCatalog {
         guard let deviceUDID else { throw IPhoneUseError("backend_unavailable", "Device is not connected") }
         return try AppCatalog(CoreDevice.read(["device", "info", "apps", "--device", deviceUDID, "--include-all-apps"]))
@@ -160,12 +193,12 @@ final class XCTestBackend: SessionBackend {
     func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any] {
         let response = try request("act", fields: Self.actionFields(action, target: target))
         return try ActionReply.decode(XCTestCapture.actionResponse(response, directory: paths.directory,
-            expectedGuard: target.gesture?.screenGuard, expectedMotion: target.gesture?.motion,
-            expectedPinch: target.gesture?.pinch, expectedPressDuration: action.fields["duration"] as? Double))
+            expectedGuard: target.gesture?.screenGuard ?? target.textGuard, expectedMotion: target.gesture?.motion,
+            expectedPinch: target.gesture?.pinch, expectedPressDuration: action.fields["duration"] as? Double, expectedHome: action.kind == "home"))
     }
 
     static func validateCapabilities(_ result: [String: Any]) throws {
-        let expected = ["observationVersion": 2, "actionVersion": 7, "launchVersion": 1, "frameStabilityVersion": 2, "screenGuardVersion": 1]
+        let expected = ["observationVersion": 2, "actionVersion": 8, "launchVersion": 2, "frameStabilityVersion": 2, "screenGuardVersion": 1]
         var differences = expected.keys.sorted().compactMap { key -> String? in
             let actual = result[key] as? Int
             return actual == expected[key] ? nil : "\(key): expected \(expected[key]!), received \(actual.map(String.init) ?? "missing")"
@@ -178,7 +211,10 @@ final class XCTestBackend: SessionBackend {
 
     static func actionFields(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any] {
         var fields: [String: Any]
-        if ["tap", "double-tap", "long-press", "pinch", "swipe"].contains(action.kind) {
+        if action.kind == "home" {
+            guard let screenGuard = target.textGuard else { throw IPhoneUseError("missing_screen_guard", "Home requires the current screenshot") }
+            fields = ["kind": "home", "screenGuard": try jsonObject(JSONEncoder().encode(screenGuard))]
+        } else if ["tap", "double-tap", "long-press", "pinch", "swipe"].contains(action.kind) {
             guard let gesture = target.gesture else { throw IPhoneUseError("missing_screen_guard", "Guarded coordinates are required") }
             try gesture.validate(kind: action.kind)
             fields = ["kind": action.kind, "gesture": try jsonObject(JSONEncoder().encode(gesture))]
@@ -186,7 +222,7 @@ final class XCTestBackend: SessionBackend {
         } else { fields = action.fields }
         fields["target"] = ["scope": target.context["scope"] ?? NSNull(),
             "bundleId": target.context["targetBundleId"] ?? NSNull()]
-        if target.gesture == nil {
+        if target.gesture == nil && action.kind != "home" {
             var expected = fields["target"] as! [String: Any]
             expected["path"] = target.path
             fields["target"] = expected

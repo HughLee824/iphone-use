@@ -63,8 +63,10 @@ Runner text now supports insert/replace/append. Append reconstructs a readable n
 
 Runner also implements screenshot-coordinate long-press, double-tap and pinch. Drag-and-drop uses swipe with an initial press duration. These actions keep screen guards and never establish a native control session; see [Runner gestures](runner-gestures.md).
 
+Runner supports `home oN`, `terminate BUNDLE` and `relaunch BUNDLE` through XCTest. Home confirms input completion; lifecycle commands confirm application state, not page readiness. Use `--observe` to check the result. See [Runner lifecycle](runner-app-lifecycle.md).
+
 ## Follow-up: feature parity
 
-Runner should progressively support the same user operations: the outstanding areas include additional gestures/system controls, text editing and keys, recording and app lifecycle operations. Keep backend-specific implementations and validate each before advertising support. Standard-mode code must not start Runner to fill a gap; Runner must not silently establish a native control session. Mode selection does not imply complete feature parity.
+Runner should progressively support the same user operations: the outstanding areas include additional gestures/system controls, text editing and keys, and recording. Keep backend-specific implementations and validate each before advertising support. Standard-mode code must not start Runner to fill a gap; Runner must not silently establish a native control session. Mode selection does not imply complete feature parity.
 
 See [rename and upgrade behavior](rename-to-iphone-use.md) for old configuration, active sessions and the new Runner bundle IDs.

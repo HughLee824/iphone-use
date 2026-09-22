@@ -4,7 +4,7 @@ import XCTest
 final class DeviceActionTests: XCTestCase {
     func testNativeHomeAndLongPressAdmission() throws {
         XCTAssertNoThrow(try DeviceAction(operation: "home", request: ["reference": "o1"], allowScreenText: true))
-        XCTAssertThrowsError(try DeviceAction(operation: "home", request: ["reference": "o1"]))
+        XCTAssertNoThrow(try DeviceAction(operation: "home", request: ["reference": "o1"]))
         for request: [String: Any] in [["reference": "o1:e1"], ["reference": "o1", "x": 1, "y": 2], ["reference": "o1", "fieldRect": "0,0,10,10"]] {
             XCTAssertThrowsError(try DeviceAction(operation: "home", request: request, allowScreenText: true))
         }

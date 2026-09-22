@@ -163,7 +163,7 @@ struct Open: ParsableCommand {
 }
 
 struct Terminate: ParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Native only: terminate the specified app's main process and confirm its absence. Unsaved app state may be lost.")
+    static let configuration = CommandConfiguration(abstract: "Terminate the specified app and confirm it has stopped. Unsaved app state may be lost.")
     @OptionGroup var options: SessionOptions
     @OptionGroup var observation: ActionObservationOptions
     @Argument(help: "Exact installed app bundle identifier returned by apps.") var bundleID: String
@@ -176,7 +176,7 @@ struct Terminate: ParsableCommand {
 }
 
 struct Relaunch: ParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Native only: confirm the app has stopped, launch it once and check its new PID. Inspect the screenshot for foreground readiness.")
+    static let configuration = CommandConfiguration(abstract: "Confirm the app has stopped, then launch it once. Inspect the screenshot for page readiness.")
     @OptionGroup var options: SessionOptions
     @OptionGroup var observation: ActionObservationOptions
     @Argument(help: "Exact installed app bundle identifier returned by apps. Unsaved app state may be lost.") var bundleID: String
@@ -317,7 +317,7 @@ struct LongPress: ParsableCommand {
 }
 
 struct Home: ParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Press and release Home after checking a current screenshot (apple-native).")
+    static let configuration = CommandConfiguration(abstract: "Press and release Home after checking a current screenshot.")
     @OptionGroup var options: SessionOptions
     @OptionGroup var observation: ActionObservationOptions
     @Argument(help: "Current screenshot observation ID.") var reference: String

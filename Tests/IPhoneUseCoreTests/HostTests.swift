@@ -113,11 +113,12 @@ final class HostTests: XCTestCase {
             let invalid = try call(paths, session: session, op: "terminate", fields: ["bundleId": "--pid 1"])
             XCTAssertEqual(invalid["outcome"] as? String, "not_dispatched")
             let result = try call(paths, session: session, op: "relaunch", fields: ["bundleId": "com.example.fixture"])
-            XCTAssertEqual(result["ok"] as? Bool, native)
-            XCTAssertEqual(backend.appLifecycleCount, native ? 1 : 0)
-            guard native else { continue }
-            XCTAssertEqual((result["observation"] as? [String: Any])?["ok"] as? Bool, true)
-            XCTAssertEqual((result["result"] as? [String: Any])?["afterObservationID"] as? String, "o2")
+            XCTAssertEqual(result["ok"] as? Bool, true)
+            XCTAssertEqual(backend.appLifecycleCount, 1)
+            if native {
+                XCTAssertEqual((result["observation"] as? [String: Any])?["ok"] as? Bool, true)
+                XCTAssertEqual((result["result"] as? [String: Any])?["afterObservationID"] as? String, "o2")
+            } else { _ = try call(paths, session: session, op: "observe") }
             let stale = try call(paths, session: session, op: "tap", fields: ["reference": "o1:e11"])
             XCTAssertEqual(stale["outcome"] as? String, "not_dispatched")
             backend.lifecycleFailure = ActionFailure(code: "native_app_process_changed", description: "Changed externally",
@@ -133,7 +134,7 @@ final class HostTests: XCTestCase {
             let uncertain = try call(paths, session: session, op: "terminate", fields: ["bundleId": "com.example.fixture"])
             XCTAssertEqual(uncertain["outcome"] as? String, "unknown")
             XCTAssertEqual((uncertain["result"] as? [String: Any])?["terminationAcknowledged"] as? Bool, true)
-            XCTAssertEqual((uncertain["observation"] as? [String: Any])?["ok"] as? Bool, false)
+            if native { XCTAssertEqual((uncertain["observation"] as? [String: Any])?["ok"] as? Bool, false) }
             XCTAssertEqual(backend.appLifecycleCount, 3)
         }
     }

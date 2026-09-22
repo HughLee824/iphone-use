@@ -142,7 +142,7 @@ iphone-use --session "$SESSION" observe
 
 App 内唯一 Alert 现在单独作为 `scope=appAlert` 采集，SpringBoard Alert 使用 `scope=systemAlert`。原来没有弹窗的观察不会被用于点击后来出现的弹窗。
 
-Runner 没有跨请求观察缓存、短引用、续期计时或任务策略。它处理当前请求的验证与 XCTest 调用，并在全部输入步骤结束后采帧判断稳定。它不等待业务状态成功；截图与 AX 的非原子采集限制继续成立。
+Runner 没有跨请求观察缓存、短引用、续期计时或任务策略。它处理当前请求的验证与 XCTest 调用；普通手势和文本输入在全部输入步骤结束后采帧判断稳定。它不等待业务状态成功；截图与 AX 的非原子采集限制继续成立。
 
 ## 执行结果
 
@@ -154,11 +154,11 @@ Runner 没有跨请求观察缓存、短引用、续期计时或任务策略。�
 
 | outcome | 判定 | 引用处理 |
 | --- | --- | --- |
-| completed | 本动作全部输入调用正常返回，且动作后画面达到容差稳定；不等于业务目标达成 | 旧引用失效，agent 再 observe |
+| completed | 普通手势/文本：全部输入调用正常返回且画面达到容差稳定。Home：按键完成。生命周期：目标状态已确认；均不等于业务目标达成 | 旧引用失效，agent 再 observe |
 | not_dispatched | 参数、引用或设备目标校验在任何输入 API 调用前拒绝 | 无其他失效原因时保留；若已发现目标或上下文变化则失效 |
 | unknown | 输入后未达到帧稳定、已进入输入 API 后出错、执行事实缺失/矛盾，或丢失响应 | 旧引用失效；不重发，agent 先 observe |
 
-每次调用可能发送输入的 API 前，Runner 标记 `execution.started`；任一步骤记录 XCTest 错误就停止，不再继续聚焦后的选区/删除/输入等剩余步骤。全部输入调用正常结束时标记 `execution.inputCompleted`，之后才开始检测帧稳定。App 打开继续使用启动/激活的 started/completed 事实，不纳入 act 的帧检测。
+每次调用可能发送输入的 API 前，Runner 标记 `execution.started`；任一步骤记录 XCTest 错误就停止，不再继续聚焦后的选区/删除/输入等剩余步骤。全部输入调用正常结束时标记 `execution.inputCompleted`，之后才开始检测帧稳定。App 打开和生命周期使用启动/激活/停止的执行及状态事实，不纳入 act 的帧检测。Home 也使用专用按键完成回执，不承诺目的画面静止。
 
 采帧间隔约 200ms，至少观察 1500ms，且连续至少 3 帧与同一候选帧等价、跨度至少 400ms 才报告完成。`yiq-local-caret-v1` 在全尺寸 sRGB 像素上允许小幅色差（Y/I/Q 各分量差不超过 2.5，RGB 每通道差不超过 4，alpha 必须相同）；不允许一定比例的明显变化，不降低分辨率，也不自动忽略抗锯齿边缘。单个超限像素也会重置窗口，因此局部文字变化不会被整屏平均分淹没。固定候选帧防止缓慢累计漂移。
 
@@ -178,7 +178,7 @@ XCTest 的命令错误经 Runner 转成响应；不再把已经返回给调用�
 
 ## 兼容性与验证边界
 
-当前设备协议为 `actionVersion=7`、`observationVersion=2`、`screenGuardVersion=1`、`frameStabilityVersion=2`。发布用户安装配套版本并重新 setup；源码开发者重新 build-runner，并使用新路径 connect。旧 Runner 不会静默忽略速度与停留参数或接受尚不支持的新文本模式和手势。
+当前设备协议为 `actionVersion=8`、`launchVersion=2`、`observationVersion=2`、`screenGuardVersion=1`、`frameStabilityVersion=2`。发布用户安装配套版本并重新 setup；源码开发者重新 build-runner，并使用新路径 connect。旧 Runner 不会静默忽略速度与停留参数或接受尚不支持的新文本模式和手势。
 
 本地测试覆盖输入校验、引用失效、执行事实、画面校验和帧稳定；真机兼容性以 [README 中的实测环境](../README.zh-CN.md#前置条件)为限。历史操作记录、截图和诊断日志仅保留在本地，不作为公开运行依赖。执行前检查不构成与 App 自行变化原子隔离的事务。
 
@@ -242,14 +242,16 @@ Runner 捏合使用自写 Objective-C 桥接 Apple XCTest 的事件合成对象�
 
 Runner 收到完成回执后仍须通过动作后判稳，宿主核对 pinch 距离、时长和坐标单位。提交后异常或等待超时为 unknown，阻止该 Runner 会话后续动作输入；可以 observe 后关闭自己的会话，不补发手势。完整抬手事件交给 XCTest 执行，不通过原生 HID 或全局清理关闭其他客户端。断线期间是否执行完毕不能仅凭宿主回执推断。
 
-## 原生 App 生命周期
+## App 生命周期
 
 ```bash
 iphone-use --session "$SESSION" terminate com.example.probe --observe
 iphone-use --session "$SESSION" relaunch com.example.probe --observe
 ```
 
-仅适用于 `apple-native`，bundle ID 来自 `apps`；不是坐标动作，无需引用旧截图。操作串行执行，使先前观察失效；成功或可能执行后，在同一设备工作队列内附加新截图。`--observe` 沿用动作与截图分开的响应，截图失败不丢失进程事实、不重放命令。现有 `open` 保留启动/激活语义，XCTest 拒绝新增命令。
+两种模式均支持，bundle ID 来自 `apps`；不是坐标动作，无需引用旧截图。操作串行执行，使先前观察失效。`--observe` 沿用动作与截图分开的响应，截图失败不丢失执行事实、不重放命令。现有 `open` 保留启动/激活语义。Runner 使用 XCTest terminate/launch，完成条件及真机范围见 [Runner 生命周期](runner-app-lifecycle.md)。
+
+下述 PID、Apple CLI、取消与剪贴板行为仅适用于 `apple-native`；该模式成功或可能执行后，在同一设备工作队列内附加新截图。
 
 `terminate` 将安装列表的精确 App 目录与进程可执行文件的直接父目录匹配；不按名称、子串匹配，不递归结束扩展或进程树。主进程候选必须唯一，PID/路径在发信号前再次核对。只发送一次 Apple 默认 SIGTERM，再有界查询确认旧进程消失；不升级 SIGKILL。已停止时返回 `alreadyStopped=true`、`terminationRequested=false`，不会发信号。未安装、身份不完整或匹配歧义在派发前拒绝。
 
@@ -258,3 +260,10 @@ iphone-use --session "$SESSION" relaunch com.example.probe --observe
 外部进程替换或 App 重装会中止后续步骤并要求新观察。超时、取消、读回失败或丢失回执发生在终止/启动尝试后，返回 unknown，保留部分事实，绝不自动重试或启动。读取使用短超时和整体期限；取消也传播到运行中的 Apple CLI 子进程。有待恢复的粘贴事务时，先看图并 `text-finish`，再执行生命周期命令；这里不会隐式恢复或丢弃剪贴板。
 
 Apple 终止接口只接受 PID，进程列表没有进程出生令牌，因此最后一次核对与发信号之间不能提供原子身份保证。功能保留这一限制，不宣称完全排除 PID 复用竞态。受控真机验收及边界见 [原生后端记录](apple-native-backend.md#native-app-lifecycle-2026-09-21)。
+
+
+## Runner Home
+
+`home oN --observe` 要求当前已知 App 或弹窗的截图观察，先检查 App/弹窗范围和整屏变化，再调用一次 XCTest Home 按下/释放。整屏和整屏保护区域均使用 1% 阈值。Home 成功回执只确认 `homePressCompleted=true`，保留 `homeScreenConfirmed=false`，不等待目的画面静止：主屏幕时钟等内容会持续更新。新截图仍由外部 Agent 核对，不把输入完成等同于主屏幕已确认。
+
+Home 后 Runner 清除当前 App 目标，观察可能为 `scope=unknown`、截图可用而 AX 不可用；用明确 bundle ID 的 open 恢复已知 App 目标。不会把主屏幕图标伪造成可操作引用。Home 的专用回执不改变其他 Runner 手势的动作后判稳。详见 [实现与验收](runner-app-lifecycle.md)。

@@ -122,6 +122,7 @@ final class LiveSessionTests: XCTestCase {
     private var executionStarted = false
     private var inputCompleted = false
     private var inputSessionUncertain = false
+    private var lifecycleFacts: [String: Any]?
     private let stateTimeout = XCTestStateTimeout()
     private var postInputTextField: ScreenRect?
     private var postInputContext: ScreenContext?
@@ -156,6 +157,7 @@ final class LiveSessionTests: XCTestCase {
             sequence += 1
             commandIssues = []
             handlingCommand = true
+            lifecycleFacts = nil
             executionStarted = false
             inputCompleted = false
             postInputTextField = nil
@@ -184,7 +186,8 @@ final class LiveSessionTests: XCTestCase {
                 response["requiresObservation"] = (error as? CommandError)?.requiresObservation ?? true
             }
             handlingCommand = false
-            if command["op"] as? String == "launch" {
+            if ["launch", "app-lifecycle"].contains(command["op"] as? String ?? "") {
+                if let lifecycleFacts { response["result"] = lifecycleFacts }
                 response["execution"] = ["started": executionStarted, "completed": response["ok"] as? Bool == true]
             }
             if command["op"] as? String == "act" {
@@ -216,7 +219,7 @@ final class LiveSessionTests: XCTestCase {
             let hostManaged = ProcessInfo.processInfo.environment["IPHONE_USE_HOST_MANAGED"] == "1"
             return ["protocol": "agentsoma-spike-jsonl-v1", "lifecycleOwner": hostManaged ? "host" : "spike",
                     "lifetimeLimitSeconds": hostManaged ? NSNull() : 900, "observationVersion": 2,
-                    "actionVersion": 7, "launchVersion": 1, "frameStabilityVersion": 2, "screenGuardVersion": 1,
+                    "actionVersion": 8, "launchVersion": 2, "frameStabilityVersion": 2, "screenGuardVersion": 1,
                     "applicationStateTimeoutSupported": stateTimeout != nil]
         }
         if op == "shutdown" { return ["stopped": true] }
@@ -233,6 +236,7 @@ final class LiveSessionTests: XCTestCase {
             currentBundleID = bundle
             return ["bundleId": bundle, "appState": app.state.rawValue]
         }
+        if op == "app-lifecycle" { return try appLifecycle(command) }
         if op == "observe" {
             let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
             let alerts = springboard.alerts
@@ -252,8 +256,53 @@ final class LiveSessionTests: XCTestCase {
         guard op == "act" else { throw CommandError("unknown_operation") }
         let result = try perform(command)
         inputCompleted = true
+        // Home is acknowledged system navigation. Its destination can contain
+        // continuously animated icons; page readiness is left to observation.
+        if command["kind"] as? String == "home" { return result }
         try await waitForStableFrame()
         return result
+    }
+
+    @MainActor
+    private func appLifecycle(_ command: [String: Any]) throws -> [String: Any] {
+        guard !inputSessionUncertain else { throw CommandError("input_session_uncertain") }
+        guard let bundle = command["bundleId"] as? String,
+              bundle.range(of: "^[A-Za-z0-9][A-Za-z0-9.-]{0,254}\\z", options: .regularExpression) != nil,
+              let relaunch = command["relaunch"] as? Bool else { throw CommandError("invalid_app_lifecycle") }
+        guard bundle != "com.apple.springboard", bundle != Bundle.main.bundleIdentifier,
+              bundle != Bundle(for: LiveSessionTests.self).bundleIdentifier else { throw CommandError("protected_app_target") }
+        let app = XCUIApplication(bundleIdentifier: bundle)
+        let before = app.state
+        guard before != .unknown else { throw CommandError("app_state_unknown", requiresObservation: true) }
+        lifecycleFacts = ["bundleId": bundle, "operation": relaunch ? "relaunch" : "terminate",
+            "alreadyStopped": before == .notRunning, "appStateBefore": before.rawValue,
+            "terminationRequested": false, "terminationAcknowledged": false, "stoppedConfirmed": false,
+            "launchRequested": false, "launchAcknowledged": false, "foregroundConfirmed": false,
+            "automaticReplayAllowed": false, "pageReadyConfirmed": false]
+        try Task.checkCancellation()
+        if before != .notRunning {
+            lifecycleFacts?["terminationRequested"] = true
+            try event { app.terminate() }
+            lifecycleFacts?["terminationAcknowledged"] = true
+        }
+        guard app.wait(for: .notRunning, timeout: 5) else { throw CommandError("app_stop_unconfirmed", requiresObservation: true) }
+        try checkIssues()
+        lifecycleFacts?["stoppedConfirmed"] = true
+        lifecycleFacts?["appState"] = app.state.rawValue
+        if currentBundleID == bundle { currentApp = nil; currentBundleID = nil }
+        if relaunch {
+            try Task.checkCancellation()
+            guard app.state == .notRunning else { throw CommandError("app_restarted_externally", requiresObservation: true) }
+            lifecycleFacts?["launchRequested"] = true
+            try event { app.launch() }
+            lifecycleFacts?["launchAcknowledged"] = true
+            guard app.wait(for: .runningForeground, timeout: 5) else { throw CommandError("app_not_foreground", requiresObservation: true) }
+            try checkIssues()
+            currentApp = app; currentBundleID = bundle
+            lifecycleFacts?["foregroundConfirmed"] = true
+            lifecycleFacts?["appState"] = app.state.rawValue
+        }
+        return lifecycleFacts!
     }
 
     private func checkIssues() throws {
@@ -303,7 +352,7 @@ final class LiveSessionTests: XCTestCase {
     @MainActor
     private func perform(_ command: [String: Any]) throws -> [String: Any] {
         guard !inputSessionUncertain else { throw CommandError("input_session_uncertain", message: "Close this session after unconfirmed event synthesis; do not replay") }
-        guard let kind = command["kind"] as? String, ["tap", "double-tap", "long-press", "pinch", "swipe", "type", "press"].contains(kind),
+        guard let kind = command["kind"] as? String, ["tap", "double-tap", "long-press", "pinch", "swipe", "type", "press", "home"].contains(kind),
               let expected = command["target"] as? [String: Any],
               let scope = expected["scope"] as? String else {
             throw CommandError("invalid_action")
@@ -336,6 +385,24 @@ final class LiveSessionTests: XCTestCase {
             if scope == "appAlert", alerts.count == 1 { root = alerts.firstMatch }
             else if scope == "app", alerts.count == 0 { root = app }
             else { throw CommandError("app_alert_changed", requiresObservation: true) }
+        }
+        if kind == "home" {
+            guard let raw = command["screenGuard"] as? [String: Any],
+                  let screenGuard = try? JSONDecoder().decode(ScreenGuard.self, from: JSONSerialization.data(withJSONObject: raw)) else {
+                throw CommandError("invalid_screen_guard")
+            }
+            let context = screenContext(app: app, root: root)
+            guard screenGuard.context.matches(context) else { throw CommandError("screen_context_changed", requiresObservation: true) }
+            let screenshot = XCUIScreen.main.screenshot()
+            let check = try screenGuard.check(png: screenshot.pngRepresentation, context: context)
+            screenGuardResult = check.result
+            screenGuardResult?["capturedAt"] = Date().timeIntervalSince1970
+            guard check.accepted else { throw CommandError("screen_changed", requiresObservation: true) }
+            try event { XCUIDevice.shared.press(.home) }
+            // The next observation can be screenshot-only; never invent an App
+            // or SpringBoard element target from a Home press acknowledgement.
+            currentApp = nil; currentBundleID = nil
+            return ["kind": "home", "homePressCompleted": true, "homeScreenConfirmed": false]
         }
         if ["tap", "double-tap", "long-press", "pinch", "swipe"].contains(kind) { return try performGesture(command, kind: kind, app: app, root: root) }
         guard let path = expected["path"] as? [[String: Any]], !path.isEmpty, path.count <= 200 else { throw CommandError("invalid_action") }

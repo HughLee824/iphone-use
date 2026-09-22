@@ -240,10 +240,10 @@ final class ScreenGuardTests: XCTestCase {
     }
 
     func testOlderRunnerCannotSilentlySkipScreenGuards() throws {
-        let supported: [String: Any] = ["lifecycleOwner": "host", "observationVersion": 2, "actionVersion": 7,
-            "launchVersion": 1, "frameStabilityVersion": 2, "screenGuardVersion": 1]
+        let supported: [String: Any] = ["lifecycleOwner": "host", "observationVersion": 2, "actionVersion": 8,
+            "launchVersion": 2, "frameStabilityVersion": 2, "screenGuardVersion": 1]
         XCTAssertNoThrow(try XCTestBackend.validateCapabilities(supported))
-        for key in ["observationVersion", "actionVersion", "screenGuardVersion", "frameStabilityVersion"] {
+        for key in ["observationVersion", "actionVersion", "launchVersion", "screenGuardVersion", "frameStabilityVersion"] {
             var older = supported
             older[key] = 0
             XCTAssertThrowsError(try XCTestBackend.validateCapabilities(older))

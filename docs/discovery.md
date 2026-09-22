@@ -52,7 +52,7 @@ CoreDevice 的非零退出保留原始日志末尾最多 4000 个字符，并在
 
 open 已移除 Fixture/Calculator 白名单。Mac 在派发前重新查询安装列表，按 bundle ID 精确核对。未列出的 App 返回 `app_not_installed`、`outcome=not_dispatched`、`requiresObservation=false`，原引用保留；查询失败同样不能冒充已派发或已完成。
 
-Runner 只检查 bundle ID 格式，封装 XCTest 的 activate/launch、前台状态和执行事实。已运行则 activate，未运行则 launch；open 不隐含安装或重启。启动握手要求 `launchVersion=1`，避免旧白名单 Runner 被当成新版使用。
+Runner 只检查 bundle ID 格式，封装 XCTest 的 activate/launch、前台状态和执行事实。已运行则 activate，未运行则 launch；open 不隐含安装或重启。当前握手要求 `launchVersion=2`，同时确认 Runner 支持 terminate/relaunch；旧 Runner 必须重新构建，见 [生命周期](runner-app-lifecycle.md)。
 
 安装列表不保证某个 App 一定能启动、暴露可用 AX 或接受全部输入方式。若安装检查后设备/App 状态变化，仍由既有执行阶段与三态结果表达，不自动重发，也不扩大兼容性承诺。观察与动作继续沿用 [观察契约](observations.md) 和 [动作契约](actions.md)。
 

@@ -151,15 +151,15 @@ final class ObservationCache {
         guard let entry = entries.first(where: { $0.id == reference.observation }), currentID == entry.id else {
             throw IPhoneUseError("stale_reference", "Observe again before using this reference for an action")
         }
+        if action.kind == "home" {
+            guard let raw = entry.capture.metadata["screenContext"] as? [String: Any] else { throw ScreenGuard.Failure.invalidGuard }
+            let context = try JSONDecoder().decode(ScreenContext.self, from: jsonData(raw))
+            // System navigation has no local target; protect the whole observed screen.
+            var policy = ScreenGuard.Policy(); policy.maxRegionChange = policy.maxScreenChange
+            let guardValue = try ScreenGuard(png: entry.capture.screenshot, context: context, rects: [context.screen], policy: policy)
+            return ObservedTarget(context: entry.capture.metadata, path: [], textGuard: guardValue)
+        }
         if entry.capture.metadata["backend"] as? String == "apple-native" {
-            if action.kind == "home" {
-                guard let raw = entry.capture.metadata["screenContext"] as? [String: Any] else { throw ScreenGuard.Failure.invalidGuard }
-                let context = try JSONDecoder().decode(ScreenContext.self, from: jsonData(raw))
-                // System navigation has no local target; protect the whole observed screen.
-                var policy = ScreenGuard.Policy(); policy.maxRegionChange = policy.maxScreenChange
-                let guardValue = try ScreenGuard(png: entry.capture.screenshot, context: context, rects: [context.screen], policy: policy)
-                return ObservedTarget(context: entry.capture.metadata, path: [], textGuard: guardValue)
-            }
             if ["type", "press"].contains(action.kind), action.reference.node == nil {
                 if action.kind == "type" {
                     _ = try NativeTextInput(text: action.fields["text"] as! String, mode: action.fields["mode"] as! String, method: action.fields["textMethod"] as? String ?? "auto")

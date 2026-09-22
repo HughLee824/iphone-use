@@ -6,7 +6,7 @@ enum XCTestCapture {
     // Keep only the latest action frame; the observation cache clears this directory on disconnect.
     static func actionResponse(_ response: [String: Any], directory: URL, expectedGuard: ScreenGuard? = nil,
                                expectedMotion: SwipeMotion? = nil, expectedPinch: PinchMotion? = nil,
-                               expectedPressDuration: Double? = nil) throws -> [String: Any] {
+                               expectedPressDuration: Double? = nil, expectedHome: Bool = false) throws -> [String: Any] {
         var result = response["result"] as? [String: Any] ?? [:]
         result["execution"] = response["execution"]
         result["stability"] = response["stability"]
@@ -88,22 +88,29 @@ enum XCTestCapture {
                         throw IPhoneUseError("missing_swipe_motion_facts", "Runner did not confirm the requested swipe speed and holds; observe before deciding what to do next")
                     }
                 }
-                guard execution?["inputCompleted"] as? Bool == true, stability?["stable"] as? Bool == true,
-                      stability?["algorithm"] as? String == FrameComparison.algorithm,
-                      stability?["minimumObservationMs"] as? Double == FrameStability.minimumObservationDuration * 1000,
-                      let observed = stability?["observedForMs"] as? Double, observed.isFinite,
-                      observed >= FrameStability.minimumObservationDuration * 1000,
-                      let comparison = stability?["comparison"] as? [String: Any],
-                      comparison["equivalent"] as? Bool == true, comparison["dimensionsMatch"] as? Bool == true,
-                      comparison["changedPixels"] as? Int == 0,
-                      comparison["colorTolerance"] as? Double == FrameComparison.colorTolerance,
-                      comparison["maxChannelDelta"] as? Int == 4,
-                      let frames = stability?["consecutiveFrames"] as? Int, frames >= 3,
-                      let stableFor = stability?["stableForMs"] as? Double, stableFor >= FrameStability.stableDuration * 1000,
-                      let elapsed = stability?["elapsedMs"] as? Double, elapsed.isFinite,
-                      elapsed >= observed, observed >= stableFor, elapsed < FrameStability.timeout * 1000,
-                      response["frame"] is [String: Any], result["frame"] != nil else {
-                    throw IPhoneUseError("missing_stability_facts", "Runner did not confirm input completion and frame stability")
+                if expectedHome {
+                    guard execution?["inputCompleted"] as? Bool == true, result["kind"] as? String == "home",
+                          result["homePressCompleted"] as? Bool == true, result["homeScreenConfirmed"] as? Bool == false else {
+                        throw IPhoneUseError("missing_home_facts", "Runner did not confirm Home input completion")
+                    }
+                } else {
+                    guard execution?["inputCompleted"] as? Bool == true, stability?["stable"] as? Bool == true,
+                          stability?["algorithm"] as? String == FrameComparison.algorithm,
+                          stability?["minimumObservationMs"] as? Double == FrameStability.minimumObservationDuration * 1000,
+                          let observed = stability?["observedForMs"] as? Double, observed.isFinite,
+                          observed >= FrameStability.minimumObservationDuration * 1000,
+                          let comparison = stability?["comparison"] as? [String: Any],
+                          comparison["equivalent"] as? Bool == true, comparison["dimensionsMatch"] as? Bool == true,
+                          comparison["changedPixels"] as? Int == 0,
+                          comparison["colorTolerance"] as? Double == FrameComparison.colorTolerance,
+                          comparison["maxChannelDelta"] as? Int == 4,
+                          let frames = stability?["consecutiveFrames"] as? Int, frames >= 3,
+                          let stableFor = stability?["stableForMs"] as? Double, stableFor >= FrameStability.stableDuration * 1000,
+                          let elapsed = stability?["elapsedMs"] as? Double, elapsed.isFinite,
+                          elapsed >= observed, observed >= stableFor, elapsed < FrameStability.timeout * 1000,
+                          response["frame"] is [String: Any], result["frame"] != nil else {
+                        throw IPhoneUseError("missing_stability_facts", "Runner did not confirm input completion and frame stability")
+                    }
                 }
             }
         } catch {
