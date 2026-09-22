@@ -4,57 +4,101 @@ import ImageIO
 @testable import IPhoneUseCore
 
 final class FrameStabilityTests: XCTestCase {
-    func testUnchangedScreenCanCompleteWithoutFirstChanging() {
-        var stability = FrameStability(startedAt: 0)
-        stability.record(hash: "same", capturedAt: 0, processedAt: 0)
-        stability.record(hash: "same", capturedAt: 0.2, processedAt: 0.2)
-        XCTAssertFalse(stability.stable)
-        stability.record(hash: "same", capturedAt: 0.4, processedAt: 0.4)
-        XCTAssertTrue(stability.stable)
+    private func record(_ value: inout FrameStability, _ png: Data, _ time: Double, processed: Double? = nil) throws {
+        value.record(frame: try FrameFingerprint(png: png), png: png, capturedAt: time, processedAt: processed ?? time)
     }
 
-    func testTransitionResetsTheEntireStableWindow() {
-        var stability = FrameStability(startedAt: 0)
-        for (hash, time) in [("old", 0.0), ("old", 0.2), ("transition", 0.3), ("new", 0.4), ("new", 0.6)] {
-            stability.record(hash: hash, capturedAt: time, processedAt: time)
-            XCTAssertFalse(stability.stable)
+    func testStaticFramesRequireMinimumObservationAndStableSpan() throws {
+        let image = try png()
+        var value = FrameStability(startedAt: 0)
+        for time in [0.0, 0.2, 0.4, 1.4] {
+            try record(&value, image, time)
+            XCTAssertFalse(value.stable)
         }
-        stability.record(hash: "new", capturedAt: 0.81, processedAt: 0.81)
-        XCTAssertTrue(stability.stable)
-        XCTAssertEqual(stability.consecutiveFrames, 3)
+        try record(&value, image, 1.5)
+        XCTAssertTrue(value.stable)
     }
 
-    func testFrameCountAloneCannotSkipTheTimeWindow() {
-        var stability = FrameStability(startedAt: 0)
-        for time in [0.0, 0.01, 0.02] { stability.record(hash: "same", capturedAt: time, processedAt: time) }
-        XCTAssertFalse(stability.stable)
-        stability.record(hash: "same", capturedAt: 0.4, processedAt: 0.4)
-        XCTAssertTrue(stability.stable)
+    func testDelayedKeyboardTransitionResetsWindow() throws {
+        let first = try png(), keyboard = try png(changed: true)
+        var value = FrameStability(startedAt: 0)
+        for time in [0.0, 0.2, 0.4, 0.8] { try record(&value, first, time); XCTAssertFalse(value.stable) }
+        for time in [1.0, 1.2] { try record(&value, keyboard, time); XCTAssertFalse(value.stable) }
+        try record(&value, first, 1.4)
+        try record(&value, first, 1.6)
+        XCTAssertFalse(value.stable)
+        try record(&value, first, 1.81)
+        XCTAssertTrue(value.stable)
     }
 
-    func testContinuousChangesAndLateCaptureCannotReportSuccess() {
-        var changing = FrameStability(startedAt: 0)
-        for index in 0...25 {
-            let time = Double(index) * 0.2
-            changing.record(hash: "\(index)", capturedAt: time, processedAt: time)
-            XCTAssertFalse(changing.stable)
+    func testNoiseIsToleratedButSinglePixelAndDimensionsRemainSignificant() throws {
+        let first = try FrameFingerprint(png: screenPNG(patches: [(CGRect(x: 0, y: 0, width: 390, height: 844), [100,100,100])]))
+        let noise = try FrameFingerprint(png: screenPNG(patches: [(CGRect(x: 0, y: 0, width: 390, height: 844), [102,101,99])]))
+        XCTAssertTrue(FrameComparison(reference: first, current: noise).equivalent)
+        let text = try FrameFingerprint(png: screenPNG(patches: [(CGRect(x: 10, y: 10, width: 1, height: 1), [0,0,0])]))
+        XCTAssertEqual(FrameComparison(reference: try FrameFingerprint(png: screenPNG()), current: text).changedPixels, 1)
+        XCTAssertFalse(FrameComparison(reference: first, current: try FrameFingerprint(png: png())).equivalent)
+    }
+
+    func testCandidateAnchorPreventsSlowAccumulatedDrift() throws {
+        var value = FrameStability(startedAt: 0)
+        for index in 0...10 {
+            let color = UInt8(100 + index * 2)
+            let image = try screenPNG(patches: [(CGRect(x: 0, y: 0, width: 390, height: 844), [color,color,color])])
+            try record(&value, image, Double(index) * 0.2)
+            XCTAssertFalse(value.stable)
         }
-        XCTAssertEqual(changing.remaining(at: 5), 0)
-        var late = FrameStability(startedAt: 0)
-        for time in [0.0, 0.2, 5.1] { late.record(hash: "same", capturedAt: time, processedAt: time) }
-        XCTAssertFalse(late.stable)
     }
 
-    func testHashProcessingCannotExtendTheStableWindowOrExceedTheDeadline() {
-        var stability = FrameStability(startedAt: 0)
-        stability.record(hash: "same", capturedAt: 0, processedAt: 0.1)
-        stability.record(hash: "same", capturedAt: 0.15, processedAt: 0.2)
-        stability.record(hash: "same", capturedAt: 0.3, processedAt: 0.8)
-        XCTAssertFalse(stability.stable)
-        XCTAssertEqual(stability.result["stableForMs"] as? Double, 300)
-        stability.record(hash: "same", capturedAt: 4.9, processedAt: 5.1)
-        XCTAssertFalse(stability.stable)
-        XCTAssertEqual(stability.remaining(at: 5.1), 0)
+    func testCaretFadeOnlyWithinExplicitTextTargetAndNotTextOrMovement() throws {
+        let field = ScreenRect(CGRect(x: 18, y: 139, width: 354, height: 160))
+        let stroke = CGRect(x: 50, y: 150, width: 2, height: 20)
+        let source = try screenPNG(patches: [(stroke, [30,110,240])])
+        let hidden = try screenPNG()
+        var value = FrameStability(startedAt: 0, context: screenTestContext(), textField: field)
+        try record(&value, source, 0)
+        try record(&value, hidden, 0.2)
+        try record(&value, source, 1.5)
+        XCTAssertTrue(value.stable)
+        XCTAssertNotNil((value.result["comparison"] as? [String: Any])?["ignoredCaret"])
+        for patch in [(stroke.offsetBy(dx: 1, dy: 0), [30,110,240]),
+                      (CGRect(x: 70, y: 150, width: 1, height: 10), [0,0,0]),
+                      (stroke, [0,0,0])] as [(CGRect,[UInt8])] {
+            var test = value
+            try record(&test, screenPNG(patches: [patch]), 1.7)
+            XCTAssertFalse(test.stable)
+        }
+        var unscoped = FrameStability(startedAt: 0)
+        try record(&unscoped, source, 0)
+        try record(&unscoped, hidden, 0.2)
+        XCTAssertEqual(unscoped.consecutiveFrames, 1)
+    }
+
+    func testCaretNextToGlyphDoesNotMaskTheGlyph() throws {
+        let field = ScreenRect(CGRect(x: 18, y: 139, width: 354, height: 160))
+        let caret = CGRect(x: 50, y: 150, width: 2, height: 20)
+        let glyph = CGRect(x: 48, y: 155, width: 1, height: 10)
+        let source = try screenPNG(patches: [(caret, [30,110,240]), (glyph, [0,0,0])])
+        XCTAssertNil(try NativeCaretGuard(png: source, context: screenTestContext(), field: field))
+        var value = FrameStability(startedAt: 0, context: screenTestContext(), textField: field)
+        try record(&value, source, 0)
+        try record(&value, screenPNG(patches: [(glyph, [0,0,0])]), 0.2)
+        try record(&value, source, 1.5)
+        XCTAssertTrue(value.stable)
+        try record(&value, screenPNG(patches: [(glyph, [20,20,20])]), 1.7)
+        XCTAssertFalse(value.stable)
+    }
+
+    func testCaptureAndComparisonDeadlineAndSmallSampleSpanFailClosed() throws {
+        let image = try png()
+        var value = FrameStability(startedAt: 0)
+        for time in [1.5, 1.51, 1.52] { try record(&value, image, time) }
+        XCTAssertFalse(value.stable)
+        try record(&value, image, 1.6, processed: 2)
+        XCTAssertFalse(value.stable)
+        try record(&value, image, 4.9, processed: 5.1)
+        XCTAssertFalse(value.stable)
+        XCTAssertEqual(value.remaining(at: 5.1), 0)
     }
 
     private func png(width: Int = 2, height: Int = 2, changed: Bool = false, dpi: Int = 72) throws -> Data {
@@ -95,7 +139,9 @@ final class FrameStabilityTests: XCTestCase {
                 "execution": ["started": true, "inputCompleted": true, "completed": stable],
                 "errorCode": "frame_stability_timeout", "requiresObservation": true,
                 "stability": ["stable": stable, "hash": fingerprint.hash, "consecutiveFrames": stable ? 3 : 1,
-                              "stableForMs": stable ? 400.0 : 0.0, "elapsedMs": stable ? 500.0 : 5000.0],
+                              "stableForMs": stable ? 400.0 : 0.0, "elapsedMs": stable ? 1600.0 : 5000.0,
+                              "algorithm": FrameComparison.algorithm, "minimumObservationMs": 1500.0, "observedForMs": 1500.0,
+                              "comparison": ["equivalent": true, "dimensionsMatch": true, "changedPixels": 0, "colorTolerance": 2.5, "maxChannelDelta": 4]],
                 "frame": ["screenshotBase64": image.base64EncodedString(), "hash": fingerprint.hash,
                           "width": 2, "height": 2, "capturedAt": 100.0]]
             let decoded = try XCTestCapture.actionResponse(response, directory: directory)
@@ -115,6 +161,48 @@ final class FrameStabilityTests: XCTestCase {
         }
         try ObservationCache(directory: directory).clear()
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("observations").path))
+    }
+
+    func testTimeoutExportsOriginalReferenceAndDifferenceAndRejectsWrongHash() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("stability-diagnostic-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = try png(), current = try png(changed: true)
+        let a = try FrameFingerprint(png: source), b = try FrameFingerprint(png: current)
+        var response: [String: Any] = ["ok": false, "errorCode": "frame_stability_timeout",
+            "execution": ["started": true, "inputCompleted": true, "completed": false],
+            "stability": ["stable": false, "hash": b.hash, "referenceHash": a.hash],
+            "stabilityReferenceBase64": source.base64EncodedString(),
+            "frame": ["screenshotBase64": current.base64EncodedString(), "hash": b.hash,
+                      "width": b.width, "height": b.height, "capturedAt": 100.0]]
+        let decoded = try XCTestCapture.actionResponse(response, directory: directory)
+        let result = try XCTUnwrap(decoded["result"] as? [String: Any])
+        let diagnostic = try XCTUnwrap(result["stabilityDiagnostic"] as? [String: Any])
+        let refURL = URL(fileURLWithPath: try XCTUnwrap(diagnostic["reference"] as? String))
+        XCTAssertEqual(try Data(contentsOf: refURL), source)
+        let diff = try FrameFingerprint(png: Data(contentsOf: URL(fileURLWithPath: try XCTUnwrap(diagnostic["difference"] as? String))))
+        XCTAssertEqual(diff.pixels[0], 255)
+        XCTAssertEqual(diff.pixels[4], 0)
+        XCTAssertNil(decoded["stabilityReferenceBase64"])
+        response["stability"] = ["stable": false, "hash": b.hash, "referenceHash": "incorrect"]
+        XCTAssertThrowsError(try XCTestCapture.actionResponse(response, directory: directory))
+    }
+
+    func testHostRejectsOldOrPrematureStabilityProof() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("stability-proof-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let image = try png(), frame = try FrameFingerprint(png: image)
+        var value = FrameStability(startedAt: 0)
+        for t in [0.0, 0.2, 1.6] { try record(&value, image, t) }
+        let proof = value.result
+        var response: [String: Any] = ["ok": true, "execution": ["started": true, "inputCompleted": true, "completed": true],
+            "stability": proof, "frame": ["screenshotBase64": image.base64EncodedString(), "hash": frame.hash,
+                "width": frame.width, "height": frame.height, "capturedAt": 100.0]]
+        XCTAssertNoThrow(try XCTestCapture.actionResponse(response, directory: directory))
+        for (key, changed): (String, Any) in [("algorithm", "sha256-rgba8-srgb"), ("observedForMs", 800.0),
+                ("observedForMs", Double.infinity), ("minimumObservationMs", 0.0), ("comparison", NSNull())] {
+            var invalid = proof; invalid[key] = changed; response["stability"] = invalid
+            XCTAssertThrowsError(try XCTestCapture.actionResponse(response, directory: directory))
+        }
     }
 
     func testSuccessWithoutStableFrameEvidenceIsRejected() {

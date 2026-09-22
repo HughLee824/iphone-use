@@ -147,22 +147,26 @@ Runner 没有跨请求观察缓存、短引用、续期计时或任务策略。�
 进入会话的动作结果均为单行 JSON，并保留请求 ID 和 session。stdin 的读取、编码或字节上限错误在 CLI 创建请求前返回 `session`、`ok=false`、`outcome=not_dispatched` 和 error，此时没有请求 ID；带 `--observe` 时同样跳过采集。文本源选择等语法错误继续由 ArgumentParser 输出到 stderr 并非零退出。
 
 ```json
-{"id":"example-request","session":"example-session","ok":true,"outcome":"completed","result":{"kind":"tap","execution":{"started":true,"inputCompleted":true,"completed":true},"screenGuard":{"algorithm":"srgb-grid-v1","accepted":true,"screenChange":0,"regionChanges":[0],"maxScreenChange":0.01,"maxRegionChange":0,"pixelTolerance":8},"stability":{"stable":true,"samples":4,"consecutiveFrames":4,"stableForMs":563,"elapsedMs":750,"hash":"example-sha256","algorithm":"sha256-rgba8-srgb","sampleIntervalMs":200,"requiredStableMs":400,"timeoutMs":5000},"frame":{"screenshot":"/private/tmp/iphone-use-501/example-session/observations/action/screen.png","hash":"example-sha256","capturedAt":1788608247.676,"width":1170,"height":2532},"runnerMs":3634}}
+{"id":"example-request","session":"example-session","ok":true,"outcome":"completed","result":{"kind":"tap","execution":{"started":true,"inputCompleted":true,"completed":true},"screenGuard":{"algorithm":"srgb-grid-v1","accepted":true,"screenChange":0,"regionChanges":[0],"maxScreenChange":0.01,"maxRegionChange":0,"pixelTolerance":8},"stability":{"stable":true,"samples":9,"consecutiveFrames":4,"stableForMs":563,"elapsedMs":1700,"observedForMs":1650,"minimumObservationMs":1500,"comparison":{"equivalent":true,"dimensionsMatch":true,"changedPixels":0,"colorTolerance":2.5,"maxChannelDelta":4},"hash":"example-sha256","algorithm":"yiq-local-caret-v1","sampleIntervalMs":200,"requiredStableMs":400,"timeoutMs":5000},"frame":{"screenshot":"/private/tmp/iphone-use-501/example-session/observations/action/screen.png","hash":"example-sha256","capturedAt":1788608247.676,"width":1170,"height":2532},"runnerMs":3634}}
 ```
 
 | outcome | 判定 | 引用处理 |
 | --- | --- | --- |
-| completed | 本动作全部输入调用正常返回，且动作后全帧 hash 达到稳定；不等于业务目标达成 | 旧引用失效，agent 再 observe |
+| completed | 本动作全部输入调用正常返回，且动作后画面达到容差稳定；不等于业务目标达成 | 旧引用失效，agent 再 observe |
 | not_dispatched | 参数、引用或设备目标校验在任何输入 API 调用前拒绝 | 无其他失效原因时保留；若已发现目标或上下文变化则失效 |
 | unknown | 输入后未达到帧稳定、已进入输入 API 后出错、执行事实缺失/矛盾，或丢失响应 | 旧引用失效；不重发，agent 先 observe |
 
 每次调用可能发送输入的 API 前，Runner 标记 `execution.started`；任一步骤记录 XCTest 错误就停止，不再继续聚焦后的选区/删除/输入等剩余步骤。全部输入调用正常结束时标记 `execution.inputCompleted`，之后才开始检测帧稳定。App 打开继续使用启动/激活的 started/completed 事实，不纳入 act 的帧检测。
 
-采帧间隔约 200ms，至少 3 帧精确 hash 相同且采样时间跨度至少 400ms 才报告完成；变化会重置稳定窗口，不要求画面先发生变化。图像经方向归一化后，以全尺寸 sRGB RGBA8 像素和尺寸计算 SHA-256，忽略 PNG 编码元数据。哈希计算耗时计入 5 秒预算，但不计入两次采帧之间的稳定跨度。没有区域遮罩或感知相似容差。
+采帧间隔约 200ms，至少观察 1500ms，且连续至少 3 帧与同一候选帧等价、跨度至少 400ms 才报告完成。`yiq-local-caret-v1` 在全尺寸 sRGB 像素上允许小幅色差（Y/I/Q 各分量差不超过 2.5，RGB 每通道差不超过 4，alpha 必须相同）；不允许一定比例的明显变化，不降低分辨率，也不自动忽略抗锯齿边缘。单个超限像素也会重置窗口，因此局部文字变化不会被整屏平均分淹没。固定候选帧防止缓慢累计漂移。
+
+仅在 type/press 已验证的文本目标范围内，允许符合位置、尺寸、蓝色笔画和一致明暗变化模型的单根光标变化。相邻文字不被遮罩；无法识别的光标保留正常比较。原始截图始终不变，例外区域写入 `comparison.ignoredCaret`。至少观察 1500ms 用于避免本次记录到的延迟键盘展开前提前判稳，并不保证未来不会出现异步更新；后续动作仍需新观察和输入前检查。
+
+全尺寸原始 sRGB RGBA8 像素和尺寸的 SHA-256 继续绑定最终图片与执行证据，不再用它判断视觉等价。比较/光标识别/哈希的处理时间计入 5 秒预算，但不冒充采样稳定跨度。
 
 5 秒预算到期时返回 `unknown` 和 `frame_stability_timeout`，同时保留 `result.execution.inputCompleted=true`、`result.stability.stable=false` 与最后一帧。该结果确认输入已经完成，只是未获得稳定画面；不能把它解释为没有点击或允许重发。截图/解码失败同样保留可取得的事实；连接丢失且无响应时无法承诺最后一帧可用。预算在截图和处理之间检查，无法中断正在阻塞的 XCTest 截图 API，因此它不是整个 act 的硬超时。
 
-结果只返回最终一张 PNG 的路径和采集时间，不向 agent 输出逐帧图片或 base64。宿主核对图片 hash 与稳定证据后，保存在 `observations/action/screen.png`；下一次带帧的动作覆盖它，disconnect/空闲回收时删除。需要保留时由调用 agent 复制。动作帧不创建观察 ID，不附带旧 AX；后续按引用操作仍需 observe。
+正常结果返回最终原始 PNG 的路径和采集时间；超时还返回最后一次比较的候选原图与差异图路径。差异图标出所有原始像素变化（包括已容忍的光标和色差），不是观察，也不能用于选坐标。不向 agent 输出逐帧图片或 base64。宿主核对图片 hash 与稳定证据后，保存在 `observations/action/screen.png`；下一次带帧的动作覆盖它，disconnect/空闲回收时删除。需要保留时由调用 agent 复制。动作帧不创建观察 ID，不附带旧 AX；后续按引用操作仍需 observe。
 
 Runner 在每个输入原语调用期间，将 XCTest application-state 等待上限设为 1 秒并在结束后恢复原值。这通过运行时能力检查后的 `_XCTApplicationStateTimeout` / `_XCTSetApplicationStateTimeout` 符号实现，没有引入 WDA。连接时能力缺失返回 `unsupported_xctest_runtime`；该内部 API 的兼容性仅在本次工具链/设备上验证，1 秒也不是整个动作的耗时上限。
 
@@ -172,7 +176,7 @@ XCTest 的命令错误经 Runner 转成响应；不再把已经返回给调用�
 
 ## 兼容性与验证边界
 
-当前设备协议为 `actionVersion=5`、`observationVersion=2`、`screenGuardVersion=1`、`frameStabilityVersion=1`。发布用户安装配套版本并重新 setup；源码开发者重新 build-runner，并使用新路径 connect。旧 Runner 不会静默忽略速度与停留参数。
+当前设备协议为 `actionVersion=5`、`observationVersion=2`、`screenGuardVersion=1`、`frameStabilityVersion=2`。发布用户安装配套版本并重新 setup；源码开发者重新 build-runner，并使用新路径 connect。旧 Runner 不会静默忽略速度与停留参数。
 
 本地测试覆盖输入校验、引用失效、执行事实、画面校验和帧稳定；真机兼容性以 [README 中的实测环境](../README.zh-CN.md#前置条件)为限。历史操作记录、截图和诊断日志仅保留在本地，不作为公开运行依赖。执行前检查不构成与 App 自行变化原子隔离的事务。
 

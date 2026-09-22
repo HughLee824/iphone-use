@@ -16,7 +16,7 @@ struct NativeCaretGuard {
     private let referenceChannel: Int
     let caret: ScreenRect
 
-    init?(png: Data, context: ScreenContext, field: ScreenRect) throws {
+    init?(png: Data, context: ScreenContext, field: ScreenRect, allowsAdjacentText: Bool = false) throws {
         guard context.valid, field.valid, context.screen.cgRect.contains(field.cgRect) else { return nil }
         let image = try ScreenImage(png: png)
         try image.validateMapping(to: context.screen)
@@ -40,11 +40,14 @@ struct NativeCaretGuard {
               left >= 3, top >= 3, right + 3 < width, bottom + 3 < height else { return nil }
         // One antialiasing pixel around the detected stroke. The next surrounding
         // ring must be uniform, so adjacent text/selection handles cannot be erased.
-        let bounds = CGRect(x: left - 1, y: top - 1, width: w + 2, height: h + 2)
-        let bgIndex = ((top - 2) * width + left - 2) * 3
+        // Post-input stability can keep adjacent glyphs: restrict the fade model to
+        // the detected stroke itself. Input admission retains its stricter ring.
+        let bounds = allowsAdjacentText ? CGRect(x: left, y: top, width: w, height: h)
+            : CGRect(x: left - 1, y: top - 1, width: w + 2, height: h + 2)
+        let bgIndex = ((top - 2) * width + (allowsAdjacentText ? (left + right) / 2 : left - 2)) * 3
         let background = (0..<3).map { Int(source[bgIndex + $0]) }
         for y in (top - 2)...(bottom + 2) { for x in (left - 2)...(right + 2) {
-            if bounds.contains(CGPoint(x: x, y: y)) { continue }
+            if allowsAdjacentText || bounds.contains(CGPoint(x: x, y: y)) { continue }
             let i = (y * width + x) * 3
             guard (0..<3).allSatisfy({ abs(Int(source[i + $0]) - background[$0]) <= ScreenGuard.pixelTolerance }) else { return nil }
         } }

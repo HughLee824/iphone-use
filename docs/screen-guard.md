@@ -48,7 +48,7 @@ iphone-use --session "$SESSION" tap o6:e10 --max-screen-change 0.01 --max-region
 - 参数、坐标、保护引用不合法：宿主或 Runner 拒绝，不发送输入。
 - 输入后的失败、丢失响应、画面不稳定：沿用 unknown 和不重发规则，不把动作前的通过证据当成动作完成。
 
-设备协议现在是 observationVersion=2、actionVersion=5、screenGuardVersion=1、frameStabilityVersion=1。actionVersion=5 增加显式滑动速度与两端停留，见 [可控拖动](actions.md#可控拖动)。旧 Runner 在 connect 时返回 runner_needs_rebuild，发布用户需要安装配套 Runner 并 setup，源码开发者需要重新 build-runner，不静默忽略新参数或回退到无校验坐标输入。
+设备协议现在是 observationVersion=2、actionVersion=5、screenGuardVersion=1、frameStabilityVersion=2。actionVersion=5 增加显式滑动速度与两端停留，见 [可控拖动](actions.md#可控拖动)。旧 Runner 在 connect 时返回 runner_needs_rebuild，发布用户需要安装配套 Runner 并 setup，源码开发者需要重新 build-runner，不静默忽略新参数或回退到无校验坐标输入。
 
 ## 验证边界与剩余风险
 
@@ -59,3 +59,5 @@ iphone-use --session "$SESSION" tap o6:e10 --max-screen-change 0.01 --max-region
 降采样可能遗漏细小文字或局部变化；大区域内的小变化也可能被稀释。不可访问的遮挡、无可见变化的 enabled/focus 更新、相同画面背后的业务状态变化不能仅靠截图保证。坐标 tap 不再承诺旧 AX 路径的 live enabled/isHittable 检查。需要精确命中时使用明确坐标，重要上下文由调用方保护并在动作后检查。
 
 AX 与截图的 observe 采集不是原子的，动作前采样与触摸也不是原子的。此校验不会冻结 App，也不承诺检测所有输入前变化。若后续要为动作后稳定检测加入相似容差，需要独立的固定窗口基准规则，不能把相邻帧小幅变化误判成停止运动。
+
+frameStabilityVersion=2 使用动作后的容差判稳（色差、受限光标例外与最短观察窗口）；输入前 screenGuardVersion=1 的规则不变。见 [执行结果](actions.md#执行结果)。

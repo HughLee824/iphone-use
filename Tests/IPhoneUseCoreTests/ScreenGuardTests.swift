@@ -241,9 +241,9 @@ final class ScreenGuardTests: XCTestCase {
 
     func testOlderRunnerCannotSilentlySkipScreenGuards() throws {
         let supported: [String: Any] = ["lifecycleOwner": "host", "observationVersion": 2, "actionVersion": 5,
-            "launchVersion": 1, "frameStabilityVersion": 1, "screenGuardVersion": 1]
+            "launchVersion": 1, "frameStabilityVersion": 2, "screenGuardVersion": 1]
         XCTAssertNoThrow(try XCTestBackend.validateCapabilities(supported))
-        for key in ["observationVersion", "actionVersion", "screenGuardVersion"] {
+        for key in ["observationVersion", "actionVersion", "screenGuardVersion", "frameStabilityVersion"] {
             var older = supported
             older[key] = 0
             XCTAssertThrowsError(try XCTestBackend.validateCapabilities(older))
@@ -262,7 +262,7 @@ final class ScreenGuardTests: XCTestCase {
         let motion = SwipeMotion(velocity: 100, pressDuration: 0.5, holdDuration: 0.2)
         var response: [String: Any] = ["ok": true, "result": ["kind": "swipe", "motion": motion.result],
             "execution": ["started": true, "inputCompleted": true, "completed": true],
-            "stability": ["stable": true, "hash": frame.hash, "consecutiveFrames": 3, "stableForMs": 400.0, "elapsedMs": 500.0],
+            "stability": ["stable": true, "hash": frame.hash, "consecutiveFrames": 3, "stableForMs": 400.0, "elapsedMs": 1600.0, "algorithm": FrameComparison.algorithm, "minimumObservationMs": 1500.0, "observedForMs": 1500.0, "comparison": ["equivalent": true, "dimensionsMatch": true, "changedPixels": 0, "colorTolerance": 2.5, "maxChannelDelta": 4]],
             "frame": ["hash": frame.hash, "width": frame.width, "height": frame.height, "capturedAt": 100.0,
                       "screenshotBase64": png.base64EncodedString()]]
         let result = try ActionReply.decode(XCTestCapture.actionResponse(response, directory: directory, expectedMotion: motion))
@@ -287,7 +287,7 @@ final class ScreenGuardTests: XCTestCase {
         let proof = try expected.check(png: png, context: screenTestContext()).result
         var response: [String: Any] = ["ok": true, "screenGuard": proof,
             "execution": ["started": true, "inputCompleted": true, "completed": true],
-            "stability": ["stable": true, "hash": frame.hash, "consecutiveFrames": 3, "stableForMs": 400.0, "elapsedMs": 500.0],
+            "stability": ["stable": true, "hash": frame.hash, "consecutiveFrames": 3, "stableForMs": 400.0, "elapsedMs": 1600.0, "algorithm": FrameComparison.algorithm, "minimumObservationMs": 1500.0, "observedForMs": 1500.0, "comparison": ["equivalent": true, "dimensionsMatch": true, "changedPixels": 0, "colorTolerance": 2.5, "maxChannelDelta": 4]],
             "frame": ["hash": frame.hash, "width": frame.width, "height": frame.height, "capturedAt": 100.0,
                       "screenshotBase64": png.base64EncodedString()]]
         XCTAssertNoThrow(try ActionReply.decode(XCTestCapture.actionResponse(response, directory: directory, expectedGuard: expected)))

@@ -27,11 +27,36 @@ enum XCTestCapture {
                 }
                 let frames = directory.appendingPathComponent("observations/action")
                 try SessionPaths.secureDirectory(frames)
+                for name in ["reference.png", "difference.png"] {
+                    let old = frames.appendingPathComponent(name)
+                    if FileManager.default.fileExists(atPath: old.path) { try FileManager.default.removeItem(at: old) }
+                }
                 let file = frames.appendingPathComponent("screen.png")
                 try png.write(to: file, options: .atomic)
                 try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
                 result["frame"] = ["screenshot": file.path, "hash": fingerprint.hash, "capturedAt": capturedAt,
                                    "width": fingerprint.width, "height": fingerprint.height]
+                if let encodedReference = response["stabilityReferenceBase64"] as? String {
+                    guard let referencePNG = Data(base64Encoded: encodedReference) else {
+                        throw IPhoneUseError("invalid_action_frame", "Invalid stability reference image")
+                    }
+                    let reference = try FrameFingerprint(png: referencePNG)
+                    guard reference.hash == stability?["referenceHash"] as? String else {
+                        throw IPhoneUseError("invalid_action_frame", "Stability reference hash mismatch")
+                    }
+                    let referenceFile = frames.appendingPathComponent("reference.png")
+                    try referencePNG.write(to: referenceFile, options: .atomic)
+                    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: referenceFile.path)
+                    var diagnostic: [String: Any] = ["reference": referenceFile.path, "referenceHash": reference.hash]
+                    if reference.width == fingerprint.width && reference.height == fingerprint.height {
+                        let diffFile = frames.appendingPathComponent("difference.png")
+                        try fingerprint.differencePNG(from: reference).write(to: diffFile, options: .atomic)
+                        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: diffFile.path)
+                        diagnostic["difference"] = diffFile.path
+                        diagnostic["differenceKind"] = "all_raw_pixel_changes"
+                    }
+                    result["stabilityDiagnostic"] = diagnostic
+                }
             }
             if response["ok"] as? Bool == true, let expectedGuard {
                 guard let evidence = response["screenGuard"] as? [String: Any],
@@ -53,10 +78,19 @@ enum XCTestCapture {
                     }
                 }
                 guard execution?["inputCompleted"] as? Bool == true, stability?["stable"] as? Bool == true,
+                      stability?["algorithm"] as? String == FrameComparison.algorithm,
+                      stability?["minimumObservationMs"] as? Double == FrameStability.minimumObservationDuration * 1000,
+                      let observed = stability?["observedForMs"] as? Double, observed.isFinite,
+                      observed >= FrameStability.minimumObservationDuration * 1000,
+                      let comparison = stability?["comparison"] as? [String: Any],
+                      comparison["equivalent"] as? Bool == true, comparison["dimensionsMatch"] as? Bool == true,
+                      comparison["changedPixels"] as? Int == 0,
+                      comparison["colorTolerance"] as? Double == FrameComparison.colorTolerance,
+                      comparison["maxChannelDelta"] as? Int == 4,
                       let frames = stability?["consecutiveFrames"] as? Int, frames >= 3,
                       let stableFor = stability?["stableForMs"] as? Double, stableFor >= FrameStability.stableDuration * 1000,
                       let elapsed = stability?["elapsedMs"] as? Double, elapsed.isFinite,
-                      elapsed >= stableFor, elapsed < FrameStability.timeout * 1000,
+                      elapsed >= observed, observed >= stableFor, elapsed < FrameStability.timeout * 1000,
                       response["frame"] is [String: Any], result["frame"] != nil else {
                     throw IPhoneUseError("missing_stability_facts", "Runner did not confirm input completion and frame stability")
                 }
@@ -66,6 +100,7 @@ enum XCTestCapture {
                 description: String(describing: error), possiblyExecuted: true, requiresObservation: true, result: result)
         }
         var decoded = response
+        decoded.removeValue(forKey: "stabilityReferenceBase64")
         decoded["result"] = result
         return decoded
     }

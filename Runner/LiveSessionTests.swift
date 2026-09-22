@@ -122,6 +122,8 @@ final class LiveSessionTests: XCTestCase {
     private var executionStarted = false
     private var inputCompleted = false
     private let stateTimeout = XCTestStateTimeout()
+    private var postInputTextField: ScreenRect?
+    private var postInputContext: ScreenContext?
     private var frameStability: FrameStability?
     private var actionFrame: (png: Data, capturedAt: Double, fingerprint: FrameFingerprint)?
     private var screenGuardResult: [String: Any]?
@@ -155,6 +157,8 @@ final class LiveSessionTests: XCTestCase {
             handlingCommand = true
             executionStarted = false
             inputCompleted = false
+            postInputTextField = nil
+            postInputContext = nil
             frameStability = nil
             actionFrame = nil
             screenGuardResult = nil
@@ -186,6 +190,9 @@ final class LiveSessionTests: XCTestCase {
                 response["execution"] = ["started": executionStarted, "inputCompleted": inputCompleted,
                                          "completed": response["ok"] as? Bool == true]
                 response["stability"] = frameStability?.result
+                if response["ok"] as? Bool == false, let reference = frameStability?.comparisonReferencePNG {
+                    response["stabilityReferenceBase64"] = reference.base64EncodedString()
+                }
                 response["screenGuard"] = screenGuardResult
                 if let frame = actionFrame {
                     response["frame"] = ["screenshotBase64": frame.png.base64EncodedString(),
@@ -208,7 +215,7 @@ final class LiveSessionTests: XCTestCase {
             let hostManaged = ProcessInfo.processInfo.environment["IPHONE_USE_HOST_MANAGED"] == "1"
             return ["protocol": "agentsoma-spike-jsonl-v1", "lifecycleOwner": hostManaged ? "host" : "spike",
                     "lifetimeLimitSeconds": hostManaged ? NSNull() : 900, "observationVersion": 2,
-                    "actionVersion": 5, "launchVersion": 1, "frameStabilityVersion": 1, "screenGuardVersion": 1,
+                    "actionVersion": 5, "launchVersion": 1, "frameStabilityVersion": 2, "screenGuardVersion": 1,
                     "applicationStateTimeoutSupported": stateTimeout != nil]
         }
         if op == "shutdown" { return ["stopped": true] }
@@ -267,16 +274,18 @@ final class LiveSessionTests: XCTestCase {
 
     @MainActor
     private func waitForStableFrame() async throws {
-        var stability = FrameStability(startedAt: ProcessInfo.processInfo.systemUptime)
+        var stability = FrameStability(startedAt: ProcessInfo.processInfo.systemUptime,
+                                       context: postInputContext, textField: postInputTextField)
         frameStability = stability
         while stability.remaining(at: ProcessInfo.processInfo.systemUptime) > 0 {
+            try Task.checkCancellation()
             let began = ProcessInfo.processInfo.systemUptime
             let screenshot = XCUIScreen.main.screenshot()
             let captureFinished = ProcessInfo.processInfo.systemUptime
             let capturedAt = Date().timeIntervalSince1970
             let png = screenshot.pngRepresentation
             let fingerprint = try FrameFingerprint(png: png)
-            stability.record(hash: fingerprint.hash, capturedAt: captureFinished,
+            stability.record(frame: fingerprint, png: png, capturedAt: captureFinished,
                              processedAt: ProcessInfo.processInfo.systemUptime)
             frameStability = stability
             actionFrame = (png, capturedAt, fingerprint)
@@ -353,6 +362,9 @@ final class LiveSessionTests: XCTestCase {
         if ["type", "press"].contains(kind), ![XCUIElement.ElementType.textField, .secureTextField, .textView, .searchField].contains(target.elementType) {
             throw CommandError("not_text_input")
         }
+        if ["type", "press"].contains(kind) {
+            postInputContext = screenContext(app: app, root: root)
+        }
         switch kind {
         case "type":
             if mode == "replace" {
@@ -363,9 +375,11 @@ final class LiveSessionTests: XCTestCase {
             if let text, !text.isEmpty { try event { target.typeText(text) } }
         case "press":
             try event { target.typeText(XCUIKeyboardKey.return.rawValue) }
+            postInputTextField = ScreenRect(target.frame)
             return ["kind": kind, "key": "return"]
         default: break
         }
+        if kind == "type" { postInputTextField = ScreenRect(target.frame) }
         return ["kind": kind]
     }
 
