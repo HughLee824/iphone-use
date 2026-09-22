@@ -434,6 +434,7 @@ private final class KeyboardProbeController: UIViewController, UITextViewDelegat
         add("Lines", to: fixtures) { [weak self] in self?.seed(lines: true) }
         add("Focus 1", to: fixtures) { [weak self] in self?.first.becomeFirstResponder() }
         add("Focus 2", to: fixtures) { [weak self] in self?.second.becomeFirstResponder() }
+        first.accessibilityIdentifier = "keyboard.first"; second.accessibilityIdentifier = "keyboard.second"
         for input in [first, second] {
             input.font = .monospacedSystemFont(ofSize: 16, weight: .regular)
             input.backgroundColor = .secondarySystemBackground; input.layer.cornerRadius = 8

@@ -6,7 +6,7 @@ enum XCTestCapture {
     // Keep only the latest action frame; the observation cache clears this directory on disconnect.
     static func actionResponse(_ response: [String: Any], directory: URL, expectedGuard: ScreenGuard? = nil,
                                expectedMotion: SwipeMotion? = nil, expectedPinch: PinchMotion? = nil,
-                               expectedPressDuration: Double? = nil, expectedHome: Bool = false) throws -> [String: Any] {
+                               expectedPressDuration: Double? = nil, expectedHome: Bool = false, expectedKey: RunnerPressKey? = nil) throws -> [String: Any] {
         var result = response["result"] as? [String: Any] ?? [:]
         result["execution"] = response["execution"]
         result["stability"] = response["stability"]
@@ -71,6 +71,12 @@ enum XCTestCapture {
                 }
             }
             if response["ok"] as? Bool == true {
+                if let expectedKey {
+                    guard result["key"] as? String == expectedKey.rawValue,
+                          result["keyModifiers"] as? [String] == expectedKey.modifiers else {
+                        throw IPhoneUseError("missing_key_facts", "Runner did not confirm the requested key and modifiers")
+                    }
+                }
                 if let expectedPinch {
                     guard let raw = result["pinch"] as? [String: Any],
                           let actual = try? JSONDecoder().decode(PinchMotion.self, from: jsonData(raw)), actual == expectedPinch,

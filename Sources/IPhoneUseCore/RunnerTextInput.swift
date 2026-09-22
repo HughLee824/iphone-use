@@ -28,3 +28,10 @@ enum RunnerTextInput {
         return result
     }
 }
+
+// Public command names shared by host validation and Runner execution. The
+// XCTest key constants themselves stay in the iPhone target.
+enum RunnerPressKey: String, CaseIterable {
+    case `return`, backspace, left, right, up, down, tab, shiftTab = "shift-tab"
+    var modifiers: [String] { self == .shiftTab ? ["shift"] : [] }
+}

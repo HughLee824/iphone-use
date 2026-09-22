@@ -124,7 +124,7 @@ final class LiveSessionTests: XCTestCase {
     private var inputSessionUncertain = false
     private var lifecycleFacts: [String: Any]?
     private let stateTimeout = XCTestStateTimeout()
-    private var postInputTextField: ScreenRect?
+    private var postInputTextFields: [ScreenRect] = []
     private var postInputContext: ScreenContext?
     private var frameStability: FrameStability?
     private var actionFrame: (png: Data, capturedAt: Double, fingerprint: FrameFingerprint)?
@@ -160,7 +160,7 @@ final class LiveSessionTests: XCTestCase {
             lifecycleFacts = nil
             executionStarted = false
             inputCompleted = false
-            postInputTextField = nil
+            postInputTextFields = []
             postInputContext = nil
             frameStability = nil
             actionFrame = nil
@@ -219,7 +219,7 @@ final class LiveSessionTests: XCTestCase {
             let hostManaged = ProcessInfo.processInfo.environment["IPHONE_USE_HOST_MANAGED"] == "1"
             return ["protocol": "agentsoma-spike-jsonl-v1", "lifecycleOwner": hostManaged ? "host" : "spike",
                     "lifetimeLimitSeconds": hostManaged ? NSNull() : 900, "observationVersion": 2,
-                    "actionVersion": 8, "launchVersion": 2, "frameStabilityVersion": 2, "screenGuardVersion": 1,
+                    "actionVersion": 9, "launchVersion": 2, "frameStabilityVersion": 2, "screenGuardVersion": 1,
                     "applicationStateTimeoutSupported": stateTimeout != nil]
         }
         if op == "shutdown" { return ["stopped": true] }
@@ -325,7 +325,7 @@ final class LiveSessionTests: XCTestCase {
     @MainActor
     private func waitForStableFrame() async throws {
         var stability = FrameStability(startedAt: ProcessInfo.processInfo.systemUptime,
-                                       context: postInputContext, textField: postInputTextField)
+                                       context: postInputContext, textFields: postInputTextFields)
         frameStability = stability
         while stability.remaining(at: ProcessInfo.processInfo.systemUptime) > 0 {
             try Task.checkCancellation()
@@ -359,7 +359,8 @@ final class LiveSessionTests: XCTestCase {
         }
         let mode = command["mode"] as? String
         var text = command["text"] as? String
-        if kind == "press", command["key"] as? String != "return" { throw CommandError("invalid_key") }
+        let pressKey = (command["key"] as? String).flatMap(RunnerPressKey.init(rawValue:))
+        if kind == "press", pressKey == nil { throw CommandError("invalid_key") }
         if kind == "type" {
             guard ["insert", "replace", "append"].contains(mode ?? ""), let text, text.utf8.count <= 4096,
                   mode == "replace" || !text.isEmpty,
@@ -452,12 +453,34 @@ final class LiveSessionTests: XCTestCase {
             }
             if let text, !text.isEmpty { try event { target.typeText(text) } }
         case "press":
-            try event { target.typeText(XCUIKeyboardKey.return.rawValue) }
-            postInputTextField = ScreenRect(target.frame)
-            return ["kind": kind, "key": "return"]
+            guard let pressKey else { throw CommandError("invalid_key") }
+            let key: XCUIKeyboardKey
+            switch pressKey {
+            case .return: key = .return
+            case .backspace: key = .delete
+            case .left: key = .leftArrow
+            case .right: key = .rightArrow
+            case .up: key = .upArrow
+            case .down: key = .downArrow
+            case .tab, .shiftTab: key = .tab
+            }
+            if pressKey == .return || pressKey == .backspace {
+                // typeKey(Delete) can return without deleting on iOS. Use the
+                // existing text-input path for Delete/Return; no focus tap.
+                try event { target.typeText(key.rawValue) }
+            } else {
+                try event { target.typeKey(key.rawValue, modifierFlags: pressKey == .shiftTab ? .shift : []) }
+            }
+            postInputTextFields = [ScreenRect(target.frame)]
+            if pressKey == .tab || pressKey == .shiftTab {
+                let after = screenContext(app: app, root: root)
+                postInputContext = after
+                postInputTextFields = visibleTextFields(root: root, context: after)
+            }
+            return ["kind": kind, "key": pressKey.rawValue, "keyModifiers": pressKey.modifiers]
         default: break
         }
-        if kind == "type" { postInputTextField = ScreenRect(target.frame) }
+        if kind == "type" { postInputTextFields = [ScreenRect(target.frame)] }
         return ["kind": kind]
     }
 
@@ -555,28 +578,32 @@ final class LiveSessionTests: XCTestCase {
         // A button can focus an editor too. Read one bounded snapshot; never
         // traverse focus or tap an editor merely to discover a caret region.
         let after = screenContext(app: app, root: root)
-        if after.valid, after.keyboardCount == 1, let snapshot = try? root.snapshot() {
-            var fields: [ScreenRect] = []
-            var visited = 0, truncated = false
-            func visit(_ node: XCUIElementSnapshot) {
-                guard visited < 200 else { truncated = true; return }
-                visited += 1
-                let frame = ScreenRect(node.frame)
-                if [XCUIElement.ElementType.textField, .secureTextField, .textView, .searchField].contains(node.elementType),
-                   node.isEnabled, frame.valid, after.scope.cgRect.contains(frame.cgRect) {
-                    fields.append(frame)
-                }
-                for child in node.children { visit(child) }
-            }
-            visit(snapshot)
-            // The sole field is only a pixel-analysis boundary, not proof of focus.
-            // Ambiguous or incomplete trees receive no caret exception.
-            if !truncated, fields.count == 1 {
-                postInputContext = after
-                postInputTextField = fields[0]
-            }
+        let fields = visibleTextFields(root: root, context: after)
+        // Tap retains its sole-field policy; only Tab/Shift+Tab may change editors.
+        if fields.count == 1 {
+            postInputContext = after
+            postInputTextFields = fields
         }
         return ["kind": kind, "coordinateSpace": "screen_points", "x": gesture.start.x, "y": gesture.start.y]
+    }
+
+    // Pixel-analysis boundaries only, never proof of focus. No AX focus traversal.
+    private func visibleTextFields(root: XCUIElement, context: ScreenContext) -> [ScreenRect] {
+        guard context.valid, context.keyboardCount == 1, let snapshot = try? root.snapshot() else { return [] }
+        var fields: [ScreenRect] = []
+        var visited = 0, truncated = false
+        func visit(_ node: XCUIElementSnapshot) {
+            guard visited < 200 else { truncated = true; return }
+            visited += 1
+            let frame = ScreenRect(node.frame)
+            if [XCUIElement.ElementType.textField, .secureTextField, .textView, .searchField].contains(node.elementType),
+               node.isEnabled, frame.valid, context.scope.cgRect.contains(frame.cgRect) {
+                fields.append(frame)
+            }
+            for child in node.children { visit(child) }
+        }
+        visit(snapshot)
+        return !truncated && fields.count <= 8 ? fields : []
     }
 
     private func matches(_ node: XCUIElementSnapshot, expected: [String: Any]) -> Bool {

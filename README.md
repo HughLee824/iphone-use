@@ -30,7 +30,7 @@ Standard currently requires the documented macOS/Xcode/iOS 27 environment, pairi
 ## Why iPhone-use?
 
 - **See the screen and its structure.** Observations return a PNG path, compact accessibility (AX) text, and element references. Expand or search cached snapshots with `inspect`.
-- **Act on real apps.** Discover installed apps, bring them to the foreground, tap, swipe, drag, edit text, and send Return.
+- **Act on real apps.** Discover installed apps, bring them to the foreground, tap, swipe, drag, edit text, and send editing keys.
 - **Reuse the device session.** Independent CLI calls share one Mac host and iPhone Runner. `connect` manages startup; `disconnect` or idle expiry releases the session.
 - **Know what happened.** Actions distinguish `completed`, `not_dispatched`, and `unknown`. Tap and swipe check the screen before dispatch; input actions check frame stability afterward.
 - **Use a small native stack.** Swift, Apple's device tooling, and a thin XCTest Runner. The runtime needs no Python, Node.js, WebDriverAgent, `iproxy`, or `pymobiledevice3`.
@@ -152,7 +152,7 @@ Use `iphone-use --help` or `iphone-use <command> --help` for all options. Sessio
 | `tap REF` | Tap an element, or use an observation ID with `--x X --y Y`. |
 | `swipe REF --direction up` | Swipe an element; explicit endpoints, velocity, and hold durations are also supported. |
 | `type REF --mode replace --text TEXT` | Replace text, or use `--mode insert` at an already focused caret. `--stdin` accepts UTF-8 from a file or pipe. |
-| `press REF --key return` | Send Return to an already focused text input. |
+| `press REF --key KEY` | Send an editing key to an already focused text input; see [supported keys](docs/runner-editing-keys.md). |
 | `disconnect` | Finish accepted commands and clean up the session. |
 
 Coordinates use **screen points**, not screenshot pixels. Swipe direction describes finger movement. Text input does not submit automatically; use a separate `press` when appropriate. See [actions](docs/actions.md) for text limits, dragging, and examples.

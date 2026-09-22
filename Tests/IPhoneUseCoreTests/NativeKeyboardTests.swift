@@ -122,7 +122,9 @@ final class NativeKeyboardTests: XCTestCase {
             XCTAssertThrowsError(try DeviceAction(operation: "press", request: request))
             if key != .returnKey {
                 for native in [false, true] {
-                    XCTAssertThrowsError(try DeviceAction(operation: "press", request: ["reference": "o1:e2", "key": key.rawValue], allowScreenText: native))
+                    if native { XCTAssertThrowsError(try DeviceAction(operation: "press", request: ["reference": "o1:e2", "key": key.rawValue], allowScreenText: true)) }
+                    else if key == .escape { XCTAssertThrowsError(try DeviceAction(operation: "press", request: ["reference": "o1:e2", "key": key.rawValue])) }
+                    else { XCTAssertNoThrow(try DeviceAction(operation: "press", request: ["reference": "o1:e2", "key": key.rawValue])) }
                 }
             }
         }

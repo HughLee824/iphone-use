@@ -65,8 +65,10 @@ Runner also implements screenshot-coordinate long-press, double-tap and pinch. D
 
 Runner supports `home oN`, `terminate BUNDLE` and `relaunch BUNDLE` through XCTest. Home confirms input completion; lifecycle commands confirm application state, not page readiness. Use `--observe` to check the result. See [Runner lifecycle](runner-app-lifecycle.md).
 
+Runner implements Return, Backspace, arrows and Tab/Shift+Tab with the same names as standard mode, current element references and XCTest execution. Runner Escape remains unsupported after device validation; it does not switch modes. See [Runner editing keys](runner-editing-keys.md) for the validated scope and limitations.
+
 ## Follow-up: feature parity
 
-Runner should progressively support the same user operations: the outstanding areas include additional gestures/system controls, text editing and keys, and recording. Keep backend-specific implementations and validate each before advertising support. Standard-mode code must not start Runner to fill a gap; Runner must not silently establish a native control session. Mode selection does not imply complete feature parity.
+Runner should progressively support the same user operations: the outstanding areas include remaining system controls, backend-specific text limitations, and recording. Keep backend-specific implementations and validate each before advertising support. Standard-mode code must not start Runner to fill a gap; Runner must not silently establish a native control session. Mode selection does not imply complete feature parity.
 
 See [rename and upgrade behavior](rename-to-iphone-use.md) for old configuration, active sessions and the new Runner bundle IDs.

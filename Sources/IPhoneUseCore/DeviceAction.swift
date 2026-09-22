@@ -122,7 +122,12 @@ struct DeviceAction {
             fields["textMethod"] = request["textMethod"]
         }
         if operation == "press" {
-            let supported = allowScreenText && reference.node == nil ? NativePressKey.allCases.map(\.rawValue) : ["return"]
+            if !allowScreenText, request["key"] as? String == "escape" {
+                throw IPhoneUseError("unsupported_key", "Runner Escape has not passed device validation; no input was sent")
+            }
+            let supported = allowScreenText
+                ? (reference.node == nil ? NativePressKey.allCases.map(\.rawValue) : ["return"])
+                : RunnerPressKey.allCases.map(\.rawValue)
             guard let key = request["key"] as? String, supported.contains(key) else {
                 throw IPhoneUseError("invalid_key", "Use --key " + supported.joined(separator: ", "))
             }

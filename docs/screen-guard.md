@@ -1,6 +1,6 @@
 # 动作前画面校验与坐标执行
 
-画面校验覆盖 tap/swipe：宿主根据原观察准备坐标和画面指纹，Runner 重新截图并校验，通过后执行坐标手势。type/press 的 AX 目标解析、动作后的精确帧稳定检测、每次派发后重新 observe、unknown 不重发均保持不变。
+画面校验覆盖 tap/swipe：宿主根据原观察准备坐标和画面指纹，Runner 重新截图并校验，通过后执行坐标手势。type/press 的 AX 目标解析、动作后的容差帧稳定检测、每次派发后重新 observe、unknown 不重发均保持不变。
 
 上述 Runner 路径之外，实验性 apple-native 的 `type oN` 和 `press oN --key return` 都从当前截图生成完整字段保护，并在输入前重新截图校验；显式 `--field-rect` 可使用同一有界光标例外，不读取 AX 或自动聚焦。`text-prepare` 只准备自有键盘，随后使旧引用失效并返回新图。具体约束见[原生文字输入](actions.md#实验性原生文字输入)。
 
@@ -48,7 +48,7 @@ iphone-use --session "$SESSION" tap o6:e10 --max-screen-change 0.01 --max-region
 - 参数、坐标、保护引用不合法：宿主或 Runner 拒绝，不发送输入。
 - 输入后的失败、丢失响应、画面不稳定：沿用 unknown 和不重发规则，不把动作前的通过证据当成动作完成。
 
-设备协议现在是 observationVersion=2、actionVersion=8、launchVersion=2、screenGuardVersion=1、frameStabilityVersion=2。actionVersion=8 增加全屏保护的 Runner Home；Home 确认按键完成，不承诺目的画面判稳。launchVersion=2 增加 Runner terminate/relaunch。actionVersion=7 增加 Runner 长按、双击和双指轨迹；actionVersion=6 增加 Runner append 和 text_view LF 多行检查；此前 actionVersion=5 增加显式滑动速度与两端停留，见 [可控拖动](actions.md#可控拖动)。旧 Runner 在 connect 时返回 runner_needs_rebuild，发布用户需要安装配套 Runner 并 setup，源码开发者需要重新 build-runner，不静默忽略新参数或回退到无校验坐标输入。
+设备协议现在是 observationVersion=2、actionVersion=9、launchVersion=2、screenGuardVersion=1、frameStabilityVersion=2。actionVersion=9 增加 Runner 编辑按键及 key/keyModifiers 回执核对，见 [Runner 编辑按键](runner-editing-keys.md)。actionVersion=8 增加全屏保护的 Runner Home；Home 确认按键完成，不承诺目的画面判稳。launchVersion=2 增加 Runner terminate/relaunch。actionVersion=7 增加 Runner 长按、双击和双指轨迹；actionVersion=6 增加 Runner append 和 text_view LF 多行检查；此前 actionVersion=5 增加显式滑动速度与两端停留，见 [可控拖动](actions.md#可控拖动)。旧 Runner 在 connect 时返回 runner_needs_rebuild，发布用户需要安装配套 Runner 并 setup，源码开发者需要重新 build-runner，不静默忽略新参数或回退到无校验坐标输入。
 
 ## 验证边界与剩余风险
 

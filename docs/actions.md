@@ -1,6 +1,6 @@
 # 设备动作与引用校验
 
-当前提供按引用或明确坐标的画面校验点击/滑动，以及按输入框引用的光标插入、整段替换和独立 Return；文本可从参数或 stdin 读取。用户或调用 agent 负责选择动作并观察结果；iPhone-use 不解释自然语言任务。
+当前提供按引用或明确坐标的画面校验点击/滑动，以及按输入框引用的光标插入、整段替换和独立编辑按键；文本可从参数或 stdin 读取。用户或调用 agent 负责选择动作并观察结果；iPhone-use 不解释自然语言任务。
 
 ## 实验性原生文字输入
 
@@ -53,7 +53,7 @@ iphone-use --session "$SESSION" tap o13:e10 --protect o13:e20
 - Runner append 读取已校验目标的完整可读原文，将原文和新增文本拼接后走 replace；不依赖当前光标/选区，也不假定 Command-Down 生效。安全字段、无字符串原文、原文与 placeholder 无法区分、拼接后超过 4096 bytes 或含不支持字符时，在输入前拒绝。nil 值不推断为空文本；已有内容的控件处理、格式和 undo 行为仍可能因整段替换改变。宿主验证旧观察，Runner 使用再次核对后的当前快照值构造正文；不从过期 AX 值重建。
 - Runner 文本上限为 4096 UTF-8 字节，支持 LF 换行，但只允许用于明确的 text_view；text_field、secure_text_field、search_field 在聚焦/输入前拒绝多行。当前 Probe 实测 XCTest 把 CRLF 写成两个 LF，因此 Runner 明确拒绝 CR/CRLF，既不静默规范化，也不借用原生粘贴通道。其他控制键仍拒绝；insert/append 不接受空字符串，replace 空字符串表示清空。
 - `--text` 与 `--stdin` 必须且只能选一个。stdin 读取到 EOF，严格解码 UTF-8，不裁剪首尾空格、不去掉末尾换行、不解释转义或执行文本。可用文件重定向或管道；管道生产者需关闭输出。读取到第 4097 字节就拒绝，不为超长输入继续等待 EOF。`--mode replace --stdin < /dev/null` 表示清空。
-- `press oN:eN --key return` 向当前输入框发送独立 Return，要求已有键盘焦点，不额外 tap。需要聚焦时先 tap、再 observe。当前只接受小写 `return`，未提供其他按键或组合键接口。具体界面效果由 App 决定，可能提交、换行或无业务变化；调用方仍需 observe 核对。
+- `press oN:eN --key return` 向当前输入框发送独立 Return，要求已有键盘焦点，不额外 tap。需要聚焦时先 tap、再 observe。也支持 `backspace`、`left`、`right`、`up`、`down`、`tab` 和 `shift-tab`；Runner 的 `escape` 返回 `unsupported_key`，不发送输入。按键名区分大小写，不提供任意组合键或重复次数。详见 [Runner 编辑按键](runner-editing-keys.md)。具体界面效果由 App 决定，可能提交、换行或无业务变化；调用方仍需 observe 核对。
 
 ## 动作后观察
 
@@ -162,7 +162,7 @@ Runner 没有跨请求观察缓存、短引用、续期计时或任务策略。�
 
 采帧间隔约 200ms，至少观察 1500ms，且连续至少 3 帧与同一候选帧等价、跨度至少 400ms 才报告完成。`yiq-local-caret-v1` 在全尺寸 sRGB 像素上允许小幅色差（Y/I/Q 各分量差不超过 2.5，RGB 每通道差不超过 4，alpha 必须相同）；不允许一定比例的明显变化，不降低分辨率，也不自动忽略抗锯齿边缘。单个超限像素也会重置窗口，因此局部文字变化不会被整屏平均分淹没。固定候选帧防止缓慢累计漂移。
 
-在 type/press 已验证的文本目标范围内，允许符合位置、尺寸、蓝色笔画和明暗变化模型的单根光标变化。tap 后若键盘存在，一次有界只读快照中唯一完整可见的输入框也可作为分析范围；多个字段或截断快照不启用此例外，不通过焦点遍历查找字段。光标最外侧像素若与抗锯齿文字重叠，还必须有紧邻且完全未变的中性文字边缘，各通道变化不能超过实测光标相位；不扩张遮罩到相邻文字。无法识别的光标保留正常比较。原始截图始终不变，例外区域写入 `comparison.ignoredCaret`。至少观察 1500ms 用于避免本次记录到的延迟键盘展开前提前判稳，并不保证未来不会出现异步更新；后续动作仍需新观察和输入前检查。
+在 type/press 已验证的文本目标范围内，允许符合位置、尺寸、蓝色笔画和明暗变化模型的单根光标变化。tap 后若键盘存在，一次有界只读快照中唯一完整可见的输入框也可作为分析范围；多个字段或截断快照不启用此例外，不通过焦点遍历查找字段。Tab/Shift+Tab 可改变焦点，因此动作后读一次有界快照（最多 200 节点、8 个完整可见输入框），仅当这些字段中识别出唯一光标时启用同一例外；其他字段及整屏像素仍参与比较。光标最外侧像素若与抗锯齿文字重叠，还必须有紧邻且完全未变的中性文字边缘，各通道变化不能超过实测光标相位；不扩张遮罩到相邻文字。无法识别的光标保留正常比较。原始截图始终不变，例外区域写入 `comparison.ignoredCaret`。至少观察 1500ms 用于避免本次记录到的延迟键盘展开前提前判稳，并不保证未来不会出现异步更新；后续动作仍需新观察和输入前检查。
 
 全尺寸原始 sRGB RGBA8 像素和尺寸的 SHA-256 继续绑定最终图片与执行证据，不再用它判断视觉等价。比较/光标识别/哈希的处理时间计入 5 秒预算，但不冒充采样稳定跨度。
 
@@ -178,7 +178,7 @@ XCTest 的命令错误经 Runner 转成响应；不再把已经返回给调用�
 
 ## 兼容性与验证边界
 
-当前设备协议为 `actionVersion=8`、`launchVersion=2`、`observationVersion=2`、`screenGuardVersion=1`、`frameStabilityVersion=2`。发布用户安装配套版本并重新 setup；源码开发者重新 build-runner，并使用新路径 connect。旧 Runner 不会静默忽略速度与停留参数或接受尚不支持的新文本模式和手势。
+当前设备协议为 `actionVersion=9`、`launchVersion=2`、`observationVersion=2`、`screenGuardVersion=1`、`frameStabilityVersion=2`。发布用户安装配套版本并重新 setup；源码开发者重新 build-runner，并使用新路径 connect。旧 Runner 不会静默忽略速度与停留参数或接受尚不支持的新文本模式和手势。
 
 本地测试覆盖输入校验、引用失效、执行事实、画面校验和帧稳定；真机兼容性以 [README 中的实测环境](../README.zh-CN.md#前置条件)为限。历史操作记录、截图和诊断日志仅保留在本地，不作为公开运行依赖。执行前检查不构成与 App 自行变化原子隔离的事务。
 
@@ -199,7 +199,7 @@ Runner append 与 LF 多行的实现取舍、宿主测试和 Probe 精确字节�
 
 ## 原生编辑按键与横屏文字
 
-`apple-native` 的 `press oN --key KEY` 支持 `return`、`backspace`、`left`、`right`、`up`、`down`、`tab`、`shift-tab`、`escape`。使用当前截图确认焦点，可通过 `--field-rect x,y,width,height` 保护完整输入框。每次只发送一个按键或明确的 Shift+Tab 组合，包含释放；没有重复次数、任意快捷键或自动补发。Runner 的元素引用 `press oN:eN` 仍只接受 `return`。按键与 Unicode 粘贴共用最多三次只读预检：始终比较原 observation，沿用每阶段 8 秒及原观察 30 秒截止时间，方向变化立即拒绝；只重取截图，不重发按键。
+`apple-native` 的 `press oN --key KEY` 支持 `return`、`backspace`、`left`、`right`、`up`、`down`、`tab`、`shift-tab`、`escape`。使用当前截图确认焦点，可通过 `--field-rect x,y,width,height` 保护完整输入框。每次只发送一个按键或明确的 Shift+Tab 组合，包含释放；没有重复次数、任意快捷键或自动补发。Runner 使用元素引用 `press oN:eN`，其实现和验收范围见 [Runner 编辑按键](runner-editing-keys.md)。按键与 Unicode 粘贴共用最多三次只读预检：始终比较原 observation，沿用每阶段 8 秒及原观察 30 秒截止时间，方向变化立即拒绝；只重取截图，不重发按键。
 
 这些名称表示 HID 键盘操作，不承诺业务效果：Backspace 的删除单位、方向键的光标位置、Tab 的焦点切换、Escape 的取消行为均由前台 App/IME 决定。回执保留 `key`、`keyReportQueued`、`keyboardReleaseQueued`、`keyEffectConfirmed=false`；本地发送完成仍是 unknown，需检查结果截图。Shift+Tab 先单独按下 Shift，再按 Tab，最后释放全部按键；取消或失败沿用同通道释放和不重放契约。
 

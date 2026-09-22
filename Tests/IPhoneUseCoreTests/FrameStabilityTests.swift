@@ -55,7 +55,7 @@ final class FrameStabilityTests: XCTestCase {
         let stroke = CGRect(x: 50, y: 150, width: 2, height: 20)
         let source = try screenPNG(patches: [(stroke, [30,110,240])])
         let hidden = try screenPNG()
-        var value = FrameStability(startedAt: 0, context: screenTestContext(), textField: field)
+        var value = FrameStability(startedAt: 0, context: screenTestContext(), textFields: [field])
         try record(&value, source, 0)
         try record(&value, hidden, 0.2)
         XCTAssertNotNil((value.result["comparison"] as? [String: Any])?["ignoredCaret"])
@@ -75,13 +75,40 @@ final class FrameStabilityTests: XCTestCase {
         XCTAssertEqual(unscoped.consecutiveFrames, 1)
     }
 
+    func testTabDestinationCaretRequiresOneCandidateAndKeepsOtherFieldsVisible() throws {
+        let first = ScreenRect(CGRect(x: 18, y: 139, width: 354, height: 60))
+        let second = ScreenRect(CGRect(x: 18, y: 219, width: 354, height: 60))
+        let stroke = CGRect(x: 50, y: 230, width: 2, height: 20)
+        let source = try screenPNG(patches: [(stroke, [30,110,240])])
+        let hidden = try screenPNG()
+        var value = FrameStability(startedAt: 0, context: screenTestContext(), textFields: [first, second])
+        try record(&value, source, 0)
+        try record(&value, hidden, 0.2)
+        try record(&value, source, 1.5)
+        XCTAssertTrue(value.stable)
+        try record(&value, screenPNG(patches: [(CGRect(x: 70, y: 150, width: 1, height: 10), [0,0,0])]), 1.7)
+        XCTAssertFalse(value.stable)
+
+        for fields in [[first], [second, second], Array(repeating: second, count: 9)] {
+            var rejected = FrameStability(startedAt: 0, context: screenTestContext(), textFields: fields)
+            try record(&rejected, source, 0)
+            try record(&rejected, hidden, 0.2)
+            XCTAssertEqual(rejected.consecutiveFrames, 1)
+        }
+        var ambiguous = FrameStability(startedAt: 0, context: screenTestContext(), textFields: [first, second])
+        let two = try screenPNG(patches: [(stroke, [30,110,240]), (stroke.offsetBy(dx: 0, dy: -80), [30,110,240])])
+        try record(&ambiguous, two, 0)
+        try record(&ambiguous, hidden, 0.2)
+        XCTAssertEqual(ambiguous.consecutiveFrames, 1)
+    }
+
     func testCaretNextToGlyphDoesNotMaskTheGlyph() throws {
         let field = ScreenRect(CGRect(x: 18, y: 139, width: 354, height: 160))
         let caret = CGRect(x: 50, y: 150, width: 2, height: 20)
         let glyph = CGRect(x: 48, y: 155, width: 1, height: 10)
         let source = try screenPNG(patches: [(caret, [30,110,240]), (glyph, [0,0,0])])
         XCTAssertNil(try NativeCaretGuard(png: source, context: screenTestContext(), field: field))
-        var value = FrameStability(startedAt: 0, context: screenTestContext(), textField: field)
+        var value = FrameStability(startedAt: 0, context: screenTestContext(), textFields: [field])
         try record(&value, source, 0)
         try record(&value, screenPNG(patches: [(glyph, [0,0,0])]), 0.2)
         try record(&value, source, 1.5)
@@ -104,7 +131,7 @@ final class FrameStabilityTests: XCTestCase {
         let bright = try image([66,107,242], [65,86,154])
         let hidden = try image([28,28,30], [65,65,65])
         XCTAssertNil(try NativeCaretGuard(png: source, context: screenTestContext(), field: field))
-        var value = FrameStability(startedAt: 0, context: screenTestContext(), textField: field)
+        var value = FrameStability(startedAt: 0, context: screenTestContext(), textFields: [field])
         try record(&value, source, 0)
         try record(&value, bright, 0.2)
         try record(&value, hidden, 1.5)

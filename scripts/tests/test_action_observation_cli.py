@@ -195,6 +195,18 @@ class ActionObservationCLITests(unittest.TestCase):
                 self.assertEqual(requests[0]["key"], key)
                 self.assertEqual(requests[0]["fieldRect"], "60,78,724,82")
 
+    def test_runner_editing_keys_keep_element_reference_without_replay(self):
+        for key in ["backspace", "left", "right", "up", "down", "tab", "shift-tab"]:
+            with self.subTest(key=key):
+                code, response, requests = self.run_cli(
+                    ["press", "o2:e8", "--key", key], lose_action=True)
+                self.assertEqual(code, 1, response)
+                self.assertEqual(response["outcome"], "unknown")
+                self.assertEqual(len(requests), 1)
+                self.assertEqual(requests[0]["key"], key)
+                self.assertEqual(requests[0]["reference"], "o2:e8")
+                self.assertNotIn("fieldRect", requests[0])
+
     def test_unknown_and_observation_failure_exit_nonzero_without_replay(self):
         for outcome, capture_ok in [("unknown", True), ("completed", False), ("unknown", False)]:
             with self.subTest(outcome=outcome, capture_ok=capture_ok):

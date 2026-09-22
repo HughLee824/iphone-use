@@ -148,7 +148,7 @@ struct FrameStability {
     static let timeout: TimeInterval = 5
     private let startedAt: TimeInterval
     private let context: ScreenContext?
-    private let textField: ScreenRect?
+    private let textFields: [ScreenRect]
     private var unchangedSince: TimeInterval
     private var lastSampleAt: TimeInterval
     private var processedAt: TimeInterval
@@ -163,8 +163,8 @@ struct FrameStability {
     private(set) var consecutiveFrames = 0
     private(set) var stable = false
 
-    init(startedAt: TimeInterval, context: ScreenContext? = nil, textField: ScreenRect? = nil) {
-        self.startedAt = startedAt; self.context = context; self.textField = textField
+    init(startedAt: TimeInterval, context: ScreenContext? = nil, textFields: [ScreenRect] = []) {
+        self.startedAt = startedAt; self.context = context; self.textFields = textFields.count <= 8 ? textFields : []
         unchangedSince = startedAt; lastSampleAt = startedAt; processedAt = startedAt
     }
 
@@ -180,7 +180,14 @@ struct FrameStability {
         let equivalent = comparison?.equivalent == true
         if !equivalent {
             anchor = frame; anchorPNG = png; caret = nil
-            if let context, let textField { caret = try? NativeCaretGuard(png: png, context: context, field: textField, allowsAdjacentText: true) }
+            if let context {
+                let candidates = textFields.compactMap { field in
+                    try? NativeCaretGuard(png: png, context: context, field: field, allowsAdjacentText: true)
+                }
+                // At most one recognized stroke across all bounded fields. The
+                // full frame is still compared, including all other field pixels.
+                if candidates.count == 1 { caret = candidates[0] }
+            }
         }
         recordSample(hash: frame.hash, equivalent: equivalent, capturedAt: capturedAt, processedAt: processedAt())
     }

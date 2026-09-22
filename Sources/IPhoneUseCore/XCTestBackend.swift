@@ -194,11 +194,12 @@ final class XCTestBackend: SessionBackend {
         let response = try request("act", fields: Self.actionFields(action, target: target))
         return try ActionReply.decode(XCTestCapture.actionResponse(response, directory: paths.directory,
             expectedGuard: target.gesture?.screenGuard ?? target.textGuard, expectedMotion: target.gesture?.motion,
-            expectedPinch: target.gesture?.pinch, expectedPressDuration: action.fields["duration"] as? Double, expectedHome: action.kind == "home"))
+            expectedPinch: target.gesture?.pinch, expectedPressDuration: action.fields["duration"] as? Double, expectedHome: action.kind == "home",
+            expectedKey: action.kind == "press" ? RunnerPressKey(rawValue: action.fields["key"] as? String ?? "") : nil))
     }
 
     static func validateCapabilities(_ result: [String: Any]) throws {
-        let expected = ["observationVersion": 2, "actionVersion": 8, "launchVersion": 2, "frameStabilityVersion": 2, "screenGuardVersion": 1]
+        let expected = ["observationVersion": 2, "actionVersion": 9, "launchVersion": 2, "frameStabilityVersion": 2, "screenGuardVersion": 1]
         var differences = expected.keys.sorted().compactMap { key -> String? in
             let actual = result[key] as? Int
             return actual == expected[key] ? nil : "\(key): expected \(expected[key]!), received \(actual.map(String.init) ?? "missing")"
