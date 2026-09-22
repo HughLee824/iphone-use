@@ -30,15 +30,40 @@ final class DeviceActionTests: XCTestCase {
     }
 
     func testInputModesUnicodeAndControlKeys() throws {
-        for mode in ["insert", "replace"] {
+        for mode in ["insert", "replace", "append"] {
             let action = try DeviceAction(operation: "type", request: ["reference": "o1:e27", "mode": mode, "text": "北京👩‍💻e\u{301}"])
             XCTAssertEqual(action.fields["text"] as? String, "北京👩‍💻e\u{301}")
         }
         XCTAssertNoThrow(try DeviceAction(operation: "type", request: ["reference": "o1:e27", "mode": "replace", "text": ""]))
-        for text in ["", "submit\n", "\r", "\t", "\u{7f}", "\u{F700}", String(repeating: "北", count: 1366)] {
+        for text in ["", "\r", "a\r\nb", "\t", "\u{7f}", "\u{F700}", String(repeating: "北", count: 1366)] {
             XCTAssertThrowsError(try DeviceAction(operation: "type", request: ["reference": "o1:e27", "mode": "insert", "text": text]))
         }
         XCTAssertThrowsError(try DeviceAction(operation: "type", request: ["reference": "o1:e27", "text": "hello"]))
+    }
+
+    func testRunnerMultilinePreservesBytesAndRequiresTextViewBeforeDispatch() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("runner-lines-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = ObservationCache(directory: directory)
+        let fixture = try observationFixture()
+        for role in ["text_field", "secure_text_field", "search_field", "text_view"] {
+            let nodes = fixture.nodes.map { node in
+                AXNode(index: node.index, parent: node.parent, role: node.index == 26 ? role : node.role, attributes: node.attributes)
+            }
+            _ = try cache.store(CapturedObservation(nodes: nodes, metadata: fixture.metadata, screenshot: fixture.screenshot))
+            let observationID = try XCTUnwrap(cache.currentID)
+            for text in [" 首🙂行\n\n尾e\u{301} \n", "首\n尾\n"] {
+                let action = try DeviceAction(operation: "type", request: ["reference": "\(observationID):e27", "mode": "replace", "text": text])
+                XCTAssertEqual(Array((action.fields["text"] as! String).utf8), Array(text.utf8))
+                if role == "text_view" { XCTAssertNoThrow(try cache.resolveTarget(for: action)) }
+                else {
+                    XCTAssertThrowsError(try cache.resolveTarget(for: action)) {
+                        XCTAssertEqual(($0 as? IPhoneUseError)?.code, "multiline_requires_text_view")
+                    }
+                }
+                XCTAssertEqual(cache.currentID, observationID)
+            }
+        }
     }
 
     func testCoordinateAndSwipeTargetsAreExplicit() throws {

@@ -215,7 +215,7 @@ final class LiveSessionTests: XCTestCase {
             let hostManaged = ProcessInfo.processInfo.environment["IPHONE_USE_HOST_MANAGED"] == "1"
             return ["protocol": "agentsoma-spike-jsonl-v1", "lifecycleOwner": hostManaged ? "host" : "spike",
                     "lifetimeLimitSeconds": hostManaged ? NSNull() : 900, "observationVersion": 2,
-                    "actionVersion": 5, "launchVersion": 1, "frameStabilityVersion": 2, "screenGuardVersion": 1,
+                    "actionVersion": 6, "launchVersion": 1, "frameStabilityVersion": 2, "screenGuardVersion": 1,
                     "applicationStateTimeoutSupported": stateTimeout != nil]
         }
         if op == "shutdown" { return ["stopped": true] }
@@ -307,14 +307,14 @@ final class LiveSessionTests: XCTestCase {
             throw CommandError("invalid_action")
         }
         let mode = command["mode"] as? String
-        let text = command["text"] as? String
+        var text = command["text"] as? String
         if kind == "press", command["key"] as? String != "return" { throw CommandError("invalid_key") }
         if kind == "type" {
-            guard ["insert", "replace"].contains(mode ?? ""), let text, text.utf8.count <= 4096,
+            guard ["insert", "replace", "append"].contains(mode ?? ""), let text, text.utf8.count <= 4096,
                   mode == "replace" || !text.isEmpty,
                   text.unicodeScalars.allSatisfy({
                       let v = $0.value
-                      return v >= 32 && v != 127 && v != 133 && v != 0x2028 && v != 0x2029 && !(0xF700...0xF8FF).contains(v)
+                      return v == 10 || (v >= 32 && v != 127 && v != 133 && v != 0x2028 && v != 0x2029 && !(0xF700...0xF8FF).contains(v))
                   }) else { throw CommandError("invalid_text") }
         }
         guard expected["bundleId"] as? String == currentBundleID else { throw CommandError("app_changed", requiresObservation: true) }
@@ -356,18 +356,27 @@ final class LiveSessionTests: XCTestCase {
             guard count == 1 else { throw CommandError(count == 0 ? "target_missing" : "ambiguous_target", requiresObservation: count == 0) }
             target = matches.firstMatch
         }
-        guard matches(try target.snapshot(), expected: path.last!) else { throw CommandError("target_changed", requiresObservation: true) }
+        let liveSnapshot = try target.snapshot()
+        guard matches(liveSnapshot, expected: path.last!) else { throw CommandError("target_changed", requiresObservation: true) }
         guard target.isEnabled else { throw CommandError("target_disabled") }
         guard target.isHittable else { throw CommandError("target_not_hittable") }
         if ["type", "press"].contains(kind), ![XCUIElement.ElementType.textField, .secureTextField, .textView, .searchField].contains(target.elementType) {
             throw CommandError("not_text_input")
+        }
+        if kind == "type", mode == "append", let suffix = text {
+            do { text = try RunnerTextInput.append(suffix, to: liveSnapshot.value,
+                                                  secure: liveSnapshot.elementType == .secureTextField, placeholder: liveSnapshot.placeholderValue) }
+            catch let failure as RunnerTextInput.Failure { throw CommandError(failure.rawValue, message: failure.message) }
+        }
+        if kind == "type", let text, text.unicodeScalars.contains(where: { $0.value == 10 || $0.value == 13 }), target.elementType != .textView {
+            throw CommandError("multiline_requires_text_view", message: "Runner multiline text requires a text_view; use a separate press for Return")
         }
         if ["type", "press"].contains(kind) {
             postInputContext = screenContext(app: app, root: root)
         }
         switch kind {
         case "type":
-            if mode == "replace" {
+            if mode == "replace" || mode == "append" {
                 try event { target.tap() }
                 try event { target.typeKey("a", modifierFlags: .command) }
                 if text?.isEmpty == true { try event { target.typeText(XCUIKeyboardKey.delete.rawValue) } }

@@ -29,7 +29,7 @@ The CLI and host are two process roles of the same executable. A connection star
 
 The Runner does not own agent-facing observation IDs, short references, snapshot caches, or task strategy. It receives resolved targets or coordinates from the host. Tap/swipe use screen-context and fingerprint checks; type/press use AX target checks. The host interprets returned execution facts as `completed`, `not_dispatched`, or `unknown`.
 
-The native Xcode project shares `FrameStability.swift`, `ScreenGuard.swift`, `NativeCaretGuard.swift`, and `XCTestDiagnostics.swift` from `Sources/IPhoneUseCore`. Keep these paths intact when changing the Runner project. The production build does not depend on local experiments, an installed test Fixture app, or XcodeGen.
+The native Xcode project shares `FrameStability.swift`, `ScreenGuard.swift`, `NativeCaretGuard.swift`, `RunnerTextInput.swift`, and `XCTestDiagnostics.swift` from `Sources/IPhoneUseCore`. Keep these paths intact when changing the Runner project. The production build does not depend on local experiments, an installed test Fixture app, or XcodeGen.
 
 ## Session lifecycle
 

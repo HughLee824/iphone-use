@@ -25,7 +25,9 @@ private final class TextProbeController: UIViewController, UITextViewDelegate {
         ("ASCII", "ASCII-BEGIN|0123456789|ABCDEFGHIJKLMNOPQRSTUVWXYZ|abcdefghijklmnopqrstuvwxyz|Ab7!? @# end|ASCII-END"),
         ("中文", "中文开始｜这是一段用于真机验收的受控长文本。我们检查每个汉字、数字和标点是否完整保留，不发送消息，也不提交表单。第一段结束；第二段继续：苹果原生通道负责执行，外部代理核对截图，剪贴板在确认后恢复。编号一二三四五六七八九十，数字0123456789，结束标记｜中文结束"),
         ("组合", "组合开始|e\u{301}|é|👩🏽‍💻|👨‍👩‍👧‍👦|🇨🇳|1️⃣|❤️|组合结束"),
-        ("起始", "头🙂尾")
+        ("起始", "头🙂尾"),
+        ("多行", " 首🙂行\n\n尾e\u{301} \n"),
+        ("CRLF", " 首🙂行\r\n\r\n尾e\u{301} \r\n")
     ]
 
     override func viewDidLoad() {

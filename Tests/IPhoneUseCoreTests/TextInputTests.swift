@@ -2,6 +2,22 @@ import XCTest
 @testable import IPhoneUseCore
 
 final class TextInputTests: XCTestCase {
+    func testRunnerAppendReconstructsExactTextAndRejectsUnreadableOrUnsafeSource() throws {
+        let source = " 头🙂\ne\u{301} "
+        let suffix = "尾\n"
+        XCTAssertEqual(Array(try RunnerTextInput.append(suffix, to: source, secure: false).utf8), Array((source + suffix).utf8))
+        XCTAssertEqual(try RunnerTextInput.append("尾", to: "", secure: false), "尾")
+        for value: Any? in [nil, NSNull(), 123] {
+            XCTAssertThrowsError(try RunnerTextInput.append("尾", to: value, secure: false))
+        }
+        XCTAssertThrowsError(try RunnerTextInput.append("尾", to: "•••", secure: true))
+        XCTAssertThrowsError(try RunnerTextInput.append("尾", to: "Placeholder", secure: false, placeholder: "Placeholder"))
+        XCTAssertThrowsError(try RunnerTextInput.append("尾", to: "old\ttext", secure: false))
+        XCTAssertThrowsError(try RunnerTextInput.append("尾", to: "old\r\ntext", secure: false))
+        XCTAssertEqual(try RunnerTextInput.append("尾", to: String(repeating: "a", count: 4093), secure: false).utf8.count, 4096)
+        XCTAssertThrowsError(try RunnerTextInput.append("尾", to: String(repeating: "a", count: 4094), secure: false))
+    }
+
     private func read(_ data: Data) throws -> String {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("as-text-\(UUID().uuidString)")
         try data.write(to: file)

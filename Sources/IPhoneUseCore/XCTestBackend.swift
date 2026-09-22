@@ -164,7 +164,7 @@ final class XCTestBackend: SessionBackend {
     }
 
     static func validateCapabilities(_ result: [String: Any]) throws {
-        let expected = ["observationVersion": 2, "actionVersion": 5, "launchVersion": 1, "frameStabilityVersion": 2, "screenGuardVersion": 1]
+        let expected = ["observationVersion": 2, "actionVersion": 6, "launchVersion": 1, "frameStabilityVersion": 2, "screenGuardVersion": 1]
         var differences = expected.keys.sorted().compactMap { key -> String? in
             let actual = result[key] as? Int
             return actual == expected[key] ? nil : "\(key): expected \(expected[key]!), received \(actual.map(String.init) ?? "missing")"

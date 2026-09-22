@@ -20,7 +20,7 @@ public enum ControlMode: String, Codable {
         return ["operations": common, "observationSources": ["screenshot", "available_elements"],
                 "actionTargets": ["tap": ["screen_point", "element"], "swipe": ["screen_path", "element"],
                                   "type": ["element"], "press": ["element"]],
-                "textModes": ["insert", "replace"], "textMethods": [String](), "pressKeys": ["return"]]
+                "textModes": ["insert", "replace", "append"], "textMethods": [String](), "pressKeys": ["return"]]
     }
 
     static func parse(_ value: String) throws -> ControlMode {

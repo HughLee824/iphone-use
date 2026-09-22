@@ -184,6 +184,15 @@ final class ObservationCache {
             if ["type", "press"].contains(action.kind), !["text_field", "secure_text_field", "text_view", "search_field"].contains(node.role) {
                 throw IPhoneUseError("not_text_input", "The reference must identify a text input")
             }
+            if action.kind == "type", var text = action.fields["text"] as? String {
+                if action.fields["mode"] as? String == "append" {
+                    do { text = try RunnerTextInput.append(text, to: node.attributes["value"], secure: node.role == "secure_text_field") }
+                    catch let failure as RunnerTextInput.Failure { throw IPhoneUseError(failure.rawValue, failure.message) }
+                }
+                if text.unicodeScalars.contains(where: { $0.value == 10 || $0.value == 13 }), node.role != "text_view" {
+                    throw IPhoneUseError("multiline_requires_text_view", "Runner multiline text requires a text_view; use a separate press for Return")
+                }
+            }
             index = node.index
         }
         var path: [[String: Any]] = []

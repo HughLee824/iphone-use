@@ -38,6 +38,7 @@ iphone-use --session "$SESSION" swipe o5:e18 --direction up
 iphone-use --session "$SESSION" type o6:e8 --mode insert --text '北京'
 iphone-use --session "$SESSION" type o7:e8 --mode replace --text '完整的新内容'
 iphone-use --session "$SESSION" type o8:e8 --mode replace --text ''
+iphone-use --session "$SESSION" type o9:e8 --mode append --text '追加'
 iphone-use --session "$SESSION" type o9:e8 --mode replace --stdin < text.txt
 iphone-use --session "$SESSION" press o10:e8 --key return
 iphone-use --session "$SESSION" tap o11 --x 100 --y 200
@@ -49,7 +50,8 @@ iphone-use --session "$SESSION" tap o13:e10 --protect o13:e20
 - swipe 的 up/down/left/right 描述手指移动方向；宿主根据可见 frame 的 20%/80% 位置生成端点。明确端点形式可控制手指移动距离，两种形式均支持下述速度和停留参数。tap/swipe 先校验画面再执行坐标，不依赖 identifier/label 唯一性；阈值、附加保护区域、限制见 [动作前画面校验](screen-guard.md)。
 - insert 直接向指定输入框发送文字，保留已有光标位置，不额外点击字段。它需要现有键盘焦点；需要聚焦时由 agent 先 tap、再 observe。公开 hasFocus 在本设备中不反映键盘焦点，不能据此预检。
 - replace 聚焦输入框后发送 Command-A，非空文本直接覆盖选区；空文本通过 `typeText(XCUIKeyboardKey.delete.rawValue)` 删除选区。没有按 AX value 长度连续退格，也没有自动 Return 或点击提交。
-- XCTest 文本上限仍是 4096 UTF-8 字节，拒绝换行及控制键；insert 不接受空字符串，replace 空字符串表示清空。
+- Runner append 读取已校验目标的完整可读原文，将原文和新增文本拼接后走 replace；不依赖当前光标/选区，也不假定 Command-Down 生效。安全字段、无字符串原文、原文与 placeholder 无法区分、拼接后超过 4096 bytes 或含不支持字符时，在输入前拒绝。nil 值不推断为空文本；已有内容的控件处理、格式和 undo 行为仍可能因整段替换改变。宿主验证旧观察，Runner 使用再次核对后的当前快照值构造正文；不从过期 AX 值重建。
+- Runner 文本上限为 4096 UTF-8 字节，支持 LF 换行，但只允许用于明确的 text_view；text_field、secure_text_field、search_field 在聚焦/输入前拒绝多行。当前 Probe 实测 XCTest 把 CRLF 写成两个 LF，因此 Runner 明确拒绝 CR/CRLF，既不静默规范化，也不借用原生粘贴通道。其他控制键仍拒绝；insert/append 不接受空字符串，replace 空字符串表示清空。
 - `--text` 与 `--stdin` 必须且只能选一个。stdin 读取到 EOF，严格解码 UTF-8，不裁剪首尾空格、不去掉末尾换行、不解释转义或执行文本。可用文件重定向或管道；管道生产者需关闭输出。读取到第 4097 字节就拒绝，不为超长输入继续等待 EOF。`--mode replace --stdin < /dev/null` 表示清空。
 - `press oN:eN --key return` 向当前输入框发送独立 Return，要求已有键盘焦点，不额外 tap。需要聚焦时先 tap、再 observe。当前只接受小写 `return`，未提供其他按键或组合键接口。具体界面效果由 App 决定，可能提交、换行或无业务变化；调用方仍需 observe 核对。
 
@@ -176,13 +178,15 @@ XCTest 的命令错误经 Runner 转成响应；不再把已经返回给调用�
 
 ## 兼容性与验证边界
 
-当前设备协议为 `actionVersion=5`、`observationVersion=2`、`screenGuardVersion=1`、`frameStabilityVersion=2`。发布用户安装配套版本并重新 setup；源码开发者重新 build-runner，并使用新路径 connect。旧 Runner 不会静默忽略速度与停留参数。
+当前设备协议为 `actionVersion=6`、`observationVersion=2`、`screenGuardVersion=1`、`frameStabilityVersion=2`。发布用户安装配套版本并重新 setup；源码开发者重新 build-runner，并使用新路径 connect。旧 Runner 不会静默忽略速度与停留参数或接受尚不支持的新文本模式。
 
 本地测试覆盖输入校验、引用失效、执行事实、画面校验和帧稳定；真机兼容性以 [README 中的实测环境](../README.zh-CN.md#前置条件)为限。历史操作记录、截图和诊断日志仅保留在本地，不作为公开运行依赖。执行前检查不构成与 App 自行变化原子隔离的事务。
 
+Runner append 与 LF 多行的实现取舍、宿主测试和 Probe 精确字节验收见 [文本能力验证](runner-text-parity.md)。
+
 ## 原生文本方式与显式完成
 
-仅 `apple-native` 支持 `type oN --mode insert|replace|append --method auto|keys|paste`。省略方式使用 auto；`keys` 为最多 64 个 ASCII 的 US 键码，结果受活动输入法影响；`paste` 允许最多 4096 UTF-8 字节的整段文本，包括纯 ASCII。auto 遇到 LF/CR 即选择整段粘贴，即使正文全为 ASCII；keys 拒绝换行。LF/CR/CRLF 不裁剪或规范化，其他控制字符仍拒绝。不会在方式失败后静默改用另一通道。`append` 不适用于 XCTest 或节点引用；原有 XCTest insert/replace 行为不变。
+仅 `apple-native` 支持 `type oN --mode insert|replace|append --method auto|keys|paste`。省略方式使用 auto；`keys` 为最多 64 个 ASCII 的 US 键码，结果受活动输入法影响；`paste` 允许最多 4096 UTF-8 字节的整段文本，包括纯 ASCII。auto 遇到 LF/CR 即选择整段粘贴，即使正文全为 ASCII；keys 拒绝换行。LF/CR/CRLF 不裁剪或规范化，其他控制字符仍拒绝。不会在方式失败后静默改用另一通道。此处的 --method 和原生快捷键语义不适用于 Runner；Runner append 的原文拼接与替换行为见上文。
 
 粘贴回执中的 `result.pasteboard.transactionID` 标识当前剪贴板事务。外部 Agent 检查动作后截图并处理完粘贴确认框后，可执行 `text-finish oN --transaction ID`，核对所有权后恢复原剪贴板，保留媒体和键盘会话。要求当前、同设备/会话且在输入尝试结束后采集的截图（最长 30 秒）。完成结果的 `caller_confirmed` 仅记录调用方确认；`completed` 只表示剪贴板恢复并回读成功，不将原本未知的 HID 输入改写成设备确认。失败不重放恢复写入，未知结果需检查后关闭会话。
 

@@ -31,7 +31,11 @@ final class NativeTextInputTests: XCTestCase {
                     "text": text, "textMethod": "keys"], allowScreenText: true))
             }
             XCTAssertNoThrow(try DeviceAction(operation: "type", request: ["reference": "o1", "mode": "insert", "text": text], allowScreenText: true))
-            XCTAssertThrowsError(try DeviceAction(operation: "type", request: ["reference": "o1:e1", "mode": "insert", "text": text]))
+            if text.unicodeScalars.contains(where: { $0.value == 13 }) {
+                XCTAssertThrowsError(try DeviceAction(operation: "type", request: ["reference": "o1:e1", "mode": "insert", "text": text]))
+            } else {
+                XCTAssertNoThrow(try DeviceAction(operation: "type", request: ["reference": "o1:e1", "mode": "insert", "text": text]))
+            }
         }
         for text in ["a\n\u{0}", "a\n\t", "a\r\u{1b}", "a\n\u{7f}", "a\n\u{2028}"] {
             XCTAssertThrowsError(try NativeTextInput(text: text, mode: "insert", method: "paste"))
@@ -106,7 +110,7 @@ final class NativeTextInputTests: XCTestCase {
         XCTAssertThrowsError(try NativeTextInput(text: "", mode: "replace", method: "invalid"))
     }
 
-    func testAppendIsNativeScreenOnlyAndAllModesKeepObservationGuard() throws {
+    func testNativeAppendKeepsScreenOnlyObservationGuard() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let cache = ObservationCache(directory: directory), context = screenTestContext()
@@ -122,7 +126,8 @@ final class NativeTextInputTests: XCTestCase {
             XCTAssertFalse(try guardValue.check(png: changed, context: context).accepted)
         }
         for native in [false, true] {
-            XCTAssertThrowsError(try DeviceAction(operation: "type", request: ["reference": "o1:e1", "mode": "append", "text": "abc"], allowScreenText: native))
+            let action = try DeviceAction(operation: "type", request: ["reference": "o1:e1", "mode": "append", "text": "abc"], allowScreenText: native)
+            XCTAssertThrowsError(try cache.resolveTarget(for: action))
         }
         XCTAssertThrowsError(try DeviceAction(operation: "type", request: ["reference": "o1", "mode": "append", "text": ""], allowScreenText: true))
     }

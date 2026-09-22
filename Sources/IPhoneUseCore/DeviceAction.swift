@@ -107,19 +107,19 @@ struct DeviceAction {
             pinchMotion = nil
         }
         if operation == "type" {
-            let modes = allowScreenText && reference.node == nil ? ["insert", "replace", "append"] : ["insert", "replace"]
+            let modes = ["insert", "replace", "append"]
             guard let mode = request["mode"] as? String, modes.contains(mode) else {
-                throw IPhoneUseError("invalid_input_mode", "Choose --mode insert or replace; append requires apple-native type oN")
+                throw IPhoneUseError("invalid_input_mode", "Choose --mode insert, replace or append")
             }
-            let allowNewlines = allowScreenText && reference.node == nil && request["textMethod"] as? String != "keys"
+            let allowNewlines = !allowScreenText || (reference.node == nil && request["textMethod"] as? String != "keys")
             guard let text = request["text"] as? String, text.utf8.count <= TextInput.maximumBytes,
                   mode == "replace" || !text.isEmpty,
                   text.unicodeScalars.allSatisfy({ scalar in
                       let v = scalar.value
-                      if allowNewlines && (v == 10 || v == 13) { return true }
+                      if allowNewlines && (v == 10 || (allowScreenText && v == 13)) { return true }
                       return v >= 32 && v != 127 && v != 133 && v != 0x2028 && v != 0x2029 && !(0xF700...0xF8FF).contains(v)
                   }) else {
-                throw IPhoneUseError("invalid_text", "Use up to 4096 UTF-8 bytes without control keys; LF/CR require native auto or paste, and only replace accepts empty text")
+                throw IPhoneUseError("invalid_text", "Use up to 4096 UTF-8 bytes without control keys; LF requires a Runner text_view; CR/CRLF require native auto/paste, and only replace accepts empty text")
             }
             fields["mode"] = mode; fields["text"] = text
             fields["textMethod"] = request["textMethod"]

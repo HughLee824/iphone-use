@@ -469,7 +469,7 @@ final class HostTests: XCTestCase {
             XCTAssertEqual((status["result"] as? [String: Any])?["mode"] as? String, expectedMode)
             let support = (status["result"] as? [String: Any])?["support"] as? [String: Any]
             XCTAssertEqual((support?["operations"] as? [String])?.contains("record-start"), native)
-            XCTAssertEqual(support?["textModes"] as? [String], native ? ["insert", "replace", "append"] : ["insert", "replace"])
+            XCTAssertEqual(support?["textModes"] as? [String], ["insert", "replace", "append"])
             let observed = try call(paths, session: session, op: "observe")
             let rejected = try call(paths, session: session, op: "not-an-operation")
             let disconnected = try call(paths, session: session, op: "disconnect")
