@@ -155,7 +155,7 @@ struct SwipeMotion: Codable, Equatable {
 
 // Distances are the separation of two fingers along the current screenshot's X axis.
 // They describe input geometry, not the scale that an app will apply.
-struct PinchMotion: Codable {
+struct PinchMotion: Codable, Equatable {
     let fromDistance: Double
     let toDistance: Double
     let duration: TimeInterval
@@ -176,6 +176,25 @@ struct PinchMotion: Codable {
     }
     var result: [String: Any] { ["fromDistance": fromDistance, "toDistance": toDistance,
         "duration": duration, "axis": "screenshot_horizontal", "distanceUnit": "screen_points"] }
+}
+
+// XCTest's synthesized touch coordinates use the native portrait screen even
+// when the screenshot and App frame are landscape. Keep guards in screenshot
+// points; convert only at the Runner execution boundary.
+enum RunnerCoordinateMapping {
+    static func point(_ point: CGPoint, screen: ScreenRect, interfaceOrientation: Int) throws -> CGPoint {
+        guard screen.valid, screen.cgRect.contains(point), (1...4).contains(interfaceOrientation) else {
+            throw ScreenGuard.Failure.invalidGuard
+        }
+        let x = point.x - screen.x, y = point.y - screen.y
+        switch interfaceOrientation {
+        case 1: return CGPoint(x: x, y: y)
+        case 2: return CGPoint(x: screen.width - x, y: screen.height - y)
+        case 3: return CGPoint(x: screen.height - y, y: x)
+        case 4: return CGPoint(x: y, y: screen.width - x)
+        default: throw ScreenGuard.Failure.invalidGuard
+        }
+    }
 }
 
 struct CoordinateGesture: Codable {

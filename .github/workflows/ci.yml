@@ -28,6 +28,12 @@ jobs:
         with:
           node-version: '22'
       - run: swift test
+      - name: Test the Runner event bridge with host runtime doubles
+        run: |
+          xcrun clang -fobjc-arc -framework Foundation -framework CoreGraphics \
+            Runner/RunnerPinchEvent.m Tests/RunnerRuntime/PinchEventTests.m \
+            -o .build/runner-pinch-runtime-tests
+          .build/runner-pinch-runtime-tests
       - run: python3 -m unittest discover -s scripts/tests -v
       - run: node --test scripts/tests/test_agent_templates.mjs
       - name: Compile the iPhone Runner without signing

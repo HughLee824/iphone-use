@@ -5,7 +5,8 @@ import ImageIO
 enum XCTestCapture {
     // Keep only the latest action frame; the observation cache clears this directory on disconnect.
     static func actionResponse(_ response: [String: Any], directory: URL, expectedGuard: ScreenGuard? = nil,
-                               expectedMotion: SwipeMotion? = nil) throws -> [String: Any] {
+                               expectedMotion: SwipeMotion? = nil, expectedPinch: PinchMotion? = nil,
+                               expectedPressDuration: Double? = nil) throws -> [String: Any] {
         var result = response["result"] as? [String: Any] ?? [:]
         result["execution"] = response["execution"]
         result["stability"] = response["stability"]
@@ -70,6 +71,16 @@ enum XCTestCapture {
                 }
             }
             if response["ok"] as? Bool == true {
+                if let expectedPinch {
+                    guard let raw = result["pinch"] as? [String: Any],
+                          let actual = try? JSONDecoder().decode(PinchMotion.self, from: jsonData(raw)), actual == expectedPinch,
+                          raw["axis"] as? String == "screenshot_horizontal", raw["distanceUnit"] as? String == "screen_points" else {
+                        throw IPhoneUseError("missing_pinch_motion_facts", "Runner did not confirm the requested pinch paths and duration")
+                    }
+                }
+                if let expectedPressDuration, result["duration"] as? Double != expectedPressDuration {
+                    throw IPhoneUseError("missing_press_duration_facts", "Runner did not confirm the requested long press duration")
+                }
                 if let expectedMotion {
                     guard let raw = result["motion"] as? [String: Any],
                           let actual = try? JSONDecoder().decode(SwipeMotion.self, from: jsonData(raw)),

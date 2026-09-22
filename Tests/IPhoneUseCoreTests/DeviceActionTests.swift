@@ -10,7 +10,7 @@ final class DeviceActionTests: XCTestCase {
         }
         let request: [String: Any] = ["reference": "o1", "x": 40, "y": 80]
         XCTAssertEqual(try DeviceAction(operation: "long-press", request: request, allowScreenText: true).fields["duration"] as? Double, 0.8)
-        XCTAssertThrowsError(try DeviceAction(operation: "long-press", request: request))
+        XCTAssertNoThrow(try DeviceAction(operation: "long-press", request: request))
         for value: Any in [0.49, 5.01, true, "1", Double.nan] {
             var invalid = request; invalid["duration"] = value
             XCTAssertThrowsError(try DeviceAction(operation: "long-press", request: invalid, allowScreenText: true))
@@ -21,7 +21,7 @@ final class DeviceActionTests: XCTestCase {
     func testDoubleTapRequiresNativeFiniteScreenshotCoordinates() throws {
         let request: [String: Any] = ["reference": "o1", "x": 40, "y": 80]
         XCTAssertNoThrow(try DeviceAction(operation: "double-tap", request: request, allowScreenText: true))
-        XCTAssertThrowsError(try DeviceAction(operation: "double-tap", request: request))
+        XCTAssertNoThrow(try DeviceAction(operation: "double-tap", request: request))
         for invalid: [String: Any] in [["reference": "o1:e1"], ["reference": "o1:e1", "x": 40, "y": 80],
             ["reference": "o1", "x": 40], ["reference": "o1", "x": Double.nan, "y": 80],
             request.merging(["duration": 1]) { _, new in new }, request.merging(["velocity": 100]) { _, new in new }] {

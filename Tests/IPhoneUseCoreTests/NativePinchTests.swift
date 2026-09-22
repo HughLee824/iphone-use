@@ -30,8 +30,8 @@ final class NativePinchTests: XCTestCase {
             rects: motion.regions(center: center, screen: screen.cgRect), policy: .init())
         return CoordinateGesture(start: center, end: nil, screenGuard: guardValue, pinch: motion)
     }
-    func testAdmissionRejectsRunnerInvalidMotionAndElementCoordinates() throws {
-        XCTAssertThrowsError(try action(native: false))
+    func testAdmissionAcceptsBothModesAndRejectsInvalidMotionAndElementCoordinates() throws {
+        XCTAssertNoThrow(try action(native: false))
         for bad: [String: Any] in [["reference": "o1:e1"], ["fromDistance": 0], ["toDistance": 80],
             ["duration": 0.01], ["duration": 5.1], ["fromDistance": true], ["toDistance": Double.infinity],
             ["velocity": 100], ["direction": "in"], ["fromX": 10]] {

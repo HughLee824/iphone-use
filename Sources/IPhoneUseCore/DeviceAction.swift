@@ -16,7 +16,7 @@ struct DeviceAction {
     init(operation: String, request: [String: Any], allowScreenText: Bool = false) throws {
         guard Self.operations.contains(operation) else { throw IPhoneUseError("invalid_action", "Unknown device action") }
         kind = operation
-        if ["home", "double-tap", "long-press", "pinch"].contains(operation), !allowScreenText {
+        if operation == "home", !allowScreenText {
             throw IPhoneUseError("native_action_unsupported", "This action requires apple-native")
         }
         if let method = request["textMethod"] {

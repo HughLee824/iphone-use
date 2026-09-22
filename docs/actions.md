@@ -129,7 +129,7 @@ iphone-use --session "$SESSION" observe
 
 ## 宿主与 Runner 的职责
 
-宿主解析参数、验证会话与当前引用。tap/swipe 从原快照构造坐标与分区截图指纹；type/press 构造目标路径，包含来源节点和祖先的类型、identifier、label、value、enabled、frame，以及每层在父节点内的位置。不向 Runner 发送面向 agent 的观察 ID 或短引用。
+宿主解析参数、验证会话与当前引用。tap/double-tap/long-press/pinch/swipe 从原快照构造坐标与分区截图指纹；type/press 构造目标路径，包含来源节点和祖先的类型、identifier、label、value、enabled、frame，以及每层在父节点内的位置。不向 Runner 发送面向 agent 的观察 ID 或短引用。
 
 这些检查与动作在同一个宿主串行队列执行。两个并发 CLI 命令即使使用同一份当前引用，第一个动作完成后，第二个在解析目标时仍会因引用失效而被拒绝。
 
@@ -178,7 +178,7 @@ XCTest 的命令错误经 Runner 转成响应；不再把已经返回给调用�
 
 ## 兼容性与验证边界
 
-当前设备协议为 `actionVersion=6`、`observationVersion=2`、`screenGuardVersion=1`、`frameStabilityVersion=2`。发布用户安装配套版本并重新 setup；源码开发者重新 build-runner，并使用新路径 connect。旧 Runner 不会静默忽略速度与停留参数或接受尚不支持的新文本模式。
+当前设备协议为 `actionVersion=7`、`observationVersion=2`、`screenGuardVersion=1`、`frameStabilityVersion=2`。发布用户安装配套版本并重新 setup；源码开发者重新 build-runner，并使用新路径 connect。旧 Runner 不会静默忽略速度与停留参数或接受尚不支持的新文本模式和手势。
 
 本地测试覆盖输入校验、引用失效、执行事实、画面校验和帧稳定；真机兼容性以 [README 中的实测环境](../README.zh-CN.md#前置条件)为限。历史操作记录、截图和诊断日志仅保留在本地，不作为公开运行依赖。执行前检查不构成与 App 自行变化原子隔离的事务。
 
@@ -206,29 +206,41 @@ Runner append 与 LF 多行的实现取舍、宿主测试和 Probe 精确字节�
 原生 `type` 和 `press` 可用于原生竖屏显示器的竖屏及左右横屏。无需旋转按键 usage；坐标输入框使用当前截图的屏幕点。文字模式、剪贴板所有权与恢复、设备/会话/30秒观察绑定、方向和截图保护保持不变。先使用 `text-prepare` 建立键盘，再观察并确认焦点；旋转后必须重新观察。具体真机验收范围见[原生后端记录](apple-native-backend.md)。
 
 
-## 原生双击
+## Runner 长按与拖放
 
-`iphone-use --session SESSION double-tap oN --x X --y Y --observe` 在当前截图的一点执行两次按下/释放，仅用于 `apple-native`。坐标为原 PNG 对应的屏幕点，支持竖屏和左右横屏；沿用 tap 的触点邻域、全屏检查及观察/设备/会话绑定。没有元素双击、任意连点次数或间隔配置；现有 XCTest 路径不变。
+`long-press oN --x X --y Y --duration 0.8 --observe` 先核对当前截图，再通过 XCTest 坐标 press 执行按住和释放；时长范围 0.5–5 秒。宿主核对回执中的 duration，缺失或不匹配视为 unknown。长按菜单是否出现须检查新图。
+
+长按后拖动复用 `swipe oN --from-x X --from-y Y --to-x X2 --to-y Y2 --press-duration 0.5 --hold-duration 0.2 --observe`，整条轨迹属于同一动作；不要把 long-press 和 swipe 两次调用视为连续按住。
+
+Runner 新手势均使用截图坐标，不增加元素引用形式；沿用触点/路径局部保护、全屏保护和动作后判稳。验证范围见 [Runner 手势](runner-gestures.md)。
+
+## 双击
+
+`iphone-use --session SESSION double-tap oN --x X --y Y --observe` 在当前截图的一点执行两次按下/释放，适用于 standard 和 runner。坐标为原 PNG 对应的屏幕点，支持竖屏和左右横屏；沿用 tap 的触点邻域、全屏检查及观察/设备/会话绑定。没有元素双击、任意连点次数或间隔配置。Runner 使用 XCTest 坐标 doubleTap，由 XCTest 控制双击节奏；下述毫秒时序和 HID 事实字段仅适用于原生后端。
 
 整个序列属于一个动作，发送前做一次截图预检，两次点击之间不采集截图。每次按下后保持至少 60ms、第一次释放后等待至少 100ms；第二次按下必须在动作起始 300ms 内开始，整个序列受 600ms 执行期限约束。宿主调度和传输可能增加间隔；错过窗口就停止，不把迟到的第二次点击补发成独立点击。持续检查取消和媒体健康，失败时沿用同通道触点释放。
 
 一旦尝试发送第一次触控，后续错误都可能已产生单击或双击效果，返回 unknown，不能自动重放。`contactsAttempted`、`tapPairsQueued`、`hostDownUptimes` 只表示宿主发送事实，不确认设备识别。成功排队也仍需视觉检查新截图。双击选词、缩放等语义由 App 决定。
 
-## 原生双指缩放
+## 双指缩放
 
 ```sh
 iphone-use --session "$SESSION" pinch oN --x 195 --y 350 \
   --from-distance 80 --to-distance 200 --duration 0.5 --observe
 ```
 
-`pinch` 仅用于 `apple-native` 的当前截图引用。`x/y` 是截图屏幕 points 中的固定中心，两指沿该图的水平方向对称移动。`from-distance`、`to-distance` 是两指间的完整距离：终值较大表示张开，较小表示收拢；两者至少 20 points 且相差至少 1 point，运动时长为 0.1–5 秒，默认 0.5 秒。输入距离比不保证 App 实际缩放比例。示例坐标仅为格式说明，必须从当前原图选择。
+`pinch` 使用 standard 或 runner 的当前截图引用。`x/y` 是截图屏幕 points 中的固定中心，两指沿该图的水平方向对称移动。`from-distance`、`to-distance` 是两指间的完整距离：终值较大表示张开，较小表示收拢；两者至少 20 points 且相差至少 1 point，运动时长为 0.1–5 秒，默认 0.5 秒。输入距离比不保证 App 实际缩放比例。示例坐标仅为格式说明，必须从当前原图选择。
 
-两条轨迹的起终点均须在当前观察范围内；不裁剪越界触点，不添加旋转或双指平移。支持 native-portrait 显示器的竖屏及左右横屏，复用当前方向映射、设备/会话绑定、30 秒有效期、全屏检查，并分别保护两条轨迹及按下邻域。参数不合法在发送前拒绝。
+两条轨迹的起终点均须在当前观察范围内；不裁剪越界触点，不添加旋转或双指平移。原生支持 native-portrait 显示器的竖屏及左右横屏，复用当前方向映射、设备/会话绑定、30 秒有效期、全屏检查，并分别保护两条轨迹及按下邻域。参数不合法在发送前拒绝。
 
-执行时每帧包含两个固定身份触点，不串行执行两个 swipe。起始和末端各保持至少 60ms，运动按目标 60Hz 采样，慢发送时跳过过期采样；整个执行期限 6 秒。取消、媒体失活或发送失败时，尝试在原通道以最后尝试位置同时释放两指，释放失败保留不确定状态。任何可能已发送的动作都不自动重放。
+原生执行时每帧包含两个固定身份触点，不串行执行两个 swipe。起始和末端各保持至少 60ms，运动按目标 60Hz 采样，慢发送时跳过过期采样；整个执行期限 6 秒。取消、媒体失活或发送失败时，尝试在原通道以最后尝试位置同时释放两指，释放失败保留不确定状态。任何可能已发送的动作都不自动重放。
 
 `contactCount`、`moveReportsQueued`、`hidStart/hidEnd` 和时序仅表示发送事实，成功排队仍为 `outcome=unknown`。必须检查新图确认 App 是否缩放；`status.capabilities.pinch` 表示控制路径可用，不是效果保证。真机证据范围见 [原生后端记录](apple-native-backend.md#native-pinch-2026-09-21)。
 
+
+Runner 捏合使用自写 Objective-C 桥接 Apple XCTest 的事件合成对象，在一个事件中提交两条完整路径。方法签名在运行时核对；不兼容时输入前拒绝。事件标记 App 的 interfaceOrientation，路径在执行边界转换为原生竖屏坐标，不能使用手机 face-up 等物理朝向；此转换不适用于公开 XCTest 坐标点击 API。起末各保持 60ms，两指同时移动并释放；不把距离参数近似转换成元素 pinch 的比例。
+
+Runner 收到完成回执后仍须通过动作后判稳，宿主核对 pinch 距离、时长和坐标单位。提交后异常或等待超时为 unknown，阻止该 Runner 会话后续动作输入；可以 observe 后关闭自己的会话，不补发手势。完整抬手事件交给 XCTest 执行，不通过原生 HID 或全局清理关闭其他客户端。断线期间是否执行完毕不能仅凭宿主回执推断。
 
 ## 原生 App 生命周期
 

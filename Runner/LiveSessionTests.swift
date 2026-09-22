@@ -121,6 +121,7 @@ final class LiveSessionTests: XCTestCase {
     private var handlingCommand = false
     private var executionStarted = false
     private var inputCompleted = false
+    private var inputSessionUncertain = false
     private let stateTimeout = XCTestStateTimeout()
     private var postInputTextField: ScreenRect?
     private var postInputContext: ScreenContext?
@@ -215,7 +216,7 @@ final class LiveSessionTests: XCTestCase {
             let hostManaged = ProcessInfo.processInfo.environment["IPHONE_USE_HOST_MANAGED"] == "1"
             return ["protocol": "agentsoma-spike-jsonl-v1", "lifecycleOwner": hostManaged ? "host" : "spike",
                     "lifetimeLimitSeconds": hostManaged ? NSNull() : 900, "observationVersion": 2,
-                    "actionVersion": 6, "launchVersion": 1, "frameStabilityVersion": 2, "screenGuardVersion": 1,
+                    "actionVersion": 7, "launchVersion": 1, "frameStabilityVersion": 2, "screenGuardVersion": 1,
                     "applicationStateTimeoutSupported": stateTimeout != nil]
         }
         if op == "shutdown" { return ["stopped": true] }
@@ -301,7 +302,8 @@ final class LiveSessionTests: XCTestCase {
 
     @MainActor
     private func perform(_ command: [String: Any]) throws -> [String: Any] {
-        guard let kind = command["kind"] as? String, ["tap", "swipe", "type", "press"].contains(kind),
+        guard !inputSessionUncertain else { throw CommandError("input_session_uncertain", message: "Close this session after unconfirmed event synthesis; do not replay") }
+        guard let kind = command["kind"] as? String, ["tap", "double-tap", "long-press", "pinch", "swipe", "type", "press"].contains(kind),
               let expected = command["target"] as? [String: Any],
               let scope = expected["scope"] as? String else {
             throw CommandError("invalid_action")
@@ -335,7 +337,7 @@ final class LiveSessionTests: XCTestCase {
             else if scope == "app", alerts.count == 0 { root = app }
             else { throw CommandError("app_alert_changed", requiresObservation: true) }
         }
-        if ["tap", "swipe"].contains(kind) { return try performGesture(command, kind: kind, app: app, root: root) }
+        if ["tap", "double-tap", "long-press", "pinch", "swipe"].contains(kind) { return try performGesture(command, kind: kind, app: app, root: root) }
         guard let path = expected["path"] as? [[String: Any]], !path.isEmpty, path.count <= 200 else { throw CommandError("invalid_action") }
         var snapshot = try root.snapshot()
         for (index, expectedNode) in path.enumerated() {
@@ -402,6 +404,7 @@ final class LiveSessionTests: XCTestCase {
     private func performGesture(_ command: [String: Any], kind: String, app: XCUIApplication, root: XCUIElement) throws -> [String: Any] {
         let gesture: CoordinateGesture
         let context: ScreenContext
+        let interfaceOrientation = RunnerPinchEvent.interfaceOrientation(for: app)
         do {
             guard let raw = command["gesture"] as? [String: Any] else { throw ScreenGuard.Failure.invalidGuard }
             gesture = try JSONDecoder().decode(CoordinateGesture.self, from: JSONSerialization.data(withJSONObject: raw))
@@ -427,10 +430,49 @@ final class LiveSessionTests: XCTestCase {
             throw CommandError("screen_changed", requiresObservation: true,
                                message: "Screen or protected region changed beyond its threshold; observe again before choosing an action")
         }
+        guard (1...4).contains(interfaceOrientation), RunnerPinchEvent.interfaceOrientation(for: app) == interfaceOrientation else {
+            throw CommandError("gesture_orientation_unavailable", requiresObservation: true)
+        }
+        func nativePoint(_ point: CGPoint) throws -> CGPoint {
+            try RunnerCoordinateMapping.point(point, screen: context.screen, interfaceOrientation: interfaceOrientation)
+        }
         func coordinate(_ point: CGPoint) -> XCUICoordinate {
             app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: point.x - context.screen.x, dy: point.y - context.screen.y))
         }
         let start = coordinate(gesture.start)
+        if kind == "long-press" {
+            guard let duration = command["duration"] as? Double, duration.isFinite, (0.5...5).contains(duration) else {
+                throw CommandError("invalid_press_duration")
+            }
+            try event { start.press(forDuration: duration) }
+            return ["kind": kind, "coordinateSpace": "screen_points", "x": gesture.start.x, "y": gesture.start.y, "duration": duration]
+        }
+        if kind == "double-tap" {
+            try event { start.doubleTap() }
+            return ["kind": kind, "coordinateSpace": "screen_points", "x": gesture.start.x, "y": gesture.start.y, "tapCount": 2]
+        }
+        if let pinch = gesture.pinch {
+            // Tag the record with the App's interface orientation, but express
+            // its paths in native portrait points. Physical face-up is unrelated.
+            let orientation = interfaceOrientation
+            let from = try pinch.points(center: gesture.start, ending: false).map(nativePoint)
+            let to = try pinch.points(center: gesture.start, ending: true).map(nativePoint)
+            let eventRecord: RunnerPinchEvent
+            do {
+                let prepared = try RunnerPinchEvent.prepare(left: from[0], right: from[1], endLeft: to[0], endRight: to[1],
+                                                                  duration: pinch.duration, orientation: orientation)
+                eventRecord = prepared
+            } catch { throw CommandError("unsupported_pinch_runtime", message: String(describing: error)) }
+            try checkIssues()
+            executionStarted = true
+            do { try eventRecord.send(timeout: pinch.duration + 5); try checkIssues() }
+            catch {
+                inputSessionUncertain = true
+                throw CommandError("pinch_completion_unknown", requiresObservation: true, message: String(describing: error))
+            }
+            return ["kind": kind, "coordinateSpace": "screen_points", "x": gesture.start.x, "y": gesture.start.y,
+                    "pinch": pinch.result, "interfaceOrientation": orientation]
+        }
         if let end = gesture.end {
             guard let motion = gesture.motion else { throw CommandError("invalid_swipe_motion") }
             let destination = coordinate(end)

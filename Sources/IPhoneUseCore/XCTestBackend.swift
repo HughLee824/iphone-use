@@ -160,11 +160,12 @@ final class XCTestBackend: SessionBackend {
     func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any] {
         let response = try request("act", fields: Self.actionFields(action, target: target))
         return try ActionReply.decode(XCTestCapture.actionResponse(response, directory: paths.directory,
-            expectedGuard: target.gesture?.screenGuard, expectedMotion: target.gesture?.motion))
+            expectedGuard: target.gesture?.screenGuard, expectedMotion: target.gesture?.motion,
+            expectedPinch: target.gesture?.pinch, expectedPressDuration: action.fields["duration"] as? Double))
     }
 
     static func validateCapabilities(_ result: [String: Any]) throws {
-        let expected = ["observationVersion": 2, "actionVersion": 6, "launchVersion": 1, "frameStabilityVersion": 2, "screenGuardVersion": 1]
+        let expected = ["observationVersion": 2, "actionVersion": 7, "launchVersion": 1, "frameStabilityVersion": 2, "screenGuardVersion": 1]
         var differences = expected.keys.sorted().compactMap { key -> String? in
             let actual = result[key] as? Int
             return actual == expected[key] ? nil : "\(key): expected \(expected[key]!), received \(actual.map(String.init) ?? "missing")"
@@ -177,10 +178,11 @@ final class XCTestBackend: SessionBackend {
 
     static func actionFields(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any] {
         var fields: [String: Any]
-        if ["tap", "swipe"].contains(action.kind) {
+        if ["tap", "double-tap", "long-press", "pinch", "swipe"].contains(action.kind) {
             guard let gesture = target.gesture else { throw IPhoneUseError("missing_screen_guard", "Guarded coordinates are required") }
             try gesture.validate(kind: action.kind)
             fields = ["kind": action.kind, "gesture": try jsonObject(JSONEncoder().encode(gesture))]
+            if action.kind == "long-press" { fields["duration"] = action.fields["duration"] }
         } else { fields = action.fields }
         fields["target"] = ["scope": target.context["scope"] ?? NSNull(),
             "bundleId": target.context["targetBundleId"] ?? NSNull()]

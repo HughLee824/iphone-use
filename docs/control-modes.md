@@ -61,8 +61,10 @@ The external agent owns planning and visual verification. No model or automatic 
 
 Runner text now supports insert/replace/append. Append reconstructs a readable non-secure value and replaces the field; it is not a native document-end shortcut. LF multiline input requires a text_view. CR/CRLF remain rejected in Runner because XCTest changes their bytes; standard paste keeps them intact. See [text actions](actions.md).
 
+Runner also implements screenshot-coordinate long-press, double-tap and pinch. Drag-and-drop uses swipe with an initial press duration. These actions keep screen guards and never establish a native control session; see [Runner gestures](runner-gestures.md).
+
 ## Follow-up: feature parity
 
-Runner should progressively support the same user operations: the outstanding areas include additional gestures/system controls, text editing and keys, recording and app lifecycle operations. Keep backend-specific implementations and validate each before advertising support. Standard-mode code must not start Runner to fill a gap; Runner must not silently establish a native control session. This change implements mode management, not feature parity.
+Runner should progressively support the same user operations: the outstanding areas include additional gestures/system controls, text editing and keys, recording and app lifecycle operations. Keep backend-specific implementations and validate each before advertising support. Standard-mode code must not start Runner to fill a gap; Runner must not silently establish a native control session. Mode selection does not imply complete feature parity.
 
 See [rename and upgrade behavior](rename-to-iphone-use.md) for old configuration, active sessions and the new Runner bundle IDs.

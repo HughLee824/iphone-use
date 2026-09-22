@@ -48,7 +48,7 @@ iphone-use --session "$SESSION" tap o6:e10 --max-screen-change 0.01 --max-region
 - 参数、坐标、保护引用不合法：宿主或 Runner 拒绝，不发送输入。
 - 输入后的失败、丢失响应、画面不稳定：沿用 unknown 和不重发规则，不把动作前的通过证据当成动作完成。
 
-设备协议现在是 observationVersion=2、actionVersion=6、screenGuardVersion=1、frameStabilityVersion=2。actionVersion=6 增加 Runner append 和 text_view LF 多行检查；此前 actionVersion=5 增加显式滑动速度与两端停留，见 [可控拖动](actions.md#可控拖动)。旧 Runner 在 connect 时返回 runner_needs_rebuild，发布用户需要安装配套 Runner 并 setup，源码开发者需要重新 build-runner，不静默忽略新参数或回退到无校验坐标输入。
+设备协议现在是 observationVersion=2、actionVersion=7、screenGuardVersion=1、frameStabilityVersion=2。actionVersion=7 增加 Runner 长按、双击和双指轨迹；actionVersion=6 增加 Runner append 和 text_view LF 多行检查；此前 actionVersion=5 增加显式滑动速度与两端停留，见 [可控拖动](actions.md#可控拖动)。旧 Runner 在 connect 时返回 runner_needs_rebuild，发布用户需要安装配套 Runner 并 setup，源码开发者需要重新 build-runner，不静默忽略新参数或回退到无校验坐标输入。
 
 ## 验证边界与剩余风险
 

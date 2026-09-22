@@ -264,7 +264,7 @@ struct Tap: ParsableCommand {
 }
 
 struct DoubleTap: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "double-tap", abstract: "Double tap one screenshot point with backend-controlled timing (apple-native).")
+    static let configuration = CommandConfiguration(commandName: "double-tap", abstract: "Double tap one screenshot point with backend-controlled timing.")
     @OptionGroup var options: SessionOptions
     @OptionGroup var observation: ActionObservationOptions
     @OptionGroup var screenGuard: ScreenGuardOptions
@@ -280,7 +280,7 @@ struct DoubleTap: ParsableCommand {
 }
 
 struct Pinch: ParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Move two fingers symmetrically along the screenshot X axis (apple-native).")
+    static let configuration = CommandConfiguration(abstract: "Move two fingers symmetrically along the screenshot X axis.")
     @OptionGroup var options: SessionOptions
     @OptionGroup var observation: ActionObservationOptions
     @OptionGroup var screenGuard: ScreenGuardOptions
@@ -300,7 +300,7 @@ struct Pinch: ParsableCommand {
 }
 
 struct LongPress: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "long-press", abstract: "Hold a screenshot point, then release (apple-native).")
+    static let configuration = CommandConfiguration(commandName: "long-press", abstract: "Hold a screenshot point, then release.")
     @OptionGroup var options: SessionOptions
     @OptionGroup var observation: ActionObservationOptions
     @OptionGroup var screenGuard: ScreenGuardOptions
