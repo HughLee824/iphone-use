@@ -14,6 +14,7 @@ struct NativeCaretGuard {
     private let bounds: CGRect
     private let reference: Int
     private let referenceChannel: Int
+    private let allowsAdjacentText: Bool
     let caret: ScreenRect
 
     init?(png: Data, context: ScreenContext, field: ScreenRect, allowsAdjacentText: Bool = false) throws {
@@ -65,6 +66,7 @@ struct NativeCaretGuard {
         self.context = context; self.field = field; self.width = width; self.height = height
         self.source = source; self.background = background; self.bounds = bounds; self.reference = reference
         self.referenceChannel = referenceChannel
+        self.allowsAdjacentText = allowsAdjacentText
         caret = ScreenRect(CGRect(x: (crop.minX + Double(left)) / scale, y: (crop.minY + Double(top)) / scale,
                                  width: Double(w) / scale, height: Double(h) / scale))
     }
@@ -80,16 +82,62 @@ struct NativeCaretGuard {
         let factor = Double(Int(next[reference + referenceChannel]) - background[referenceChannel])
             / Double(Int(source[reference + referenceChannel]) - background[referenceChannel])
         guard factor >= 0, factor <= 6 else { return false }
-        for y in 0..<height { for x in 0..<width {
-            let i = (y * width + x) * 3
-            let inside = bounds.contains(CGPoint(x: x, y: y))
-            for channel in 0..<3 {
-                let expected = inside
-                    ? Double(background[channel]) + Double(Int(source[i + channel]) - background[channel]) * factor
-                    : Double(source[i + channel])
-                guard abs(Double(next[i + channel]) - expected) <= Double(ScreenGuard.pixelTolerance) else { return false }
+        return source.withUnsafeBufferPointer { source in
+            next.withUnsafeBufferPointer { next in
+                for y in 0..<height {
+                    let row = y * width * 3
+                    let caretRow = Double(y) >= bounds.minY && Double(y) < bounds.maxY
+                    if !caretRow, memcmp(source.baseAddress!.advanced(by: row), next.baseAddress!.advanced(by: row), width * 3) == 0 { continue }
+                    for x in 0..<width {
+                        let i = row + x * 3
+                        let inside = caretRow && Double(x) >= bounds.minX && Double(x) < bounds.maxX
+                        if !inside, source[i] == next[i], source[i+1] == next[i+1], source[i+2] == next[i+2] { continue }
+                        for channel in 0..<3 {
+                            let expected = inside
+                                ? Double(background[channel]) + Double(Int(source[i + channel]) - background[channel]) * factor
+                                : Double(source[i + channel])
+                            if abs(Double(next[i + channel]) - expected) > Double(ScreenGuard.pixelTolerance) {
+                                guard inside, acceptsAntialiasedEdge(x: x, y: y, source: source, next: next) else { return false }
+                                break
+                            }
+                        }
+                    }
+                }
+                return true
             }
+        }
+    }
+
+    // Post-input only: a glyph can overlap the outermost caret pixel. Its
+    // antialiasing no longer fades against the uniform background. Require a
+    // stationary neutral text edge immediately outside the stroke, and bound
+    // every channel's movement by the measured caret phase. No extra pixels
+    // outside the original stroke are masked; native input admission stays strict.
+    private func acceptsAntialiasedEdge(x: Int, y: Int, source: UnsafeBufferPointer<UInt8>, next: UnsafeBufferPointer<UInt8>) -> Bool {
+        guard allowsAdjacentText,
+              x == Int(bounds.minX) || x == Int(bounds.maxX) - 1 || y == Int(bounds.minY) || y == Int(bounds.maxY) - 1 else { return false }
+        let i = (y * width + x) * 3
+        for channel in 0..<3 {
+            let phase = Int(next[reference + channel]) - Int(source[reference + channel])
+            let delta = Int(next[i + channel]) - Int(source[i + channel])
+            guard abs(delta) <= abs(phase) + ScreenGuard.pixelTolerance,
+                  phase >= 0 ? delta >= -ScreenGuard.pixelTolerance : delta <= ScreenGuard.pixelTolerance else { return false }
+        }
+        func luminance(_ pixel: Int, _ data: UnsafeBufferPointer<UInt8>) -> Double {
+            0.299 * Double(data[pixel]) + 0.587 * Double(data[pixel+1]) + 0.114 * Double(data[pixel+2])
+        }
+        let bg = 0.299 * Double(background[0]) + 0.587 * Double(background[1]) + 0.114 * Double(background[2])
+        for ny in (y-1)...(y+1) { for nx in (x-1)...(x+1) {
+            guard !bounds.contains(CGPoint(x: nx, y: ny)) else { continue }
+            let neighbor = (ny * width + nx) * 3
+            let colors = (0..<3).map { Int(source[neighbor+$0]) }
+            guard colors.max()! - colors.min()! <= ScreenGuard.pixelTolerance,
+                  (0..<3).allSatisfy({ source[neighbor+$0] == next[neighbor+$0] }) else { continue }
+            let edge = luminance(neighbor, source)
+            guard abs(edge - bg) >= 40 else { continue }
+            let range = min(bg, edge)...max(bg, edge)
+            if range.contains(luminance(i, source)), range.contains(luminance(i, next)) { return true }
         } }
-        return true
+        return false
     }
 }

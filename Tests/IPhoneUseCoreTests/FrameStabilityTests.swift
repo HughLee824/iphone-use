@@ -58,9 +58,10 @@ final class FrameStabilityTests: XCTestCase {
         var value = FrameStability(startedAt: 0, context: screenTestContext(), textField: field)
         try record(&value, source, 0)
         try record(&value, hidden, 0.2)
+        XCTAssertNotNil((value.result["comparison"] as? [String: Any])?["ignoredCaret"])
         try record(&value, source, 1.5)
         XCTAssertTrue(value.stable)
-        XCTAssertNotNil((value.result["comparison"] as? [String: Any])?["ignoredCaret"])
+        XCTAssertNil((value.result["comparison"] as? [String: Any])?["ignoredCaret"])
         for patch in [(stroke.offsetBy(dx: 1, dy: 0), [30,110,240]),
                       (CGRect(x: 70, y: 150, width: 1, height: 10), [0,0,0]),
                       (stroke, [0,0,0])] as [(CGRect,[UInt8])] {
@@ -87,6 +88,35 @@ final class FrameStabilityTests: XCTestCase {
         XCTAssertTrue(value.stable)
         try record(&value, screenPNG(patches: [(glyph, [20,20,20])]), 1.7)
         XCTAssertFalse(value.stable)
+    }
+
+    func testCaretAntialiasOverlapPreservesTextAndRejectsWrongPhase() throws {
+        let field = ScreenRect(CGRect(x: 18, y: 139, width: 354, height: 160))
+        let background = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let stroke = CGRect(x: 50, y: 150, width: 2, height: 20)
+        let glyph = CGRect(x: 48, y: 155, width: 2, height: 10)
+        let overlap = CGRect(x: 50, y: 160, width: 1, height: 1)
+        func image(_ caret: [UInt8], _ edge: [UInt8], text: UInt8 = 255) throws -> Data {
+            try screenPNG(patches: [(background, [28,28,30]), (stroke, caret),
+                (glyph, [text,text,text]), (overlap, edge)])
+        }
+        let source = try image([47,68,137], [65,75,110])
+        let bright = try image([66,107,242], [65,86,154])
+        let hidden = try image([28,28,30], [65,65,65])
+        XCTAssertNil(try NativeCaretGuard(png: source, context: screenTestContext(), field: field))
+        var value = FrameStability(startedAt: 0, context: screenTestContext(), textField: field)
+        try record(&value, source, 0)
+        try record(&value, bright, 0.2)
+        try record(&value, hidden, 1.5)
+        XCTAssertTrue(value.stable)
+        XCTAssertNotNil((value.result["comparison"] as? [String: Any])?["ignoredCaret"])
+        for invalid in [try image([66,107,242], [65,86,154], text: 230),
+                        try image([66,107,242], [65,75,250]),
+                        try image([47,68,137], [85,95,130])] {
+            var test = value
+            try record(&test, invalid, 1.7)
+            XCTAssertFalse(test.stable)
+        }
     }
 
     func testCaptureAndComparisonDeadlineAndSmallSampleSpanFailClosed() throws {

@@ -270,8 +270,16 @@ struct ScreenImage {
             context.interpolationQuality = .high
             context.draw(crop, in: CGRect(x: 0, y: 0, width: columns, height: rows))
         }
-        var rgb = Data(capacity: columns * rows * 3)
-        for index in stride(from: 0, to: rgba.count, by: 4) { rgb.append(contentsOf: rgba[index..<(index + 3)]) }
+        var rgb = Data(count: columns * rows * 3)
+        rgb.withUnsafeMutableBytes { (out: UnsafeMutableRawBufferPointer) in
+            rgba.withUnsafeBytes { (input: UnsafeRawBufferPointer) in
+                for pixel in 0..<(columns * rows) {
+                    out[pixel * 3] = input[pixel * 4]
+                    out[pixel * 3 + 1] = input[pixel * 4 + 1]
+                    out[pixel * 3 + 2] = input[pixel * 4 + 2]
+                }
+            }
+        }
         return rgb
     }
 }

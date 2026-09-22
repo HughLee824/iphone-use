@@ -434,6 +434,30 @@ final class LiveSessionTests: XCTestCase {
                     "fromY": gesture.start.y, "toX": end.x, "toY": end.y, "motion": motion.result]
         }
         try event { start.tap() }
+        // A button can focus an editor too. Read one bounded snapshot; never
+        // traverse focus or tap an editor merely to discover a caret region.
+        let after = screenContext(app: app, root: root)
+        if after.valid, after.keyboardCount == 1, let snapshot = try? root.snapshot() {
+            var fields: [ScreenRect] = []
+            var visited = 0, truncated = false
+            func visit(_ node: XCUIElementSnapshot) {
+                guard visited < 200 else { truncated = true; return }
+                visited += 1
+                let frame = ScreenRect(node.frame)
+                if [XCUIElement.ElementType.textField, .secureTextField, .textView, .searchField].contains(node.elementType),
+                   node.isEnabled, frame.valid, after.scope.cgRect.contains(frame.cgRect) {
+                    fields.append(frame)
+                }
+                for child in node.children { visit(child) }
+            }
+            visit(snapshot)
+            // The sole field is only a pixel-analysis boundary, not proof of focus.
+            // Ambiguous or incomplete trees receive no caret exception.
+            if !truncated, fields.count == 1 {
+                postInputContext = after
+                postInputTextField = fields[0]
+            }
+        }
         return ["kind": kind, "coordinateSpace": "screen_points", "x": gesture.start.x, "y": gesture.start.y]
     }
 

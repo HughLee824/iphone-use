@@ -103,20 +103,26 @@ struct FrameComparison {
         var count = 0, left = reference.width, top = reference.height, right = -1, bottom = -1
         reference.pixels.withUnsafeBytes { (a: UnsafeRawBufferPointer) in
             current.pixels.withUnsafeBytes { (b: UnsafeRawBufferPointer) in
-                for y in 0..<reference.height { for x in 0..<reference.width {
-                    let i = (y * reference.width + x) * 4
-                    if a[i] == b[i] && a[i+1] == b[i+1] && a[i+2] == b[i+2] && a[i+3] == b[i+3] { continue }
-                    let r = Double(Int(a[i]) - Int(b[i])), g = Double(Int(a[i+1]) - Int(b[i+1]))
-                    let blue = Double(Int(a[i+2]) - Int(b[i+2]))
-                    // Standard YIQ components in 8-bit channel units, with a hard RGB cap.
-                    // This bounds perceptual tolerance and keeps a single changed glyph significant.
-                    let small = max(abs(r), abs(g), abs(blue)) <= 4 &&
-                        max(abs(0.299*r + 0.587*g + 0.114*blue),
-                            abs(0.596*r - 0.274*g - 0.322*blue),
-                            abs(0.211*r - 0.523*g + 0.312*blue)) <= Self.colorTolerance
-                    if a[i+3] == b[i+3] && (small || mask?.contains(CGPoint(x: x, y: y)) == true) { continue }
-                    count += 1; left = min(left, x); right = max(right, x); top = min(top, y); bottom = max(bottom, y)
-                } }
+                for y in 0..<reference.height {
+                    let offset = y * reference.width * 4
+                    // Compare every byte, but enter the Swift pixel loop only for
+                    // changed rows. This matters for the unoptimized device Runner.
+                    if memcmp(a.baseAddress!.advanced(by: offset), b.baseAddress!.advanced(by: offset), reference.width * 4) == 0 { continue }
+                    for x in 0..<reference.width {
+                        let i = (y * reference.width + x) * 4
+                        if a[i] == b[i] && a[i+1] == b[i+1] && a[i+2] == b[i+2] && a[i+3] == b[i+3] { continue }
+                        let r = Double(Int(a[i]) - Int(b[i])), g = Double(Int(a[i+1]) - Int(b[i+1]))
+                        let blue = Double(Int(a[i+2]) - Int(b[i+2]))
+                        // Standard YIQ components in 8-bit channel units, with a hard RGB cap.
+                        // This bounds perceptual tolerance and keeps a single changed glyph significant.
+                        let small = max(abs(r), abs(g), abs(blue)) <= 4 &&
+                            max(abs(0.299*r + 0.587*g + 0.114*blue),
+                                abs(0.596*r - 0.274*g - 0.322*blue),
+                                abs(0.211*r - 0.523*g + 0.312*blue)) <= Self.colorTolerance
+                        if a[i+3] == b[i+3] && (small || mask?.contains(CGPoint(x: x, y: y)) == true) { continue }
+                        count += 1; left = min(left, x); right = max(right, x); top = min(top, y); bottom = max(bottom, y)
+                    }
+                }
             }
         }
         changedPixels = count
@@ -168,7 +174,8 @@ struct FrameStability {
         comparisonReferencePNG = anchorPNG
         comparisonReferenceHash = anchor?.hash
         var ignored: ScreenRect?
-        if let caret, let context, (try? caret.acceptsBlink(png: png, context: context)) == true { ignored = caret.caret }
+        if anchor?.hash != frame.hash, let caret, let context,
+           (try? caret.acceptsBlink(png: png, context: context)) == true { ignored = caret.caret }
         comparison = anchor.map { FrameComparison(reference: $0, current: frame, ignoredCaret: ignored, screen: context?.screen) }
         let equivalent = comparison?.equivalent == true
         if !equivalent {
