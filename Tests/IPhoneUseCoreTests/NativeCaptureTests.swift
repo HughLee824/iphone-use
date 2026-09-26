@@ -86,6 +86,12 @@ final class NativeCaptureTests: XCTestCase {
         XCTAssertEqual(capture.metadata["captureSource"] as? String, "coredevice_screenshot")
         XCTAssertEqual((capture.metadata["mediaSnapshot"] as? [String: String])?["fallbackReason"], "no_fresh_complete_frame")
         XCTAssertEqual(capture.screenshot, png)
+        let preferred = try cli.capture(generation: "fixture", preferredSource: "coredevice_screenshot", mediaCapture: { _, _ in
+            XCTFail("An Apple source observation must not switch to video for its guard")
+            return (png, [:])
+        })
+        XCTAssertEqual(state.screenshots, 2)
+        XCTAssertEqual(preferred.metadata["captureSource"] as? String, "coredevice_screenshot")
     }
     private func pixels(width: Int = 16, height: Int = 24) throws -> CVPixelBuffer {
         var pixels: CVPixelBuffer?

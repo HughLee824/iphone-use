@@ -25,7 +25,7 @@ enum NativeTextInput {
 // Retry observations only, never input. Every frame compares with the original
 // guard, with unchanged thresholds and one shared deadline for this preflight.
 enum NativeInputPreflight {
-    static func check(guard screenGuard: ScreenGuard, displayID: UInt64?, displayRotation: String? = nil, deadline: TimeInterval, maximumCaptures: Int,
+    static func check(guard screenGuard: ScreenGuard, displayID: UInt64?, displayRotation: String? = nil, captureSource: String? = nil, deadline: TimeInterval, maximumCaptures: Int,
                       caretGuard: NativeCaretGuard? = nil,
                       now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
                       record: ([String: Any]) -> Void = { _ in },
@@ -36,6 +36,15 @@ enum NativeInputPreflight {
             guard now() < deadline else { throw IPhoneUseError("stale_observation", "Input observation deadline expired") }
             let captureStarted = now()
             let frame = try capture()
+            if let captureSource, frame.metadata["captureSource"] as? String != captureSource {
+                record(["attempt": attempt, "captureSourceChanged": true,
+                        "captureSource": frame.metadata["captureSource"] ?? "unknown",
+                        "captureTimingsMs": frame.metadata["captureTimingsMs"] ?? [:],
+                        "elapsedMs": (now() - started) * 1000])
+                throw ActionFailure(code: "stale_observation", description: "Screenshot source changed; inspect the new observation before choosing an action",
+                    possiblyExecuted: false, requiresObservation: true,
+                    result: ["preInputCaptures": attempt, "captureSourceChanged": true], rejectedCapture: frame)
+            }
             let context: ScreenContext
             var check: ScreenGuard.Check
             do {

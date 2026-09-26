@@ -52,7 +52,7 @@ final class AppleDeviceCLI {
         return try CoreDevice.read(arguments + ["--device", device], cancelled: { self.cancellation.isCancelled }, trailingArguments: trailingArguments, timeout: timeout)
     }
     func display() throws -> NativeDisplay { try NativeDisplay(read(["device", "info", "displays"])) }
-    func capture(generation: String, prepareDisplay: (NativeDisplay) throws -> Void = { _ in },
+    func capture(generation: String, preferredSource: String? = nil, prepareDisplay: (NativeDisplay) throws -> Void = { _ in },
                  mediaCapture: ((NativeDisplay, Double) throws -> (Data?, [String: Any]))? = nil) throws -> CapturedObservation {
         let started = Date().timeIntervalSince1970
         let monotonic = ProcessInfo.processInfo.systemUptime
@@ -71,7 +71,12 @@ final class AppleDeviceCLI {
         defer { try? FileManager.default.removeItem(at: directory) }
         let destination = directory.appendingPathComponent("screen.png")
         let requestedAt = ProcessInfo.processInfo.systemUptime
-        let attempt = try timed("mediaSnapshot") { try mediaCapture?(before, requestedAt) }
+        let attempt: (Data?, [String: Any])? = try timed("mediaSnapshot") {
+            // Lossy video and Apple's PNG can differ at text edges even without
+            // a UI change. Compare an Apple observation with another Apple PNG.
+            if preferredSource == "coredevice_screenshot" { return (nil, ["fallbackReason": "source_observation_uses_coredevice"]) }
+            return try mediaCapture?(before, requestedAt)
+        }
         let png: Data
         if let mediaPNG = attempt?.0 { png = mediaPNG }
         else {
@@ -252,8 +257,11 @@ final class AppleDeviceBackend: SessionBackend {
         }, checkCancellation: { try self.cancellation.check() }).run(bundle: bundle, relaunch: relaunch)
     }
     func observe() throws -> CapturedObservation {
+        try capture(preferredSource: nil)
+    }
+    private func capture(preferredSource: String?) throws -> CapturedObservation {
         guard let cli else { throw IPhoneUseError("backend_unavailable", "Native backend not started") }
-        let captured = try cli.capture(generation: generation, prepareDisplay: { display in
+        let captured = try cli.capture(generation: generation, preferredSource: preferredSource, prepareDisplay: { display in
             try self.cancellation.check()
             // Startup failure remains observation-only. Once control is started,
             // a failed display rebind cannot silently return an unsafe image.
@@ -341,6 +349,7 @@ final class AppleDeviceBackend: SessionBackend {
         func preflight(stage: String) throws -> ScreenGuard.Check {
             let (value, count) = try NativeInputPreflight.check(guard: screenGuard,
                 displayID: target.context["displayID"] as? UInt64, displayRotation: rotation,
+                captureSource: target.context["captureSource"] as? String,
                 deadline: min(captured + 30, ProcessInfo.processInfo.systemUptime + 8),
                 // Editing keys can encounter the same blinking caret as paste.
                 // Retry only captures against the original guard, never input.
@@ -352,7 +361,7 @@ final class AppleDeviceBackend: SessionBackend {
                 }) {
                     try cancellation.check()
                     guard media.health()["healthy"] as? Bool == true else { throw IPhoneUseError("native_media_unhealthy", "Media stopped before input") }
-                    return try self.observe()
+                    return try self.capture(preferredSource: target.context["captureSource"] as? String)
                 }
             captures += count
             return value

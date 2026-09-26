@@ -2,6 +2,24 @@ import XCTest
 @testable import IPhoneUseCore
 
 final class NativeTextInputTests: XCTestCase {
+    func testCaptureSourceChangeReturnsFreshObservationWithoutRetryOrInput() throws {
+        let context = screenTestContext(), png = try screenPNG()
+        let guardValue = try ScreenGuard(png: png, context: context, rects: [context.screen], policy: .init())
+        var calls = 0
+        XCTAssertThrowsError(try NativeInputPreflight.check(guard: guardValue, displayID: 1,
+            captureSource: "native_media", deadline: 8, maximumCaptures: 3, now: { 0 }) {
+                calls += 1
+                return CapturedObservation(nodes: [], metadata: ["displayID": UInt64(1), "captureSource": "coredevice_screenshot",
+                    "screenContext": try jsonObject(JSONEncoder().encode(context))], screenshot: png)
+            }) {
+                let failure = $0 as? ActionFailure
+                XCTAssertEqual(failure?.possiblyExecuted, false)
+                XCTAssertEqual(failure?.result?["captureSourceChanged"] as? Bool, true)
+                XCTAssertEqual(failure?.rejectedCapture?.screenshot, png)
+            }
+        XCTAssertEqual(calls, 1)
+        XCTAssertEqual(guardValue.policy.maxRegionChange, 0)
+    }
     func testExplicitPasteAcceptsLongASCIIAndKeysNeverFallBackToClipboard() throws {
         let text = String(repeating: "Ab7 ?", count: 819) + "!"
         XCTAssertEqual(text.utf8.count, 4096)
