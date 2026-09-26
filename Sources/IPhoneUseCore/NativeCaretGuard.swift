@@ -26,18 +26,50 @@ struct NativeCaretGuard {
         let width = Int(crop.width), height = Int(crop.height)
         guard width > 0, height > 0, width * height <= 4_000_000 else { return nil }
         let source = [UInt8](try image.rgb(rect: field, screen: context.screen, columns: width, rows: height))
+        // Native fields may contain colored emoji or styled text. Separate color
+        // components before selecting a single caret-shaped stroke; all other
+        // components remain covered by the full-field comparison below.
+        var mask = [UInt8](repeating: 0, count: width * height)
         var left = width, right = -1, top = height, bottom = -1, count = 0
         for y in 0..<height { for x in 0..<width {
             let i = (y * width + x) * 3
             let r = Int(source[i]), g = Int(source[i + 1]), b = Int(source[i + 2])
             let blue = b >= 70 && b - r >= 30 && b - g >= 15
-            // Notes uses a yellow insertion caret. Keep a bounded color family;
-            // the same unique-stroke, background and whole-field fade checks apply.
             let yellow = allowsYellowCaret && r >= 120 && g >= 100 && r - b >= 60 && g - b >= 45 && abs(r - g) <= 100
             if blue || yellow {
+                mask[y * width + x] = 1
                 left = min(left, x); right = max(right, x); top = min(top, y); bottom = max(bottom, y); count += 1
             }
         } }
+        // Runner's post-input stability keeps its existing global blue rule.
+        if allowsYellowCaret {
+            var candidate: (left: Int, right: Int, top: Int, bottom: Int, count: Int)?
+            var pending = [Int]()
+            for seed in mask.indices where mask[seed] == 1 {
+                pending.removeAll(keepingCapacity: true)
+                pending.append(seed); mask[seed] = 0
+                var l = width, r = -1, t = height, b = -1, n = 0
+                while let pixel = pending.popLast() {
+                    let x = pixel % width, y = pixel / width
+                    l = min(l, x); r = max(r, x); t = min(t, y); b = max(b, y); n += 1
+                    for ny in max(0, y - 1)...min(height - 1, y + 1) {
+                        for nx in max(0, x - 1)...min(width - 1, x + 1) {
+                            let neighbor = ny * width + nx
+                            if mask[neighbor] == 1 { mask[neighbor] = 0; pending.append(neighbor) }
+                        }
+                    }
+                }
+                let w = r - l + 1, h = b - t + 1
+                if Double(w) >= scale, Double(w) <= 3 * scale,
+                   Double(h) >= 8 * scale, Double(h) <= 40 * scale,
+                   Double(n) / Double(w * h) >= 0.85 {
+                    guard candidate == nil else { return nil }
+                    candidate = (l, r, t, b, n)
+                }
+            }
+            guard let candidate else { return nil }
+            (left, right, top, bottom, count) = candidate
+        }
         let w = right - left + 1, h = bottom - top + 1
         guard count > 0, Double(w) >= scale, Double(w) <= 3 * scale,
               Double(h) >= 8 * scale, Double(h) <= 40 * scale,
