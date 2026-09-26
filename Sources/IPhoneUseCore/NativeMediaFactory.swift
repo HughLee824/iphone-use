@@ -5,7 +5,7 @@ import AppleNativeBridge
 // implementation. This factory never opens a HID or pasteboard service.
 enum NativeMediaFactory {
     static func make(transport: NativeTransport, identifier: String, address: String,
-                     cancellation: NativeCancellation) throws -> NativeDisplayMediaSession {
+                     cancellation: NativeCancellation, captureSnapshots: Bool = false) throws -> NativeDisplayMediaSession {
         let infoURL = URL(fileURLWithPath: "/Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/Resources/Info.plist")
         let info = try PropertyListSerialization.propertyList(from: Data(contentsOf: infoURL), format: nil) as? [String: Any]
         guard let version = info?["CFBundleVersion"] as? String else {
@@ -13,7 +13,7 @@ enum NativeMediaFactory {
         }
         return NativeDisplayMediaSession(makeSession: {
             try cancellation.check()
-            let receiver = try NativeRTPReceiver(deviceAddress: address)
+            let receiver = try NativeRTPReceiver(deviceAddress: address, captureSnapshots: captureSnapshots)
             return NativeMediaSession(client: NativeFeatureClient(transport: transport, deviceIdentifier: identifier, version: version), receiver: receiver)
         }, startSession: { stream, display in
             try cancellation.check()

@@ -2,6 +2,14 @@ import XCTest
 @testable import IPhoneUseCore
 
 final class NativeRTPVideoTests: XCTestCase {
+    func testFreshnessKeepsFirstPacketTimeAcrossLateDuplicates() throws {
+        var parser = NativeHEVCDepacketizer()
+        XCTAssertNotNil(parser.receive(try packet(1, [0x28,1,1]), receivedAt: 1))
+        XCTAssertNil(parser.receive(try packet(2, [0x62,1,0x81,1], timestamp: 2, marker: false), receivedAt: 2))
+        XCTAssertNil(parser.receive(try packet(1, [0x28,1,1]), receivedAt: 3))
+        let unit = parser.receive(try packet(3, [0x62,1,0x41,2], timestamp: 2), receivedAt: 4)
+        XCTAssertEqual(unit?.firstPacketAt, 2)
+    }
     func testSenderReportsMeasureClockAndRejectForeignMalformedOrUnknownRates() {
         func report(_ seconds: UInt32, _ timestamp: UInt32, ssrc: UInt32 = 123) -> Data {
             var data = Data([0x80, 200, 0, 6])

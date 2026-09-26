@@ -51,6 +51,8 @@ enum NativeInputPreflight {
                 // An orientation change is never a retryable pixel mismatch. Preserve
                 // this new frame and invalidate the old observation before any input.
                 record(["attempt": attempt, "contextChanged": true,
+                        "captureSource": frame.metadata["captureSource"] ?? "unknown",
+                        "captureTimingsMs": frame.metadata["captureTimingsMs"] ?? [:],
                         "elapsedMs": (now() - started) * 1000])
                 throw ActionFailure(code: "stale_observation", description: "Display geometry or orientation changed; inspect the new screenshot before choosing coordinates",
                     possiblyExecuted: false, requiresObservation: true,
@@ -64,6 +66,8 @@ enum NativeInputPreflight {
             let inTime = checkedAt < deadline
             record(["attempt": attempt, "elapsedMs": (checkedAt - started) * 1000,
                     "captureAndCheckMs": (checkedAt - captureStarted) * 1000,
+                    "captureSource": frame.metadata["captureSource"] ?? "unknown",
+                    "captureTimingsMs": frame.metadata["captureTimingsMs"] ?? [:],
                     "screenGuard": check.result, "inTime": inTime])
             if check.accepted && inTime { return (check, attempt) }
             if attempt == maximumCaptures || !inTime || check.screenChange > check.policy.maxScreenChange {

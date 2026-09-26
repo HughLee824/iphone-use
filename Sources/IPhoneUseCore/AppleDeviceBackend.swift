@@ -42,30 +42,48 @@ struct NativeDisplay: Equatable {
 final class AppleDeviceCLI {
     let device: String
     let cancellation: NativeCancellation
-    init(device: String, cancellation: NativeCancellation) { self.device = device; self.cancellation = cancellation }
+    private let reader: (([String]) throws -> [String: Any])?
+    init(device: String, cancellation: NativeCancellation, reader: (([String]) throws -> [String: Any])? = nil) {
+        self.device = device; self.cancellation = cancellation; self.reader = reader
+    }
     func read(_ arguments: [String], trailingArguments: [String] = [], timeout: Int = 20) throws -> [String: Any] {
         try cancellation.check()
+        if let reader { return try reader(arguments) }
         return try CoreDevice.read(arguments + ["--device", device], cancelled: { self.cancellation.isCancelled }, trailingArguments: trailingArguments, timeout: timeout)
     }
     func display() throws -> NativeDisplay { try NativeDisplay(read(["device", "info", "displays"])) }
-    func capture(generation: String, prepareDisplay: (NativeDisplay) throws -> Void = { _ in }) throws -> CapturedObservation {
+    func capture(generation: String, prepareDisplay: (NativeDisplay) throws -> Void = { _ in },
+                 mediaCapture: ((NativeDisplay, Double) throws -> (Data?, [String: Any]))? = nil) throws -> CapturedObservation {
         let started = Date().timeIntervalSince1970
         let monotonic = ProcessInfo.processInfo.systemUptime
-        let lock = try read(["device", "info", "lockState"])
-        guard lock["passcodeRequired"] as? Bool == false else { throw IPhoneUseError("device_locked", "Unlock the iPhone before observing") }
-        let before = try display()
-        guard before.backlightOn else { throw IPhoneUseError("capture_unavailable", "The display backlight is off; wake the iPhone before observing") }
-        try prepareDisplay(before)
+        var timings: [String: Double] = [:]
+        func timed<T>(_ name: String, _ operation: () throws -> T) rethrows -> T {
+            let start = ProcessInfo.processInfo.systemUptime
+            defer { timings[name] = (ProcessInfo.processInfo.systemUptime - start) * 1000 }
+            return try operation()
+        }
+        let initial = try timed("checksBefore") { try NativeCaptureChecks.read { try self.read($0) } }
+        let before = initial.display
+        for (key, value) in initial.timings { timings[key + "Before"] = value }
+        try timed("prepareDisplay") { try prepareDisplay(before) }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("iphone-use-screen-\(UUID().uuidString)")
         try SessionPaths.secureDirectory(directory)
         defer { try? FileManager.default.removeItem(at: directory) }
         let destination = directory.appendingPathComponent("screen.png")
-        _ = try read(["device", "capture", "screenshot", "--destination", destination.path])
-        let after = try display()
-        let finalLock = try read(["device", "info", "lockState"])
-        guard finalLock["passcodeRequired"] as? Bool == false else { throw IPhoneUseError("device_locked", "Device locked during capture") }
+        let requestedAt = ProcessInfo.processInfo.systemUptime
+        let attempt = try timed("mediaSnapshot") { try mediaCapture?(before, requestedAt) }
+        let png: Data
+        if let mediaPNG = attempt?.0 { png = mediaPNG }
+        else {
+            _ = try timed("screenshot") { try read(["device", "capture", "screenshot", "--destination", destination.path]) }
+            png = try Data(contentsOf: destination)
+        }
+        let final = try timed("checksAfter") { try NativeCaptureChecks.read { try self.read($0) } }
+        let after = final.display
+        for (key, value) in final.timings { timings[key + "After"] = value }
+        try cancellation.check()
         guard before == after, after.backlightOn else { throw IPhoneUseError("capture_context_changed", "Display changed during screenshot acquisition") }
-        let png = try Data(contentsOf: destination)
+        let imageStarted = ProcessInfo.processInfo.systemUptime
         let fingerprint = try FrameFingerprint(png: png)
         guard fingerprint.width == Int(after.pixelWidth), fingerprint.height == Int(after.pixelHeight) else {
             throw IPhoneUseError("invalid_image", "Screenshot dimensions disagree with the current display")
@@ -73,7 +91,11 @@ final class AppleDeviceCLI {
         let image = try ScreenImage(png: png)
         let samples = try image.rgb(rect: after.screen, screen: after.screen, columns: 32, rows: 64)
         guard samples.contains(where: { $0 > 8 }) else { throw IPhoneUseError("capture_unavailable", "Screenshot is black or unavailable") }
+        timings["imageValidation"] = (ProcessInfo.processInfo.systemUptime - imageStarted) * 1000
+        timings["total"] = (ProcessInfo.processInfo.systemUptime - monotonic) * 1000
         return CapturedObservation(nodes: [], metadata: [
+            "captureSource": attempt?.0 == nil ? "coredevice_screenshot" : "native_media",
+            "captureTimingsMs": timings, "mediaSnapshot": attempt?.1 ?? [:],
             "backend": "apple-native", "deviceID": device, "sessionGeneration": generation,
             "captureID": UUID().uuidString, "captureStartedAt": started, "captureCompletedAt": Date().timeIntervalSince1970,
             "captureStartedUptime": monotonic, "screenshotCapturedAt": Date().timeIntervalSince1970,
@@ -152,7 +174,7 @@ final class AppleDeviceBackend: SessionBackend {
             hidTransport = inputTransport
             let display = try cli!.display()
             let session = try NativeMediaFactory.make(transport: displayTransport, identifier: identifier,
-                                                      address: address, cancellation: cancellation)
+                                                      address: address, cancellation: cancellation, captureSnapshots: true)
             media = session
             try session.ensureDisplay(display, mayReplace: true)
             let input = makeHID(inputTransport, cancellation)
@@ -231,7 +253,7 @@ final class AppleDeviceBackend: SessionBackend {
     }
     func observe() throws -> CapturedObservation {
         guard let cli else { throw IPhoneUseError("backend_unavailable", "Native backend not started") }
-        let captured = try cli.capture(generation: generation) { display in
+        let captured = try cli.capture(generation: generation, prepareDisplay: { display in
             try self.cancellation.check()
             // Startup failure remains observation-only. Once control is started,
             // a failed display rebind cannot silently return an unsafe image.
@@ -241,7 +263,23 @@ final class AppleDeviceBackend: SessionBackend {
                 }
                 try self.media?.ensureDisplay(display, mayReplace: self.hid?.state == .ready)
             }
-        }
+        }, mediaCapture: { display, requestedAt in
+            try self.cancellation.check()
+            guard self.controlError == nil, let media = self.media,
+                  media.matchesDisplay(display), media.health()["healthy"] as? Bool == true,
+                  let receiver = media.recordingReceiver, receiver.snapshots != nil else {
+                return (nil, ["fallbackReason": "owned_media_unavailable"])
+            }
+            guard let frame = try receiver.snapshot(after: requestedAt, cancellation: self.cancellation) else {
+                return (nil, ["fallbackReason": "no_fresh_complete_frame"])
+            }
+            do {
+                let (png, facts) = try NativeSnapshotImage.png(frame, display: display)
+                return (png, facts)
+            } catch {
+                return (nil, ["fallbackReason": (error as? IPhoneUseError)?.code ?? "media_image_unavailable"])
+            }
+        })
         var metadata = captured.metadata
         if controlError == nil, let health = media?.health() {
             metadata["mediaSessionID"] = health["mediaSessionID"]

@@ -37,6 +37,7 @@ struct NativeVideoAccessUnit {
     let timestamp: UInt32
     let nals: [Data]
     let keyframe: Bool
+    var firstPacketAt: Double? = nil
 }
 
 // RFC 7798 single-layer HEVC without DONL: single NAL, AP and FU. Late or missing
@@ -45,6 +46,7 @@ struct NativeVideoAccessUnit {
 struct NativeHEVCDepacketizer {
     private var expected: UInt16?
     private var timestamp: UInt32?
+    private var firstPacketAt: Double?
     private var nals: [Data] = []
     private var fragment = Data()
     private var fragmentHeader: Data?
@@ -56,7 +58,7 @@ struct NativeHEVCDepacketizer {
     private(set) var malformedPackets = 0
     private let maximumBytes = 8 * 1024 * 1024
 
-    mutating func receive(_ packet: NativeRTPPacket) -> NativeVideoAccessUnit? {
+    mutating func receive(_ packet: NativeRTPPacket, receivedAt: Double? = nil) -> NativeVideoAccessUnit? {
         if let expected, expected != packet.sequence {
             // A duplicate/late packet must not advance expected or corrupt a
             // correctly ordered in-progress frame. A future packet means loss.
@@ -68,6 +70,7 @@ struct NativeHEVCDepacketizer {
             if !nals.isEmpty || !fragment.isEmpty { droppedUnits += 1; waitingForKeyframe = true }
             resetUnit()
         }
+        if timestamp == nil { firstPacketAt = receivedAt }
         timestamp = packet.timestamp
         do { try append(packet.payload) }
         catch { malformedPackets += 1; damaged = true; waitingForKeyframe = true }
@@ -79,12 +82,12 @@ struct NativeHEVCDepacketizer {
         // Parameter-set-only units can update the format while waiting for IDR.
         if video, waitingForKeyframe, !keyframe { droppedUnits += 1; return nil }
         if keyframe { waitingForKeyframe = false }
-        return NativeVideoAccessUnit(timestamp: packet.timestamp, nals: nals, keyframe: keyframe)
+        return NativeVideoAccessUnit(timestamp: packet.timestamp, nals: nals, keyframe: keyframe, firstPacketAt: firstPacketAt)
     }
 
     private mutating func resetUnit() {
         nals.removeAll(keepingCapacity: true); fragment.removeAll(keepingCapacity: true)
-        fragmentHeader = nil; size = 0; damaged = false; timestamp = nil
+        fragmentHeader = nil; size = 0; damaged = false; timestamp = nil; firstPacketAt = nil
     }
     private mutating func add(_ nal: Data) throws {
         guard nal.count >= 2, nal[0] & 129 == 0, nal[1] == 1, (nal[0] >> 1) & 63 < 48,

@@ -1,6 +1,7 @@
 import XCTest
 import AVFoundation
 import CoreVideo
+import Darwin
 @testable import IPhoneUseCore
 
 private final class RecordingSource: NativeRecordingSource {
@@ -17,6 +18,69 @@ private final class RecordingSource: NativeRecordingSource {
 }
 
 final class NativeRecordingTests: XCTestCase {
+    func testReceiverFeedsSnapshotAndRecordingIndependently() throws {
+        let units = try fixture(root()), sender = socket(AF_INET6, SOCK_DGRAM, 0)
+        XCTAssertGreaterThanOrEqual(sender, 0)
+        defer { Darwin.close(sender) }
+        var endpoint = sockaddr_in6()
+        endpoint.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+        endpoint.sin6_family = sa_family_t(AF_INET6)
+        XCTAssertEqual(inet_pton(AF_INET6, "::1", &endpoint.sin6_addr), 1)
+        XCTAssertEqual(withUnsafePointer(to: &endpoint) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            Darwin.bind(sender, $0, socklen_t(MemoryLayout<sockaddr_in6>.size))
+        } }, 0)
+        var length = socklen_t(MemoryLayout<sockaddr_in6>.size)
+        XCTAssertEqual(withUnsafeMutablePointer(to: &endpoint) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            getsockname(sender, $0, &length)
+        } }, 0)
+        let receiver = try NativeRTPReceiver(deviceAddress: "::1", captureSnapshots: true)
+        defer { receiver.close() }
+        try receiver.configure(["SourcePort": UInt16(bigEndian: endpoint.sin6_port), "LocalSSRC": 123, "RemoteSSRC": 456,
+            "RTCPEnabled": true, "RTCPSendInterval": 1.0, "SRTPCipherSuite": 0, "RxPayloadType": 100, "TilesPerFrame": 1])
+        endpoint.sin6_port = receiver.port.bigEndian
+        let source = RecordingSource(), recordingPacket = DispatchSemaphore(value: 0)
+        receiver.setVideoHandler { _ in recordingPacket.signal() }
+        source.setVideoHandler { data in
+            let sent = data.withUnsafeBytes { bytes in withUnsafePointer(to: &endpoint) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    sendto(sender, bytes.baseAddress, bytes.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in6>.size))
+                }
+            } }
+            XCTAssertEqual(sent, data.count)
+        }
+        let start = ProcessInfo.processInfo.systemUptime
+        packets(units, to: source)
+        for _ in 0..<units.reduce(0, { $0 + $1.nals.count }) {
+            XCTAssertEqual(recordingPacket.wait(timeout: .now() + 1), .success)
+        }
+        let snapshots = try XCTUnwrap(receiver.snapshots)
+        XCTAssertNotNil(try snapshots.frame(after: start, timeout: 1, cancellation: NativeCancellation()))
+        XCTAssertNil(try snapshots.frame(after: ProcessInfo.processInfo.systemUptime, timeout: 0, cancellation: NativeCancellation()))
+        XCTAssertNil(try receiver.snapshot(after: start, cancellation: NativeCancellation()), "A receiver barrier must exclude already received/decoded data")
+        snapshots.close()
+        // Closing only snapshots must not remove the recording subscription.
+        packets([units[0]], to: source)
+        for _ in units[0].nals { XCTAssertEqual(recordingPacket.wait(timeout: .now() + 1), .success) }
+        XCTAssertEqual(snapshots.status()["closed"] as? Bool, true)
+        receiver.setVideoHandler(nil)
+    }
+    func testSnapshotDecoderReadsRealHEVCWithoutChangingRecordingOutput() throws {
+        let dir = try root(), units = try fixture(dir)
+        let writer = NativeVideoWriter(url: dir.appendingPathComponent("with-snapshots.mp4"), timescale: 24000)
+        let decoder = NativeSnapshotDecoder()
+        for unit in units {
+            let pixels = try XCTUnwrap(decoder.decode(unit))
+            XCTAssertEqual(CVPixelBufferGetWidth(pixels), 64)
+            XCTAssertEqual(CVPixelBufferGetHeight(pixels), 96)
+            try writer.append(unit)
+        }
+        try writer.finish()
+        let result = try NativeRecordingValidation.inspect(dir.appendingPathComponent("with-snapshots.mp4"))
+        XCTAssertEqual(result["decodedFrames"] as? Int, units.count)
+        XCTAssertEqual(result["durationSeconds"] as! Double, 1.916666, accuracy: 0.001)
+        let cold = NativeSnapshotDecoder()
+        XCTAssertNil(try cold.decode(units[1]))
+    }
     func testCapabilityAndDurationFailClosed() throws {
         XCTAssertFalse(NativeRecordingOptions.supported(by: [:]))
         XCTAssertTrue(NativeRecordingOptions.supported(by: ["capabilities": [["featureIdentifier": "com.apple.coredevice.feature.screenrecording"]]]))

@@ -86,9 +86,12 @@ final class NativeRTPReceiver: NativeMediaReceiver {
     private var videoHandler: ((Data) -> Void)?
     private var videoConfiguration: [String: Any] = [:]
     private var videoClock = NativeRTPClock()
+    let snapshots: NativeVideoSnapshot?
+    private var snapshotFormatSupported = false
 
-    init(deviceAddress: String, now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) throws {
+    init(deviceAddress: String, captureSnapshots: Bool = false, now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) throws {
         self.now = now
+        snapshots = captureSnapshots ? NativeVideoSnapshot() : nil
         var destination = sockaddr_in6()
         destination.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
         destination.sin6_family = sa_family_t(AF_INET6)
@@ -140,6 +143,7 @@ final class NativeRTPReceiver: NativeMediaReceiver {
         }
         queue.sync {
             videoConfiguration = configuration
+            snapshotFormatSupported = NativeStreamRecording.supports(configuration)
             peer.sin6_port = UInt16(sourcePort.intValue).bigEndian
             expectedSSRC = remote.uint32Value; localSSRC = local.uint32Value
             reportInterval = interval
@@ -183,11 +187,20 @@ final class NativeRTPReceiver: NativeMediaReceiver {
             if received == 0 { highest = sequence }
             else if delta > 0 { highest &+= UInt32(delta) }
             received += 1; lastPacket = now()
-            videoHandler?(Data(bytes.prefix(count)))
+            let packet = Data(bytes.prefix(count))
+            videoHandler?(packet)
+            if snapshotFormatSupported { snapshots?.receive(packet, at: lastPacket!) }
         }
     }
     // The handler must only enqueue bounded work; it runs on the RTP/RTCP queue.
     func setVideoHandler(_ handler: ((Data) -> Void)?) { queue.sync { videoHandler = handler } }
+    func snapshot(after requestedAt: Double, cancellation: NativeCancellation) throws -> NativeVideoSnapshot.Frame? {
+        guard let snapshots else { return nil }
+        // Exclude datagrams already waiting in the socket as well as packets in
+        // the decoder queue. A host receive time is not a device capture clock.
+        let barrier = queue.sync { drain(); return now() }
+        return try snapshots.frame(after: max(requestedAt, barrier), cancellation: cancellation)
+    }
     func recordingConfiguration() -> [String: Any] {
         queue.sync {
             var result = videoConfiguration
@@ -256,12 +269,14 @@ final class NativeRTPReceiver: NativeMediaReceiver {
              "lastRTCPAttemptAgeSeconds": age(lastReportAttempt), "rtcpSendIntervalSeconds": reportInterval as Any? ?? NSNull(),
              "rtcpPacketsReceived": incomingReports, "lastRTCPReceiveAgeSeconds": age(lastIncomingReport),
              "datagramsReceived": datagrams, "rejectedDatagrams": rejectedDatagrams, "receiverOpen": socketFD >= 0,
-             "error": failed as Any? ?? NSNull(), "decoded": false]
+             "error": failed as Any? ?? NSNull(), "decoded": (snapshots?.status()["decodedFrames"] as? Int ?? 0) > 0,
+             "snapshots": snapshots?.status() as Any? ?? NSNull()]
         }
     }
     func close() {
         let finish = { self.videoHandler = nil; self.timer?.cancel(); self.timer = nil; self.reader?.cancel(); self.reader = nil; self.socketFD = -1 }
         if DispatchQueue.getSpecific(key: queueKey) == true { finish() } else { queue.sync(execute: finish) }
+        snapshots?.close()
     }
     deinit { close() }
 }
