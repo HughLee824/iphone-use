@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from release_artifact import RUNNER, VERSION_PATTERN, check_checksum, inspect_archive, sha256
+from release_artifact import RUNNER, VERSION_PATTERN, check_checksum, check_linked_libraries, inspect_archive, sha256
 
 spec = importlib.util.spec_from_file_location("homebrew", Path(__file__).resolve().parents[1] / "generate-homebrew.py")
 homebrew = importlib.util.module_from_spec(spec)
@@ -19,6 +19,18 @@ spec.loader.exec_module(homebrew)
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_linked_libraries_must_be_system_dependencies(self):
+        libraries = ["/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation", "/usr/lib/swift/libswiftCore.dylib"]
+        output = "package with spaces/bin/iphone-use:\n" + "".join(
+            f"\t{library} (compatibility version 1.0.0, current version 1.0.0)\n" for library in libraries)
+        self.assertEqual(check_linked_libraries(output), libraries)
+        for library in ["/Users/developer/.build/libBridge.dylib", "/opt/homebrew/lib/tool.dylib",
+                        "@rpath/libBridge.dylib", "/usr/lib/../../tmp/untrusted.dylib"]:
+            with self.assertRaisesRegex(ValueError, "external dependency"):
+                check_linked_libraries(output + f"\t{library} (compatibility version 1.0.0, current version 1.0.0)\n")
+        with self.assertRaises(ValueError):
+            check_linked_libraries("CLI:\n")
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="iphone-use test ")
         self.addCleanup(self.temporary.cleanup)

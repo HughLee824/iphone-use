@@ -61,7 +61,7 @@ struct Connect: ParsableCommand {
     @Option(help: "Connected iPhone UDID or CoreDevice identifier.") var device: String
     @Option(help: "Runner source workflow: explicit signed .xctestrun. Packaged Runner users run setup once, then omit this option.") var xctestrun: String?
     @Option(help: "Idle duration, such as 30m, 60m or 10s.") var idleTimeout = "30m"
-    @Option(help: "standard (screenshot/HID) or runner (XCTest). Omit to use ~/.iphone-use/config.json.") var mode: String?
+    @Option(help: "standard (screenshot/HID, no Runner setup) or runner (XCTest). Omit to use saved preferences; fresh users default to standard.") var mode: String?
     @Option(help: "Compatibility option: apple-native = standard; xctest = runner. Conflicting options are rejected.") var backend: String?
     @Option(help: "Diagnostic override: a recent Apple netstat -anvl -p tcp file selects direct RSD discovery. Native connections normally use CoreDevice service sockets.") var nativeEndpointInventory: String?
 
@@ -84,7 +84,7 @@ struct Connect: ParsableCommand {
 }
 
 struct Configuration: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "config", abstract: "Read or set defaults for new device sessions.",
+    static let configuration = CommandConfiguration(commandName: "config", abstract: "Read or set defaults in ~/.iphone-use/config.json (IPHONE_USE_CONFIG_DIR overrides the directory without legacy migration).",
                                                      subcommands: [Get.self, Set.self])
     struct Get: ParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Read the effective default mode without creating configuration or connecting a device.")
@@ -110,7 +110,7 @@ struct Configuration: ParsableCommand {
 }
 
 struct Setup: ParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Re-sign and deploy this release's precompiled Runner; verify connection and capture. No source compilation.")
+    static let configuration = CommandConfiguration(abstract: "Runner mode only: re-sign and verify this release's precompiled Runner. Standard mode does not need setup. Does not change the default mode.")
     @Option(help: "Connected iPhone UDID or CoreDevice identifier.") var device: String
     @Option(help: "iOS development .mobileprovision file; otherwise use saved or matching Xcode profiles.") var profile: String?
     @Option(help: "Apple Development signing certificate SHA-1; required only when selection is ambiguous.") var identity: String?
@@ -198,7 +198,7 @@ struct Disconnect: ParsableCommand {
 }
 
 struct Observe: ParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Capture a screenshot and compact AX text with new element references.")
+    static let configuration = CommandConfiguration(abstract: "Capture a screenshot with a new observation ID; Runner also returns available elements.")
     @OptionGroup var options: SessionOptions
     mutating func run() throws {
         let session = try options.requiredSession()

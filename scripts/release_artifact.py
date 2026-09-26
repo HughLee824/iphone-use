@@ -14,6 +14,23 @@ VERSION_PATTERN = rf"{NUMBER}\.{NUMBER}\.{NUMBER}(?:-{PRERELEASE}(?:\.{PRERELEAS
 RUNNER = "libexec/iphone-use/runner/"
 
 
+def check_linked_libraries(otool_output):
+    """Reject dependencies on a build checkout, Homebrew or unbundled dylibs.
+
+    This checks Mach-O load commands, not frameworks opened later with dlopen;
+    those still need device acceptance on the supported Apple toolchain.
+    """
+    libraries = []
+    for line in otool_output.splitlines()[1:]:
+        library, separator, _ = line.strip().partition(" (compatibility version ")
+        if not separator or not library.startswith(("/System/Library/", "/usr/lib/")) or ".." in PurePosixPath(library).parts:
+            raise ValueError(f"CLI has an unsupported external dependency: {library}")
+        libraries.append(library)
+    if not libraries:
+        raise ValueError("No CLI linked libraries found")
+    return libraries
+
+
 def sha256(data):
     return hashlib.sha256(data).hexdigest()
 

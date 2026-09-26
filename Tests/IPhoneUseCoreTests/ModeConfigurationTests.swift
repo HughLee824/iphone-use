@@ -29,6 +29,29 @@ final class ModeConfigurationTests: XCTestCase {
         XCTAssertEqual((permissions[.posixPermissions] as? NSNumber)?.intValue, 0o600)
     }
 
+    func testEnvironmentOverrideIsAnIndependentPreferenceStore() throws {
+        let first = try directory(), second = try directory()
+        let store = try ModeConfiguration(environment: ["IPHONE_USE_CONFIG_DIR": first.path])
+        let fresh = try store.get()
+        XCTAssertEqual(fresh["mode"] as? String, "standard")
+        XCTAssertEqual(fresh["modeSource"] as? String, "default")
+        XCTAssertEqual(fresh["configPath"] as? String, first.appendingPathComponent("config.json").path)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: first.path))
+        _ = try store.set(mode: "runner")
+        XCTAssertEqual(try ModeConfiguration(environment: ["IPHONE_USE_CONFIG_DIR": first.path]).get()["mode"] as? String, "runner")
+        XCTAssertEqual(try ModeConfiguration(environment: ["IPHONE_USE_CONFIG_DIR": second.path]).select(
+            mode: nil, backend: nil, xctestrun: nil, nativeEndpointInventory: nil).mode, .standard)
+        XCTAssertEqual(try store.get()["mode"] as? String, "runner")
+    }
+
+    func testInvalidEnvironmentDirectoryDoesNotFallBackToUserPreferences() {
+        for path in ["", "relative", "~/config", "/tmp/bad\0path"] {
+            XCTAssertThrowsError(try ModeConfiguration(environment: ["IPHONE_USE_CONFIG_DIR": path])) {
+                XCTAssertEqual(($0 as? IPhoneUseError)?.code, "invalid_configuration_directory")
+            }
+        }
+    }
+
     func testLegacyMigrationOnlyRunsOnceAndPersistsRunner() throws {
         var probes = 0
         let root = try directory()

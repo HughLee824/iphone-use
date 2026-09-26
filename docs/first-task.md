@@ -1,157 +1,97 @@
 # Your first iPhone task
 
-> iPhone-use is the new local project identity. Its renamed repository/distribution/plugin channel has not been published by this change; the commands below target that upcoming channel. Existing Logo assets remain unchanged.
+> This guide targets the unreleased iPhone-use checkout and its local candidate packages. The renamed distribution/plugin channel has not been published. Older AgentSoma releases do not gain standard mode from these instructions. Logo assets are unchanged.
 
+Start with **standard mode**: screenshots and native HID, without Runner installation, signing or `setup`. Choose **runner mode** explicitly when you want XCTest and available element references. Both modes use the same CLI and persistent session; they never switch control routes automatically.
 
-> This guide describes the published Runner workflow. This checkout also adds standard (screenshot/HID) mode and `~/.iphone-use/config.json`; see [control modes](control-modes.md) before configuring a source build. These mode-management changes are not yet released. Standard mode does not require Runner signing/setup.
-
-
-Start at the [iPhone-use website](https://agentsoma.dev). This guide follows the public **Homebrew → client plugin → device setup → first task** path. It works outside the iPhone-use source checkout.
-
-[中文安装](install.md) · [中文插件指南](plugins.md) · [Troubleshooting](#when-something-stops)
+[中文安装](install.md) · [Mode configuration](control-modes.md) · [Runner signing](onboarding.md#发布包-setup)
 
 ## Before you start
 
-- **Mac:** the release package targets Apple Silicon and macOS 15+.
-- **Xcode:** install full Xcode, open it once to finish installation, and select it in Xcode Settings → Locations. `xcode-select -p` should end in the Xcode application's `Contents/Developer`. Command Line Tools alone are insufficient.
-- **iPhone:** connect with USB, trust the Mac, enable Developer Mode, and keep it unlocked during setup and tasks.
-- **Signing:** a usable Apple Development certificate **with its private key in Keychain**, and an iOS development provisioning profile that authorizes this certificate, device, and Runner bundle ID. Setup uses existing signing materials; it does not log in to Apple or create them.
-- **Client:** an installed, authenticated local Codex or Claude Code client with command execution and image-reading tools. A hosted chat without local Mac tools cannot operate this device.
-
-The public CLI 0.1.0 was validated on Apple Silicon / macOS 15.0.1 / Xcode 16.0 / iPhone 12 Pro / iOS 26.6.1, using an existing paid development team's signing. These are tested configurations, not a promise that every newer Xcode or iOS release works. Fresh-Mac and free Personal Team provisioning/renewal remain unverified. The Mac CLI is ad-hoc signed, without Developer ID signing or notarization; use the documented Terminal/Homebrew download path. See [release acceptance](release-setup.md) and [current limitations](../README.md#current-limitations).
+- **Standard mode:** the current adapter targets macOS 27 and iOS 27. Acceptance uses Apple Silicon, Xcode 27 and iPhone 12 Pro; other combinations are not implied by the package's minimum deployment version.
+- **Xcode:** install full Xcode, finish its first-launch installation, and select it in Xcode Settings → Locations. `xcode-select -p` should identify that Xcode's `Contents/Developer`. Command Line Tools alone are insufficient.
+- **iPhone:** connect with USB, trust this Mac, enable Developer Mode and keep the phone unlocked. Finish system authorization on the devices yourself.
+- **Runner only:** existing Apple Development signing credentials and a matching development provisioning profile are needed. Standard mode does not use them. Free Personal Team and fresh-Mac provisioning remain unverified.
 
 ## Install the CLI
 
-Run in Terminal on the Mac connected to your phone:
+Use the complete locally supplied candidate package, or build this checkout with `swift build`. For a package, retain its `bin` and `libexec` layout and add `bin` to PATH. It can run outside the source repository. See [archive verification and installation](install.md).
 
 ```sh
-brew install HughLee824/tap/iphone-use
 command -v iphone-use
 iphone-use --version
-```
-
-The plugin requires stable CLI **0.1.0 or later**. Homebrew installs the complete CLI and precompiled Runner; it does not connect to the phone. If you prefer a versioned archive, follow [manual installation and checksum verification](install.md#手动下载安装). Keep the full `bin` and `libexec` package layout.
-
-If your client was already running before installation, restart it so it inherits the updated PATH. Confirm `iphone-use --version` from the client's own command tool as well as Terminal.
-
-## Install a client plugin
-
-The repository is a public Git marketplace. Add **the repository**, not a raw `marketplace.json` URL; plugin paths resolve inside the downloaded repository. This distribution is separate from submission to either client's official directory.
-
-### Codex
-
-Use a Codex version exposing `codex plugin --help`. These command names were checked against CLI **0.146.0**:
-
-```sh
-codex plugin marketplace add HughLee824/iphone-use
-codex plugin add iphone-use@iphone-use
-codex plugin list --marketplace iphone-use --json
-```
-
-Confirm the installed entry is enabled. Start a **new Codex task**, select the iPhone-use plugin if using the desktop UI, and invoke **`$iphone-use:iphone-use`**. The namespaced skill avoids confusion with a manually copied `$iphone-use` skill. Restart the desktop client if its plugin picker has not refreshed.
-
-If `plugin` or `add` is unavailable, use a compatible Codex CLI release or install from the added marketplace through the desktop plugin directory. Check the client's actual `--help`; do not substitute Claude's `plugin install` command into Codex. See the [official plugin packaging and marketplace documentation](https://developers.openai.com/plugins/build/plugins).
-
-### Claude Code
-
-In Terminal:
-
-```sh
-claude plugin marketplace add HughLee824/iphone-use
-claude plugin install iphone-use@iphone-use
-claude plugin list --json
-```
-
-Start a **new Claude Code session** and invoke **`/iphone-use:iphone-use`**. The same commands are available interactively as `/plugin marketplace add HughLee824/iphone-use` and `/plugin install iphone-use@iphone-use`; follow the install summary if it requests a plugin reload. See [Claude Code plugins](https://code.claude.com/docs/en/plugins) and [marketplace installation](https://code.claude.com/docs/en/plugin-marketplaces).
-
-Both plugins install instructions and client adapters. They do not install the CLI, create a signed Runner, or grant access to the Mac or iPhone. Keep the client's normal command approvals. The environment check is read-only; first-time trust, Developer Mode, Apple sign-in, and system permission dialogs require you to act on your devices.
-
-## Prepare the device
-
-Run in Terminal, or ask your agent to run the same steps with its command tool:
-
-```sh
+iphone-use connect --help
 iphone-use devices
-# Replace the placeholder with the id returned for your intended iPhone.
-export IOS_UDID='YOUR_DEVICE_ID'
-iphone-use setup --device "$IOS_UDID"
 ```
 
-Choose explicitly if more than one phone is listed. Setup re-signs the bundled Runner with your local development credentials, installs it, then verifies a handshake, screenshot capture, and clean shutdown. Continue only when setup returns `ok: true`. `compiled: false` means no source compilation was needed.
+Confirm that the executable supports `--mode standard|runner`. A successful version/help command does not prove device connectivity. The future renamed Homebrew channel is documented in the installation guide; this change does not publish it.
 
-If a matching provisioning profile is not already cached by Xcode, obtain one through your development team's [Apple development profile workflow](https://developer.apple.com/help/account/provisioning-profiles/create-a-development-provisioning-profile). It must include the intended device and certificate. The default Runner app bundle ID is `com.iphone-use.runner.xctrunner`.
+## Connect in standard mode
 
-When setup asks you to resolve a signing ambiguity, use your actual values:
+Choose the intended device from `devices`; do not guess if several phones are listed.
 
 ```sh
-iphone-use setup --device "$IOS_UDID" \
-  --profile '/absolute/path/to/development.mobileprovision' \
-  --team 'YOUR_TEAM_ID'
+export IOS_UDID='DEVICE_ID_FROM_DEVICES'
+iphone-use config get mode
+iphone-use connect --device "$IOS_UDID" --mode standard
 ```
 
-For a profile authorizing your own bundle ID, also pass `--bundle-id 'com.example.iphone-use.xctrunner'`. If needed, `--identity` accepts the SHA-1 identifier of a matching development certificate, not private key contents. See [signing details](onboarding.md#发布包-setup). Preparation is saved for later sessions. Do not run `build-runner` as a workaround for a release-package setup error; source development is a separate [workflow](onboarding.md#源码开发入口).
+The explicit option selects this session only. Fresh users also default to standard when `--mode` is omitted; valid legacy preferences/prepared Runner state can retain runner mode. To make a deliberate persistent choice, run `iphone-use config set mode standard`. Preferences are stored in `~/.iphone-use/config.json` and affect new sessions only.
 
-## Run the first task
+Before input, require `mode=standard`, `backend=apple-native` and `result.controlAvailable=true` in connect/status. `ok:true` can describe an observation-only session; read `controlErrorCode` when control is unavailable.
 
-In a fresh client session, invoke its iPhone-use skill and send:
+No `setup`, signing certificate, provisioning profile or `.xctestrun` is needed for this path. End another client's Device Hub/control session yourself if `native_media_busy` is returned; iPhone-use never stops foreign media sessions.
 
-> Open Settings on my iPhone, navigate to General, read the screenshot to verify the page, then disconnect. Do not change any settings.
+## Observe, act and verify
 
-If you have multiple connected phones, include which one to use. Keep the phone unlocked. The agent should:
+For a first manual test, open a harmless page in the app you intend to use, with a clearly visible navigation button. The development acceptance uses the ordinary iPhone-use Probe and its counters; that signed test app is not a requirement for controlling other installed apps.
 
-1. Load the installed skill and its client adapter; verify the CLI and full Xcode.
-2. Discover the device, connect, and retain the returned device session ID.
-3. Find Settings using `apps --query`, open the returned bundle ID, observe, and **open the actual PNG** with its image tool.
-4. Tap General using a current observed reference; if it is already on General, go back and re-enter for a first-click check. UI labels may be localized.
-5. Read the new screenshot and confirm General is visible. It must not treat a successful command or screenshot filename as visual confirmation.
-6. Disconnect the session and check the cleanup response.
+```sh
+export SESSION='SESSION_FROM_CONNECT'
+iphone-use --session "$SESSION" status
+iphone-use --session "$SESSION" observe
+```
 
-**Pass:** the agent read the screenshots, executed a navigation action, verified General on the real phone, and reported clean disconnection. No settings need to be changed. Running `devices`, validating a manifest, or receiving `completed` from a tap alone is not this acceptance test.
+Open the returned PNG. Standard mode returns a screenshot observation such as `o1`, without AX element references. Read the screenshot dimensions and use **screen-point coordinates** for `--x` and `--y`. Map a point selected in the original PNG into the returned `screen_points` rectangle; do not pass PNG pixels or resized-preview coordinates directly. For a full-screen image, `x = screen.x + pixelX * screen.width / imageWidth`, and similarly for y. Use the current observation dimensions, not a fixed scale factor. Replace every placeholder below with the current observation and a button you have actually seen:
 
-Command tools may return a background job ID. That ID differs from iPhone-use's device session. The plugin tells the agent to collect the **original** command's completed output instead of relaunching it. Codex reads PNGs with its image tool; Claude Code reads them with Read. For `unknown` actions, it observes first and does not blindly retry.
+```sh
+iphone-use --session "$SESSION" tap OBSERVATION_ID --x POINT_X --y POINT_Y --observe
+# Read the new observation's PNG and confirm the expected page/counter changed.
+iphone-use --session "$SESSION" disconnect
+```
+
+Pass means the intended visible effect happened and cleanup was confirmed, not just that `tap` exited successfully. Every next action uses a fresh observation. An `unknown` result requires observation and judgment, never automatic replay. If the action succeeds but its following observation fails, recover with `observe`, not another tap.
+
+## Optional: Runner mode
+
+For a precompiled package, prepare its Runner with your own signing materials, then choose the mode explicitly:
+
+```sh
+iphone-use setup --device "$IOS_UDID"
+iphone-use connect --device "$IOS_UDID" --mode runner
+```
+
+`setup` verifies signing, connection, screenshot and cleanup before saving preparation. It does **not** change the default mode. Use `config set mode runner` if you want future connections without `--mode` to use Runner. Signing choices and the separate source workflow (`build-runner`, then `connect --xctestrun`) are described in [onboarding](onboarding.md).
+
+Runner observations also include available elements; actions can use current references such as `o1:e9` where supported. Consult `connect/status` support fields and [actions](actions.md), rather than assuming the routes have identical text semantics. Explicit recording in both modes uses the shared owned native media recorder; Runner input remains XCTest.
+
+## Optional: external agent
+
+A client with local Mac command execution and PNG-reading tools can perform the same loop. See [client plugins](plugins.md) for the separate plugin workflow. The plugin does not install the CLI or grant device access. This onboarding change does not update or publish client integrations.
+
+Tell the agent which device and mode to use, and the intended task. It must view the PNG before selecting coordinates, keep the returned session and observation IDs, inspect the actual result, and disconnect its own session. A command tool's background job ID is not an iPhone-use session ID; collect the original command's output instead of starting it again.
 
 ## When something stops
 
-| Symptom | Next step |
+| Result | Next step |
 | --- | --- |
-| `iphone-use: command not found` in the client | Verify the Terminal installation, check the client's PATH, and restart the client. The plugin does not contain the executable. |
-| Client cannot parse its own configuration | Resolve the CLI/app version or configuration mismatch first; this error occurs before plugin loading. Do not replace your full configuration with a sample. |
-| Codex says the selected model requires a newer CLI | Update Codex using its original installation method, or select a model supported by the installed CLI. This is a client/model compatibility error before the device task. |
-| Plugin installs but the skill is absent | Confirm the plugin is enabled, use the namespaced invocation, and start a new session. For updates, refresh the marketplace **and** installed plugin. |
-| `setup_required` / `setup_update_required` | Run the indicated `setup --device ID` with the release CLI, then connect again. |
-| `profile_not_found` or a signing mismatch | Prepare the matching development profile or pass the correct `--profile`, `--team`, `--bundle-id`, or `--identity`. See [signing errors](onboarding.md#常见接入错误). |
-| `coredevice_initialization_timeout` | Follow the diagnostic: compare `iphone-use devices` once in an approved local host context. A sandbox timeout does not prove the phone is disconnected. Keep permissions scoped to the required commands; do not reset services or disable the client's sandbox globally. |
-| Locked phone or failed trust | Unlock the iPhone, finish trust/Developer Mode dialogs, and connect again after resolving the stated error. |
-| `not_dispatched` | Read the error and `requiresObservation`. Correct the request or acquire fresh references as directed. |
-| `unknown` | The input may have happened. Observe, read the PNG, and choose the next action from actual state. Do not replay blindly. |
-| An action succeeds but its observation fails | Preserve `action.outcome`; recover with `observe`. Repeating input does not repair a screenshot read. |
+| CLI not found, or `--mode` unknown | Check `command -v iphone-use`, PATH and the actual package version. Restart an already-running client if needed. |
+| `native_protocol_unsupported` | Check the supported macOS/iOS 27 toolchain. Do not silently switch to Runner. |
+| `device_locked` or trust/authorization prompt | Complete the system prompt locally, then reconnect or refresh as directed. |
+| `native_media_busy` | End the other client's device-control session; reconnect explicitly after it is released. |
+| `setup_required` / signing error | These concern Runner mode. Check your selected mode; use Runner setup only when Runner is intended. |
+| `coredevice_initialization_timeout` | Follow [discovery diagnostics](discovery.md#接入失败诊断). A restricted execution-context timeout does not prove the phone is disconnected. |
+| `not_dispatched` | Correct the stated request/readiness problem and refresh observations when required. |
+| `unknown` | Observe and inspect the actual effect before choosing a new action. |
 
-If a task stops, ask the agent to disconnect its session if possible and report the command, error, and unverified outcome. Include client, CLI, Xcode, macOS, and iOS versions in an issue. Keep device identifiers, personal screenshots, logs, and profiles private.
-
-## Upgrade or remove
-
-Disconnect active device sessions before upgrading the CLI:
-
-```sh
-brew update
-brew upgrade iphone-use
-iphone-use --version
-```
-
-Refresh the client package separately:
-
-```sh
-# Codex
-codex plugin marketplace upgrade iphone-use
-codex plugin add iphone-use@iphone-use
-
-# Claude Code
-claude plugin marketplace update iphone-use
-claude plugin update iphone-use@iphone-use
-```
-
-Start a new session and check the workflow version in the **installed** skill. Editing source or refreshing a marketplace alone may leave a cached plugin in use. Runner changes or expired signing can require `iphone-use setup` again; follow the CLI response.
-
-To remove the plugin, use `codex plugin remove iphone-use@iphone-use` or `claude plugin uninstall iphone-use@iphone-use`. Remove its marketplace separately if desired. `brew uninstall iphone-use` removes the CLI package while preserving local device preparation; [complete removal](install.md#升级和卸载) is optional.
-
-Device control runs locally. Your chosen client can send screenshots and UI text to its model provider according to its data settings. Review what is on screen before using private apps.
+Disconnect your own session when finished or blocked. Preserve errors and unverified outcomes; keep device identifiers, profiles and personal screenshots private. See [upgrade and removal](install.md#升级和卸载); updating the CLI never changes an active session's mode.

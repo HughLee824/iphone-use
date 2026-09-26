@@ -31,6 +31,8 @@ User configuration is `~/.iphone-use/config.json`:
 }
 ```
 
+For isolated local acceptance, `IPHONE_USE_CONFIG_DIR=/absolute/private/directory` selects a separate `config.json`. The override disables migration from `~/.agentsoma` and inference from existing Runner preparation, so an empty directory starts with standard mode. It must be an absolute path. It does not relocate session locks, device pairing, signing credentials or Runner preparation; explicitly choosing Runner still uses the normal Runner setup workflow. Leave it unset for ordinary use. The override applies to config/connect commands, not already-running sessions.
+
 The directory is private (0700), and files written by the CLI are 0600. Updates are atomic and serialized with a local configuration lock. Unknown versions/fields, invalid modes, malformed JSON and non-regular configuration files are errors; they do not select an alternate backend. Repair invalid files before setting preferences. `config get mode` is read-only: it reports the effective default, its source, the path and whether a configuration file is saved. It neither connects to a phone nor creates configuration.
 
 Selection order:

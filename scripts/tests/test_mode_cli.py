@@ -12,11 +12,38 @@ CLI = Path(__file__).resolve().parents[2] / ".build/debug/iphone-use"
 @unittest.skipUnless(CLI.is_file(), "Build the CLI first")
 class ModeCLITests(unittest.TestCase):
     def call(self, args, home):
+        environment = {key: value for key, value in os.environ.items() if key != "IPHONE_USE_CONFIG_DIR"}
         result = subprocess.run([str(CLI), *args],
-                                env={**os.environ, "CFFIXED_USER_HOME": str(home)},
+                                env={**environment, "CFFIXED_USER_HOME": str(home)},
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
         self.assertTrue(result.stdout, result.stderr.decode())
         return result.returncode, json.loads(result.stdout)
+
+    def test_config_directory_override_ignores_existing_preferences_and_preparation(self):
+        with tempfile.TemporaryDirectory(prefix="ip-isolated-", dir="/private/tmp") as temporary:
+            root = Path(temporary)
+            # Deliberately unreadable documents would fail normal migration.
+            existing = [root / ".iphone-use/config.json", root / ".agentsoma/config.json",
+                        root / "Library/Application Support/iphone-use/devices/fixture.json"]
+            for path in existing:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("not valid JSON")
+            isolated = root / "isolated preferences"
+            environment = {**os.environ, "CFFIXED_USER_HOME": str(root), "IPHONE_USE_CONFIG_DIR": str(isolated)}
+            def call(*arguments):
+                result = subprocess.run([str(CLI), "config", *arguments], env=environment,
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                return json.loads(result.stdout)["result"]
+            fresh = call("get", "mode")
+            self.assertEqual(Path(fresh["configPath"]).resolve(), (isolated / "config.json").resolve())
+            self.assertEqual(fresh["modeSource"], "default")
+            self.assertEqual(fresh["mode"], "standard")
+            self.assertFalse(isolated.exists())
+            call("set", "mode", "runner")
+            self.assertEqual(call("get", "mode")["mode"], "runner")
+            for path in existing:
+                self.assertEqual(path.read_text(), "not valid JSON")
 
     def test_get_set_round_trip_in_isolated_home(self):
         with tempfile.TemporaryDirectory(prefix="as-mode-", dir="/private/tmp") as temporary:

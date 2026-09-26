@@ -1,6 +1,23 @@
 # 首次接入
 
-发布包携带预编译 CLI 与 Runner。用户在本机 Mac/Xcode 环境中使用自己的开发签名重签 Runner；外部 agent 执行 setup、连接及设备命令。登录 Apple 账号、首次信任和系统确认由用户完成。分发渠道和安装步骤见 [安装说明](install.md)。
+当前源码和本地候选包默认面向标准模式：截图观察 + 原生 HID，无需 Runner 签名或 setup。新名称分发尚未发布，渠道状态见[安装说明](install.md)。
+
+## 标准模式入口
+
+使用完整 Xcode 27、已配对且开启 Developer Mode 的解锁 iPhone；当前原生适配器要求 macOS/iOS 27。安装完整候选包或运行 `swift build` 后：
+
+```sh
+iphone-use devices
+iphone-use connect --device "$IOS_UDID" --mode standard
+# 保存返回的 session，observe 后读取实际 PNG，将原 PNG 选点换算成本次观察 screen_points 中的屏幕点。
+iphone-use --session "$SESSION" observe
+iphone-use --session "$SESSION" tap OBSERVATION_ID --x POINT_X --y POINT_Y --observe
+iphone-use --session "$SESSION" disconnect
+```
+
+设备、会话、观察 ID 和坐标均使用实际输出。首次信任、解锁与系统确认由用户完成。标准模式无需证书、profile、`build-runner` 或 `.xctestrun`；普通 Probe 只是开发验收 fixture，不是产品前提。设备被其他媒体客户端占用时明确拒绝，不关闭其会话。
+
+需要 XCTest 与可用元素引用时选择下面的 Runner 路径。两种模式共用 CLI；`config set mode standard|runner` 保存新会话偏好，`connect --mode` 仅覆盖本次。`setup` 始终准备 Runner，不自动改变默认模式。
 
 ## 发布包 setup
 
@@ -23,7 +40,7 @@ setup 依次校验发布文件和 CLI 配对、设备版本、profile 的设备/
 之后从任意工作目录连接，无需 `.xctestrun`：
 
 ```sh
-iphone-use connect --device "$IOS_UDID"
+iphone-use connect --device "$IOS_UDID" --mode runner
 # 使用真实返回的 session。
 iphone-use --session "$SESSION" open com.apple.Preferences
 iphone-use --session "$SESSION" observe
@@ -44,7 +61,7 @@ iphone-use --session "$SESSION" disconnect
 
 ## 源码开发入口
 
-以下仅用于修改 Runner 的维护者和贡献者，不是发布包用户 setup 的前置步骤。
+标准模式源码运行只需 `swift build`，然后按上方入口连接。以下签名步骤仅用于 Runner 源码工作流，不是标准模式或发布包用户 setup 的前置步骤。
 
 ### 准备一次签名环境
 
@@ -92,6 +109,8 @@ swift build
 
 | 返回结果 | 下一步 |
 | --- | --- |
+| `native_protocol_unsupported` | 标准模式当前仅适配 macOS/iOS 27；检查完整 Xcode 与系统版本，不隐式切换模式。 |
+| `native_media_busy` | 自行结束其他客户端的媒体控制连接后显式重连；不使用 stopAll。 |
 | `runner_package_missing` / `runner_package_mismatch` / `runner_package_invalid` | 安装完整、同一版本的 CLI 与 Runner 发布包，保留目录结构。不要搜索 `.build` 选择旧产物。 |
 | `setup_required` / `setup_update_required` / `setup_state_invalid` | 对该设备重新 setup；如旧会话仍活跃先断开。 |
 | `xcode_unavailable` / `ios_version_unsupported` | 选择完整 Xcode；设备需达到当前 Runner 包的最低版本。最低版本只用于排除已知不兼容，不代表所有组合都经过验收。 |

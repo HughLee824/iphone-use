@@ -13,7 +13,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Swift](https://img.shields.io/badge/Swift-5.9%2B-F05138.svg)](Package.swift)
 
-iPhone-use 是一个 macOS CLI，让外部 agent 能够发现 App、读取截图与辅助功能数据，并操作连接的 iPhone。自然语言理解、任务规划和结果判断由调用 agent 负责；iPhone-use 通过持续运行的 XCTest 会话提供设备观察与动作能力。
+iPhone-use 是一个 macOS CLI，让外部 agent 能够发现 App、读取截图与辅助功能数据，并操作连接的 iPhone。自然语言理解、任务规划和结果判断由调用 agent 负责；iPhone-use 通过所选模式的持续会话提供设备观察与动作能力。
 
 调用 agent 需要具备本机命令执行和 PNG 读图能力。设备控制链路在你的 Mac 和 iPhone 上本地运行。
 
@@ -25,111 +25,66 @@ iPhone-use 是一个 macOS CLI，让外部 agent 能够发现 App、读取截图
 
 当前源码提供 **standard**（截图 + 原生 HID）和 **runner**（XCTest）两种模式。用 `iphone-use config set mode standard` 或 `runner` 设置默认，再运行 `iphone-use connect --device "$DEVICE"`；单次覆盖使用 `--mode standard|runner`。偏好保存在 `~/.iphone-use/config.json`，原有 `--backend` 和签名 `--xctestrun` 用法保持兼容。新用户默认 standard，有效的旧 Runner 配置迁移为 runner；修改偏好不会改变已有会话。
 
-标准模式目前仍要求已记录的 macOS/Xcode/iOS 27 环境、配对、Developer Mode 和解锁，但不需要 Runner 签名。Runner 后续逐步对齐功能，当前以会话返回的支持能力和就绪状态为准。详见[模式配置、迁移与 Agent 规则](docs/control-modes.md)。下方安装与签名引导描述已有 **Runner** 发布流程，不是标准模式的前置步骤。
+标准模式目前仍要求已记录的 macOS/Xcode/iOS 27 环境、配对、Developer Mode 和解锁，但不需要 Runner 签名。Runner 后续逐步对齐功能，当前以会话返回的支持能力和就绪状态为准。详见[模式配置、迁移与 Agent 规则](docs/control-modes.md)。下方以标准模式入门，Runner 签名为可选步骤。
 
 ## 为什么选择 iPhone-use？
 
-- **同时观察画面与界面结构。** 观察返回 PNG 路径、紧凑的辅助功能（AX）文本和元素引用，可用 `inspect` 展开或搜索缓存快照。
+- **同时观察画面与界面结构。** 两种模式都返回截图；Runner 额外提供可用 AX 元素，可用 `inspect` 展开或搜索缓存快照。
 - **操作真实 App。** 发现已安装 App、切换前台、点击、滑动、拖动、编辑文本，以及发送 Return。
-- **跨命令复用设备会话。** 独立 CLI 调用共享同一个 Mac 宿主和 iPhone Runner。`connect` 管理启动，`disconnect` 或空闲到期释放会话。
+- **跨命令复用设备会话。** 独立 CLI 调用共享同一个 Mac 宿主及所选控制连接。`connect` 管理启动，`disconnect` 或空闲到期释放会话。
 - **明确动作执行状态。** 区分 `completed`、`not_dispatched` 和 `unknown`。点击与滑动在派发前校验画面，输入动作在执行后检测帧稳定。
-- **精简的原生技术栈。** 使用 Swift、Apple 设备工具和薄 XCTest Runner。运行时无需 Python、Node.js、WebDriverAgent、`iproxy` 或 `pymobiledevice3`。
+- **精简的原生技术栈。** 使用 Swift、自写原生桥接及 Apple 设备工具；选择 Runner 模式时运行薄 XCTest Runner。运行时无需 Python、Node.js、WebDriverAgent、`iproxy` 或 `pymobiledevice3`。
 
 ## 快速开始
 
-公开用户推荐按 [首次任务指南](docs/first-task.md)走 Homebrew → Codex / Claude Code 插件 → 设备 setup → 已验证的设置任务流程。下方源码入口用于开发。
+以下对应当前源码和本地候选包，新名称分发尚未发布。标准模式作为首次使用入口，Runner 签名放在独立的可选流程中。完整步骤见[首次任务](docs/first-task.md)和[安装说明](docs/install.md)。
 
-### 前置条件
+### 1. 准备并连接
 
-| 要求 | 说明 |
-| --- | --- |
-| Mac 与 Xcode | 安装完整 Xcode，并选为当前开发工具链。仅安装 Command Line Tools 不够。 |
-| 真实 iPhone | 通过 USB 连接，信任 Mac，启用 Developer Mode，并保持解锁。 |
-| 开发签名 | Apple Development 证书及对应私钥，以及匹配设备和 Runner bundle ID 的 iOS development provisioning profile。 |
+当前标准模式适配 macOS 27 / iOS 27，已测 Apple Silicon、Xcode 27、iPhone 12 Pro。需要完整 Xcode、设备信任、Developer Mode 和解锁，**不需要开发签名或 Runner setup**。包的最低编译版本不代表完整链路兼容范围。
 
-文档记录的实测环境为 **Apple Silicon · macOS 15.0.1 · Xcode 16.0 / Swift 6.0 · iPhone 12 Pro / iOS 26.6**，使用已有付费开发团队的签名。免费 Personal Team 的首次配置与续签尚未验收。兼容性边界见[当前限制](#当前限制)。
-
-### 1. 安装并连接
-
-开发时使用源码流程；发布资产可用后，也可以选择预编译包。两种方式的 Runner 准备步骤不同。
-
-#### 从源码运行
+源码开发运行 `swift build` 后使用 `.build/debug/iphone-use`；本地候选包保留完整目录，将 `bin` 加入 PATH，可在源码目录外使用。
 
 ```sh
-git clone https://github.com/HughLee824/iphone-use.git
-cd iphone-use
-swift build
-export PATH="$PWD/.build/debug:$PATH"
-
-iphone-use --help
-iphone-use devices
-```
-
-先在 Xcode 中完成[源码签名配置](docs/onboarding.md#源码开发入口)，再填写自己的开发团队 ID 和 `devices` 返回的设备 ID：
-
-```sh
-export APPLE_TEAM_ID="YOUR_TEAM_ID"
-export IOS_UDID="DEVICE_ID_FROM_DEVICES"
-
-iphone-use build-runner --team "$APPLE_TEAM_ID"
-
-# 使用 build-runner 成功响应中的 result.xctestrun。
-export SIGNED_XCTESTRUN="/absolute/path/from/build-runner.xctestrun"
-iphone-use connect --device "$IOS_UDID" --xctestrun "$SIGNED_XCTESTRUN"
-```
-
-`build-runner` 使用仓库内的独立 Xcode 工程构建并校验已签名 Runner。兼容的构建可供后续连接复用；修改 Runner、共享源码、Xcode 或签名配置后需要重新构建。
-
-#### 使用发布包
-
-分发流程面向 **Apple Silicon / macOS 15+**。可用安装包以 [GitHub Releases](https://github.com/HughLee824/iphone-use/releases) 为准。稳定版 Release 发布且 Tap formula 更新后，可运行：
-
-```sh
-brew install HughLee824/tap/iphone-use
 iphone-use --version
-```
-
-也可以从 [GitHub Releases](https://github.com/HughLee824/iphone-use/releases) 下载归档及配套 SHA-256 文件，校验后保留完整包目录。手动安装、升级和卸载步骤见[安装说明](docs/install.md)。
-
-```sh
 iphone-use devices
 export IOS_UDID="DEVICE_ID_FROM_DEVICES"
-
-iphone-use setup --device "$IOS_UDID"
-iphone-use connect --device "$IOS_UDID"
+iphone-use connect --device "$IOS_UDID" --mode standard
 ```
 
-`setup` 在本机重签预编译 Runner，验证设备握手、截图采集及正常退出后保存准备状态。它不编译源码、不登录 Apple，也不创建证书或 profile。需要明确签名选择时，可使用 `--profile`、`--team` 或 `--identity`，详见[首次接入](docs/onboarding.md)。
+`--mode standard` 只选择这次连接。新用户省略它时也默认 standard；已有偏好或有效旧 Runner 准备状态可能保留 runner。使用 `iphone-use config set mode standard` 保存默认值，后续可省略 `--mode`。
 
 ### 2. 观察、操作、验证
 
-完成任意一种连接流程后，将 `connect` 返回的 `session` 填入变量：
+在手机上打开一个适合测试的无害页面，保存 connect 返回的会话：
 
 ```sh
 export SESSION="SESSION_FROM_CONNECT"
-
-iphone-use --session "$SESSION" status
-iphone-use --session "$SESSION" apps --query Settings
-iphone-use --session "$SESSION" open com.apple.Preferences
 iphone-use --session "$SESSION" observe
 ```
 
-读取返回的 `screenshot` 路径对应的 PNG，并结合 AX 文本判断界面。下方 ID 仅为示例，须替换为本次观察中实际返回的引用。
+用读图工具打开返回的 PNG。标准模式只有截图观察 ID，例如 `o1`，没有元素引用。根据当前图片选择可见按钮，命令接收**屏幕点坐标**：将原 PNG 中的选点按本次观察的 `screen_points` 矩形换算。例如 `x = screen.x + pixelX × screen.width / imageWidth`，y 同理；不能直接传截图像素或缩放预览坐标，也不能固定除以 3。下方占位符必须替换：
 
 ```sh
-# 搜索已采集的快照，或直接查看已知元素。
-iphone-use --session "$SESSION" inspect o1 --query General
-iphone-use --session "$SESSION" inspect o1:e9
-
-# 使用当前有效引用操作，再次观察并核对结果。
-iphone-use --session "$SESSION" tap o1:e9
-iphone-use --session "$SESSION" observe
-
-# 完成后释放会话。
+iphone-use --session "$SESSION" tap OBSERVATION_ID --x POINT_X --y POINT_Y --observe
+# 读取新截图，确认预期页面或计数变化。
 iphone-use --session "$SESSION" disconnect
 ```
 
-基本循环是 **observe → 读取截图 → 按需 inspect → 执行动作 → 再次 observe**。动作完成不代表 agent 的业务任务已经成功。
+动作回执和截图路径不是成功证明。下一次动作使用新观察；结果 unknown 时先观察，禁止自动重放。开发验收使用普通 Probe，控制其他已安装 App 不要求安装 Probe。
+
+### 可选：使用 Runner
+
+需要 XCTest 与可用元素引用的开发者可以选择 Runner。完整发布包使用已有 Apple Development 证书和匹配 profile 重签：
+
+```sh
+iphone-use setup --device "$IOS_UDID"
+iphone-use connect --device "$IOS_UDID" --mode runner
+```
+
+`setup` 不改默认模式；需要持久使用 Runner 时运行 `iphone-use config set mode runner`。源码开发者按[签名入口](docs/onboarding.md#源码开发入口)运行 `build-runner`，再使用返回的 `.xctestrun` 连接。Runner 观察可在支持的动作中使用 `oN:eN`；两种模式的操作及文字语义以支持字段和[动作契约](docs/actions.md)为准。
+
+外部 Agent 插件为可选，安装方法见[插件指南](docs/plugins.md)。旧 AgentSoma 发布包的 Runner 验收与当前标准模式验收分别记录，不将其兼容范围互相套用。
 
 ## 命令概览
 
@@ -186,7 +141,7 @@ claude plugin install iphone-use@iphone-use
 | `not_dispatched` | 在调用任何输入 API 前已拒绝请求。 | 阅读错误，修正请求或重新观察。 |
 | `unknown` | 输入可能已生效，但无法确认完成状态。 | 先观察，不要盲目重复动作。 |
 
-输入动作约每 200 ms 采样一次画面，至少三帧完全相同且跨度达到 400 ms 才视为稳定。5 秒检测预算内未稳定时，返回 `unknown` / `frame_stability_timeout`，并保留可获得的输入事实和最后一帧。该预算不是整条命令的硬超时。
+Runner 输入动作约每 200 ms 采样一次画面，通过允许小范围光标闪烁的帧比较判稳；具体窗口和判定事实随结果返回。5 秒检测预算内未稳定时，返回 `unknown` / `frame_stability_timeout`，并保留可获得的输入事实和最后一帧。该预算不是整条命令的硬超时。
 
 调用 agent 应遵循以下约定：
 
@@ -205,11 +160,13 @@ claude plugin install iphone-use@iphone-use
 flowchart LR
     Agent[外部 AI agent] --> CLI[iphone-use CLI]
     CLI <-->|Unix socket| Host[Mac 上的 Swift 会话宿主]
-    Host <-->|CoreDevice IPv6| Runner[iPhone 上的 XCTest Runner]
-    Runner <--> Apps[iPhone App]
+    Host <-->|standard| Native[Apple 原生服务 / HID]
+    Host <-->|runner| Runner[iPhone 上的 XCTest Runner]
+    Native <--> Apps[iPhone App]
+    Runner <--> Apps
 ```
 
-`connect` 启动宿主，并通过 Xcode 的 `test-without-building` 安装和启动 Runner，在两端均可响应后返回。宿主在各次 CLI 调用之间持有 XCTest 会话，串行处理设备请求、缓存观察并管理清理，无需单独启动服务。
+`connect` 启动宿主并固定所选模式。标准模式连接 Apple 原生服务、持有自有媒体/HID 通道；Runner 模式通过 Xcode 的 `test-without-building` 安装并启动 Runner。宿主跨 CLI 调用保持连接、串行请求、缓存观察并管理清理，不自动切换控制路线。
 
 会话文件默认位于 `/private/tmp/agentsoma-<uid>`，目录权限为 `0700`，可通过 `IPHONE_USE_STATE_DIR` 更换路径。发布包 Runner 的准备状态位于 `~/Library/Application Support/iphone-use`。签名私钥留在 Keychain，设备 token 仅保存在宿主内存和 XCTest 子进程环境中。
 
@@ -227,7 +184,7 @@ flowchart LR
 iPhone-use 处于早期开发阶段。真机验收覆盖上述实测环境，不代表所有 Mac、Xcode、iOS 版本或 App 均受支持。
 
 - Swift 包目标为 macOS 13+，发布 Runner 的 iOS 编译下限为 17。这些是构建下限，不是完整链路的支持承诺。二进制分发面向 Apple Silicon / macOS 15+。
-- 需要完整 Xcode 和本机开发签名。全新 Mac 接入及免费 Personal Team 的首次 provisioning、续签尚未验收。Mac CLI 使用 ad-hoc 签名，当前发布流程未包含 Developer ID 签名和公证。
+- 两种模式都需要完整 Xcode；本机开发签名仅用于 Runner。全新 Mac 接入及免费 Personal Team 的首次 provisioning、续签尚未验收。Mac CLI 使用 ad-hoc 签名，当前发布流程未包含 Developer ID 签名和公证。
 - 截图与 AX 分开采集，不构成原子快照。默认观察文本最多 60 行 / 8 KiB，源采集最多 200 个节点；`inspect` 不能恢复未采集节点。
 - 画面守卫属于启发式校验，不能原子地阻止 App 在输入前自行变化。XCTest 运行时兼容性以已测试配置为限。
 - 不保证宿主被强制终止、Mac 重启、拔线或设备锁屏后的自动恢复。结果未知的动作不会自动重放。
