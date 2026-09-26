@@ -1,6 +1,6 @@
 # 双模式本地候选包验收
 
-日期：2026-09-26。当前阶段：**宿主与归档验证通过，新候选包的真机动作验收待解锁后执行**。未发布版本、推送远端、更新插件或替换 Logo。
+日期：2026-09-26。**宿主、归档及受控 Probe 双模式真机验收通过**。未发布版本、推送远端、更新插件或替换 Logo。
 
 ## 候选包身份
 
@@ -21,14 +21,26 @@
 - 为真机验收再次独立解压到源码外含空格目录，包内 CLI 成功发现唯一有线连接的配对 iPhone；全新配置返回 `standard` / `default` / `saved:false`，配置目录未创建。
 - Python 宿主测试 **48 项通过**。本轮未修改产品源码，未重跑完整 Swift 套件；最近功能提交 `96f5295` 的结果为 316 项执行、315 项通过、1 项既有跳过。
 
-宿主环境为 macOS 27.0 (26A428)、Xcode 27.0 (27A266a)。只读设备检查发现 iPhone 12 Pro / iOS 27.0，Apple 锁屏状态为 `passcodeRequired=true`。本轮尚未启动候选包设备会话、发送触控或录制视频；包检查结果保持 `deviceVerified:false`。
+宿主环境为 macOS 27.0 (26A428)、Xcode 27.0 (27A266a)。只读设备检查发现 iPhone 12 Pro / iOS 27.0。最初 Apple 返回 `passcodeRequired=true`，因此暂停真机操作；用户解锁就绪后完成下述验收。归档校验工具自身仍返回 `deviceVerified:false`，真机证据单独记录。
 
-## 待完成的真机验收
+## 标准模式真机验收
 
-解锁并停留在普通 iPhone-use Probe、释放其他控制客户端的媒体会话后：
+所有命令均使用源码外独立解压的包内 CLI、隔离配置及工作目录，没有调用开发 `.build` 二进制。省略 mode、尚未运行 setup 时连接成功：`standard` / `default`、`controlAvailable=true`、`runnerStarted=false`。首次连接保存 standard 偏好。
 
-1. 使用独立解压的包内 CLI、全新配置，省略 mode 连接标准模式，确认不启动 Runner。目视读取截图后选择坐标，只点击一个 Probe 目标，以新截图计数变化验证；原生输入返回 unknown 时不重放。
-2. 使用同一包内 Runner 完成合法签名准备，显式选择 Runner 模式；验证一次 Probe 点击与自有原生媒体录屏共存，检查实际视频画面和时间信息。
-3. 断开各自会话，核对媒体所有权、宿主退出和观察缓存清理；确认显式 Runner 选择未意外改变标准模式偏好。
+- 打开普通 Probe 后，媒体截图 `o1` 显示 A=9、B=4、C=4、D=3，屏幕为 390×844 points。
+- 首次点击前没有及时获得完整新媒体帧，截图来源转为 Apple PNG；保护返回 `stale_observation` / `not_dispatched`，未发送触控，并附上 `o2`。会话截图策略固定为 `coredevice_only`，原因 `no_fresh_complete_frame`。
+- 目视核对 `o2` 后，基于新观察选择 `(71, 122)` points 点击 A。屏幕保护通过，触点释放已排队；新截图 `o3` 确认 **A 从 9 变为 10**，其余计数不变。
+- 输入结果保留 `unknown` / `native_input_unacknowledged`、CLI 退出码 1；成功结论来自实际截图变化，没有重放未知输入。断开确认自有媒体 UUID 停止、接收器和连接关闭、隧道释放；另外核对宿主已退出、观察缓存已删除。
 
-原始归档、构建日志、宿主测试、只读设备结果和进度记录保存在 `.local/research/dual-mode-package-20260926/`。不提交私人设备标识。全新 Mac 首次配对、下载隔离/Gatekeeper、公证及公开分发不在本轮范围。
+## Runner 点击与共享原生录屏
+
+`setup` 使用包内 Runner 与已有合法签名产物，返回 `compiled:false`、`reused:true`，验证连接、截图采集和断开。Runner 摘要与本候选一致。显式 `--mode runner` 连接时未提供源码 `.xctestrun`。
+
+- 打开 Probe 并查看截图后，以 90 秒为上限开始自有原生媒体录屏。开始后重新观察，使用 `o2` 的 `(71, 122)` points 通过 Runner 点击 A 一次；动作完成且判稳，新截图确认 **A 从 10 变为 11**。
+- 手动停止本次录制 ID：宿主录制 73.309 秒，MP4 **73.300 秒**，1184×2576，完整解码 **2284 帧**。无时间戳不连续或畸形包，有 1 个启动阶段丢弃单元。
+- 最后真实帧位于视频约 68.337 秒，正常停止时媒体健康，末帧显示持续时间为 **4.964 秒**，`tailTimingSource=host_monotonic_receive`。没有缩放已有帧时间戳或制造新帧。
+- 使用自写 Apple AVFoundation 验证器精确抽取视频第 1、55、72 秒：目视确认第 1 秒 A=10，第 55 秒和尾帧保持区间第 72 秒 A=11，画面方向正常，均为 Probe。视频文件完成与解码状态不是点击成功的唯一证据。
+- 停止前后 Runner PID 与会话标识相同，`hidServiceOpened=false`；自有媒体 UUID 停止、接收器关闭和隧道释放已确认。最终正常 disconnect，无强制结束；另行确认宿主和 xcodebuild 已退出、观察缓存已删除。
+- setup、显式 Runner 连接及断开后，隔离配置仍为 `standard` / `configuration` / `saved:true`。逐文件对比确认解压后的包内容未被签名准备或验收修改。
+
+原始归档、构建日志、宿主测试、设备结果、截图、MP4、抽帧、清理记录及证据摘要保存在 `.local/research/dual-mode-package-20260926/`。不提交私人设备标识。本轮验证固定竖屏、受控 Probe 点击及录屏共存；不代表全部手势、所有 App 或其他设备兼容。全新 Mac 首次配对、下载隔离/Gatekeeper、公证及公开分发不在本轮范围。
