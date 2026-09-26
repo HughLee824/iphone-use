@@ -24,6 +24,8 @@ final class NativeDisplayMediaSession {
     private var lastRefreshCleanup: [String: Any]?
     private var recordingRefreshCount = 0
     private var lastRecordingRefreshCleanup: [String: Any]?
+    private var orientationRefreshCount = 0
+    private var lastOrientationRefreshCleanup: [String: Any]?
 
     init(makeSession: @escaping () throws -> NativeMediaSession,
          startSession: @escaping (NativeMediaSession, NativeDisplay) throws -> Void) {
@@ -36,6 +38,31 @@ final class NativeDisplayMediaSession {
 
     func ensureDisplay(_ display: NativeDisplay, mayReplace: Bool) throws {
         try bind(display, mayReplace: mayReplace, forRecording: false)
+    }
+
+    // An active stream can leave Apple's display topology at the previous
+    // orientation. Read again only AFTER a confirmed, UUID-scoped stop.
+    func resynchronizeOrientation(mayReplace: Bool, readDisplay: () throws -> NativeDisplay) throws {
+        guard !closed, failure == nil, mayReplace, let current = session,
+              current.health()["healthy"] as? Bool == true else {
+            throw IPhoneUseError("native_orientation_unverified", "Cannot resynchronize orientation while media or input is not ready")
+        }
+        do {
+            let cleanup = current.close()
+            lastOrientationRefreshCleanup = cleanup
+            guard cleanup["mediaStopAcknowledged"] as? Bool == true else {
+                throw IPhoneUseError("native_orientation_unverified", "Owned media stop was not confirmed; no replacement was started")
+            }
+            session = nil; geometry = nil
+            let display = try readDisplay()
+            guard display.backlightOn else { throw IPhoneUseError("capture_unavailable", "Wake the display before resynchronizing") }
+            try bind(display, mayReplace: true, forRecording: false)
+            orientationRefreshCount += 1
+        } catch {
+            failure = String(describing: error)
+            _ = session?.close()
+            throw error
+        }
     }
 
     // An explicit recording start needs fresh video even when the source has
@@ -94,6 +121,8 @@ final class NativeDisplayMediaSession {
         result["boundDisplayRotation"] = geometry?.rotation as Any? ?? NSNull()
         result["displayRefreshCount"] = refreshCount
         result["recordingRefreshCount"] = recordingRefreshCount
+        result["orientationRefreshCount"] = orientationRefreshCount
+        if let lastOrientationRefreshCleanup { result["lastOrientationRefreshCleanup"] = lastOrientationRefreshCleanup }
         if let lastRecordingRefreshCleanup { result["lastRecordingRefreshCleanup"] = lastRecordingRefreshCleanup }
         if let lastRefreshCleanup { result["lastDisplayRefreshCleanup"] = lastRefreshCleanup }
         if let failure {
@@ -105,9 +134,11 @@ final class NativeDisplayMediaSession {
 
     func close() -> [String: Any] {
         closed = true
-        var result = session?.close() ?? lastRefreshCleanup ?? ["mediaStopAcknowledged": true]
+        var result = session?.close() ?? lastOrientationRefreshCleanup ?? lastRefreshCleanup ?? ["mediaStopAcknowledged": true]
         result["displayRefreshCount"] = refreshCount
         result["recordingRefreshCount"] = recordingRefreshCount
+        result["orientationRefreshCount"] = orientationRefreshCount
+        if let lastOrientationRefreshCleanup { result["lastOrientationRefreshCleanup"] = lastOrientationRefreshCleanup }
         if let lastRecordingRefreshCleanup { result["lastRecordingRefreshCleanup"] = lastRecordingRefreshCleanup }
         if let lastRefreshCleanup { result["lastDisplayRefreshCleanup"] = lastRefreshCleanup }
         return result

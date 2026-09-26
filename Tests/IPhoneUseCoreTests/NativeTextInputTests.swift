@@ -2,6 +2,23 @@ import XCTest
 @testable import IPhoneUseCore
 
 final class NativeTextInputTests: XCTestCase {
+    func testOrientationRecoveryRequiresNewDecisionEvenWhenPixelsAndDirectionMatch() throws {
+        let context = screenTestContext(), png = try screenPNG()
+        let guardValue = try ScreenGuard(png: png, context: context, rects: [context.screen], policy: .init())
+        var calls = 0
+        XCTAssertThrowsError(try NativeInputPreflight.check(guard: guardValue, displayID: 1,
+            deadline: 8, maximumCaptures: 3, now: { 0 }) {
+                calls += 1
+                return CapturedObservation(nodes: [], metadata: ["displayID": UInt64(1), "orientationResynchronized": true,
+                    "screenContext": try jsonObject(JSONEncoder().encode(context))], screenshot: png)
+            }) {
+                let failure = $0 as? ActionFailure
+                XCTAssertEqual(failure?.possiblyExecuted, false)
+                XCTAssertEqual(failure?.result?["orientationResynchronized"] as? Bool, true)
+                XCTAssertEqual(failure?.rejectedCapture?.screenshot, png)
+            }
+        XCTAssertEqual(calls, 1)
+    }
     func testCaptureSourceChangeReturnsFreshObservationWithoutRetryOrInput() throws {
         let context = screenTestContext(), png = try screenPNG()
         let guardValue = try ScreenGuard(png: png, context: context, rects: [context.screen], policy: .init())

@@ -83,6 +83,12 @@ final class NativeVideoSnapshot {
         }
         return nil
     }
+    // Negative evidence only: an old frame may reveal conflicting axes, but
+    // can never become a screenshot or establish that the screen is current.
+    func rejectConflictingGeometry(_ display: NativeDisplay) throws {
+        condition.lock(); let candidate = latest; condition.unlock()
+        if let candidate { _ = try NativeSnapshotImage.validateGeometry(candidate, display: display) }
+    }
     static func isFresh(_ frame: Frame, after notBefore: Double, now: Double) -> Bool {
         frame.firstPacketAt >= notBefore && frame.firstPacketAt <= frame.completedAt
             && frame.completedAt <= now && now - frame.firstPacketAt <= 0.5
@@ -180,8 +186,8 @@ final class NativeSnapshotDecoder {
 enum NativeSnapshotImage {
     private static let context = CIContext(options: [.cacheIntermediates: false])
 
-    static func png(_ frame: NativeVideoSnapshot.Frame, display: NativeDisplay) throws -> (Data, [String: Any]) {
-        guard display.nativeRotation == "rot0", let orientation = NativeVideoOrientation(rawValue: display.rotation) else {
+    static func validateGeometry(_ frame: NativeVideoSnapshot.Frame, display: NativeDisplay) throws -> (width: Int, height: Int) {
+        guard display.nativeRotation == "rot0", NativeVideoOrientation(rawValue: display.rotation) != nil else {
             throw IPhoneUseError("native_snapshot_geometry_unavailable", "Unverified media orientation")
         }
         let width = Int(display.rotation == "rot0" ? display.pixelWidth : display.pixelHeight)
@@ -207,6 +213,14 @@ enum NativeSnapshotImage {
                 }
             }
         }
+        return (width, height)
+    }
+
+    static func png(_ frame: NativeVideoSnapshot.Frame, display: NativeDisplay) throws -> (Data, [String: Any]) {
+        let (width, height) = try validateGeometry(frame, display: display)
+        let pixels = frame.pixels
+        let encodedWidth = CVPixelBufferGetWidth(pixels), encodedHeight = CVPixelBufferGetHeight(pixels)
+        let orientation = NativeVideoOrientation(rawValue: display.rotation)!
         var cgImage: CGImage?
         guard VTCreateCGImageFromCVPixelBuffer(pixels, options: nil, imageOut: &cgImage) == noErr,
               let crop = cgImage?.cropping(to: CGRect(x: 0, y: 0, width: width, height: height)) else {

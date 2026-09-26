@@ -57,6 +57,16 @@ final class NativeRecordingTests: XCTestCase {
         XCTAssertNotNil(try snapshots.frame(after: start, timeout: 1, cancellation: NativeCancellation()))
         XCTAssertNil(try snapshots.frame(after: ProcessInfo.processInfo.systemUptime, timeout: 0, cancellation: NativeCancellation()))
         XCTAssertNil(try receiver.snapshot(after: start, cancellation: NativeCancellation()), "A receiver barrier must exclude already received/decoded data")
+        func display(width: Int, height: Int) throws -> NativeDisplay {
+            try NativeDisplay(["backlightState": "activeOn", "displays": [["primary": true, "displayId": 1,
+                "bounds": [[0, 0], [width, height]], "pointScale": 1,
+                "currentOrientation": "rot0", "nativeOrientation": "rot0"]]])
+        }
+        // Quiescence must not erase negative geometry evidence or make old
+        // pixels eligible for a new observation.
+        XCTAssertNoThrow(try snapshots.rejectConflictingGeometry(display(width: 64, height: 96)))
+        XCTAssertThrowsError(try snapshots.rejectConflictingGeometry(display(width: 128, height: 192)))
+        XCTAssertNil(try snapshots.frame(after: ProcessInfo.processInfo.systemUptime, timeout: 0, cancellation: NativeCancellation()))
         snapshots.close()
         // Closing only snapshots must not remove the recording subscription.
         packets([units[0]], to: source)

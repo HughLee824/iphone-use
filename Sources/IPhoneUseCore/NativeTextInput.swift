@@ -36,6 +36,11 @@ enum NativeInputPreflight {
             guard now() < deadline else { throw IPhoneUseError("stale_observation", "Input observation deadline expired") }
             let captureStarted = now()
             let frame = try capture()
+            if frame.metadata["orientationResynchronized"] as? Bool == true {
+                throw ActionFailure(code: "stale_observation", description: "Media orientation was resynchronized; inspect the new observation before choosing coordinates",
+                    possiblyExecuted: false, requiresObservation: true,
+                    result: ["preInputCaptures": attempt, "orientationResynchronized": true], rejectedCapture: frame)
+            }
             if let captureSource, frame.metadata["captureSource"] as? String != captureSource {
                 record(["attempt": attempt, "captureSourceChanged": true,
                         "captureSource": frame.metadata["captureSource"] ?? "unknown",

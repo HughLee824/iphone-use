@@ -86,11 +86,19 @@ final class NativeCaptureTests: XCTestCase {
         XCTAssertEqual(capture.metadata["captureSource"] as? String, "coredevice_screenshot")
         XCTAssertEqual((capture.metadata["mediaSnapshot"] as? [String: String])?["fallbackReason"], "no_fresh_complete_frame")
         XCTAssertEqual(capture.screenshot, png)
+        var geometryChecked = false
         let preferred = try cli.capture(generation: "fixture", preferredSource: "coredevice_screenshot", mediaCapture: { _, _ in
-            XCTFail("An Apple source observation must not switch to video for its guard")
+            geometryChecked = true
             return (png, [:])
         })
+        XCTAssertTrue(geometryChecked)
         XCTAssertEqual(state.screenshots, 2)
+        for source: String? in [nil, "coredevice_screenshot"] {
+            XCTAssertThrowsError(try cli.capture(generation: "fixture", preferredSource: source, mediaCapture: { _, _ in
+                throw IPhoneUseError("native_snapshot_geometry_unavailable", "Conflicting axes")
+            }))
+        }
+        XCTAssertEqual(state.screenshots, 2, "Conflicting media geometry must never fall back to a possibly inverted Apple PNG")
         XCTAssertEqual(preferred.metadata["captureSource"] as? String, "coredevice_screenshot")
     }
     private func pixels(width: Int = 16, height: Int = 24) throws -> CVPixelBuffer {

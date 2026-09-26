@@ -871,6 +871,63 @@ final class AppleNativeTests: XCTestCase {
         XCTAssertThrowsError(try binding.ensureDisplay(boundDisplay("rot0"), mayReplace: true))
     }
 
+    func testOrientationResyncReadsOnlyAfterOwnedStopAndStartsAtFreshDirection() throws {
+        let transport = ScriptedTransport(); mediaScript(transport)
+        var receivers: [MediaReceiver] = [], rotations: [String] = []
+        let binding = NativeDisplayMediaSession(makeSession: {
+            let receiver = MediaReceiver(); receivers.append(receiver); return self.media(transport, receiver)
+        }, startSession: { session, display in
+            rotations.append(display.rotation)
+            try session.start(displayID: display.id, deviceAddress: "::1", offer: Data()) { _ in }
+        })
+        try binding.ensureDisplay(boundDisplay("rot90"), mayReplace: true)
+        let old = binding.health()["mediaSessionID"] as? String
+        try binding.resynchronizeOrientation(mayReplace: true) {
+            XCTAssertEqual(receivers.map(\.closes), [1])
+            let features = transport.requests.compactMap { $0["CoreDevice.featureIdentifier"] as? String }
+            XCTAssertTrue(features.contains { $0.hasSuffix("stopmediastream") })
+            XCTAssertEqual(features.filter { $0.hasSuffix("startmediastream") }.count, 1)
+            return try self.boundDisplay("rot270")
+        }
+        XCTAssertEqual(rotations, ["rot90", "rot270"])
+        XCTAssertNotEqual(binding.health()["mediaSessionID"] as? String, old)
+        XCTAssertEqual(binding.health()["orientationRefreshCount"] as? Int, 1)
+        XCTAssertEqual(binding.health()["boundDisplayRotation"] as? String, "rot270")
+        XCTAssertEqual(binding.close()["mediaStopAcknowledged"] as? Bool, true)
+    }
+
+    func testOrientationResyncFailureDoesNotRetryOrStartAtStaleGeometry() throws {
+        for failure in ["stop", "read", "input"] {
+            let transport = ScriptedTransport(); mediaScript(transport)
+            var starts = 0, reads = 0
+            let binding = NativeDisplayMediaSession(makeSession: { self.media(transport, MediaReceiver()) }, startSession: { session, display in
+                starts += 1
+                try session.start(displayID: display.id, deviceAddress: "::1", offer: Data()) { _ in }
+            })
+            try binding.ensureDisplay(boundDisplay("rot90"), mayReplace: true)
+            let original = transport.onRequest!
+            transport.onRequest = { request in
+                if failure == "stop", (request["CoreDevice.featureIdentifier"] as? String)?.hasSuffix("stopmediastream") == true {
+                    throw TransportError(description: "lost reply", possiblySent: true)
+                }
+                return try original(request)
+            }
+            let recover = {
+                try binding.resynchronizeOrientation(mayReplace: failure != "input") {
+                    reads += 1
+                    throw IPhoneUseError("native_cancelled", "cancelled after stop")
+                }
+            }
+            XCTAssertThrowsError(try recover())
+            let count = transport.requests.count
+            XCTAssertThrowsError(try recover())
+            XCTAssertEqual(transport.requests.count, count)
+            XCTAssertEqual(starts, 1)
+            XCTAssertEqual(reads, failure == "read" ? 1 : 0)
+            XCTAssertEqual(binding.close()["mediaStopAcknowledged"] as? Bool, failure != "stop")
+        }
+    }
+
     func testRecordingRefreshReplacesOnlyOwnedStreamWithUnchangedGeometry() throws {
         let transport = ScriptedTransport(); mediaScript(transport)
         var receivers: [MediaReceiver] = []
