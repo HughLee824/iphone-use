@@ -70,6 +70,19 @@ final class NativeRTPVideoTests: XCTestCase {
         XCTAssertNotNil(parser.receive(try packet(7,[0x02,1,1],timestamp:5)))
         XCTAssertEqual(parser.discontinuities,1)
     }
+    func testLossAcrossTimestampCannotAdmitPartialIDR() throws {
+        var parser = NativeHEVCDepacketizer()
+        // A prior unit is still assembling. A missing packet could have been
+        // the beginning of the new IDR, even if a later slice looks complete.
+        XCTAssertNil(parser.receive(try packet(1, [0x28,1,1], marker: false)))
+        XCTAssertNil(parser.receive(try packet(3, [0x28,1,2], timestamp: 2)))
+        XCTAssertTrue(parser.waitingForKeyframe)
+        XCTAssertNil(parser.receive(try packet(4, [0x02,1,3], timestamp: 3)))
+        XCTAssertNotNil(parser.receive(try packet(5, [0x28,1,4], timestamp: 4)))
+        XCTAssertFalse(parser.waitingForKeyframe)
+        XCTAssertEqual(parser.discontinuities, 1)
+    }
+
     func testMalformedFragmentsAndMissingMarkerDoNotLeakPartialFrames() throws {
         for payload: [UInt8] in [[0x62,1,0xd4,1],[0x62,1,0x54,1],[0x60,1,0,4,0x28],[0x64,1],[0xa8,1]] {
             var parser = NativeHEVCDepacketizer()

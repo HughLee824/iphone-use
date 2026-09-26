@@ -43,12 +43,10 @@ final class AppleDeviceCLI {
     let device: String
     let cancellation: NativeCancellation
     private let reader: (([String]) throws -> [String: Any])?
-    // One CLI belongs to one backend session. SessionHost serializes capture;
-    // media replacement must not reset the accepted observation source.
-    private var sessionFallbackReason: String?
+    // Media produced corrupt pixels with no decoder error during Notes validation.
+    // Keep every observation on Apple PNG until media correctness is established.
     var captureSourcePolicy: [String: Any] {
-        ["strategy": sessionFallbackReason == nil ? "prefer_media" : "coredevice_only",
-         "fallbackReason": sessionFallbackReason as Any? ?? NSNull()]
+        ["strategy": "coredevice_only", "fallbackReason": "media_snapshot_validation_pending"]
     }
     init(device: String, cancellation: NativeCancellation, reader: (([String]) throws -> [String: Any])? = nil) {
         self.device = device; self.cancellation = cancellation; self.reader = reader
@@ -78,24 +76,11 @@ final class AppleDeviceCLI {
         defer { try? FileManager.default.removeItem(at: directory) }
         let destination = directory.appendingPathComponent("screen.png")
         let requestedAt = ProcessInfo.processInfo.systemUptime
-        let attempt: (Data?, [String: Any])? = try timed("mediaSnapshot") {
-            // Lossy video and Apple's PNG can differ at text edges even without
-            // a UI change. Compare an Apple observation with another Apple PNG.
-            let media = try mediaCapture?(before, requestedAt)
-            if sessionFallbackReason != nil {
-                return (nil, ["fallbackReason": "session_uses_coredevice", "geometryCheck": media?.1 ?? [:]])
-            }
-            if preferredSource == "coredevice_screenshot" {
-                return (nil, ["fallbackReason": "source_observation_uses_coredevice", "geometryCheck": media?.1 ?? [:]])
-            }
-            return media
-        }
-        let png: Data
-        if let mediaPNG = attempt?.0 { png = mediaPNG }
-        else {
-            _ = try timed("screenshot") { try read(["device", "capture", "screenshot", "--destination", destination.path]) }
-            png = try Data(contentsOf: destination)
-        }
+        // Retain media geometry checks and orientation resynchronization. Neither
+        // fresh media nor a caller's preferred source may bypass this quarantine.
+        let media = try timed("mediaSnapshot") { try mediaCapture?(before, requestedAt) }
+        _ = try timed("screenshot") { try read(["device", "capture", "screenshot", "--destination", destination.path]) }
+        let png = try Data(contentsOf: destination)
         let final = try timed("checksAfter") { try NativeCaptureChecks.read { try self.read($0) } }
         let after = final.display
         for (key, value) in final.timings { timings[key + "After"] = value }
@@ -109,17 +94,13 @@ final class AppleDeviceCLI {
         let image = try ScreenImage(png: png)
         let samples = try image.rgb(rect: after.screen, screen: after.screen, columns: 32, rows: 64)
         guard samples.contains(where: { $0 > 8 }) else { throw IPhoneUseError("capture_unavailable", "Screenshot is black or unavailable") }
-        // Commit the one-way downgrade only after a valid Apple capture. A
-        // failed/unsafe capture cannot establish a new observation source.
-        if attempt?.0 == nil, sessionFallbackReason == nil {
-            sessionFallbackReason = attempt?.1["fallbackReason"] as? String ?? "owned_media_unavailable"
-        }
         timings["imageValidation"] = (ProcessInfo.processInfo.systemUptime - imageStarted) * 1000
         timings["total"] = (ProcessInfo.processInfo.systemUptime - monotonic) * 1000
         return CapturedObservation(nodes: [], metadata: [
-            "captureSource": attempt?.0 == nil ? "coredevice_screenshot" : "native_media",
+            "captureSource": "coredevice_screenshot",
             "captureSourcePolicy": captureSourcePolicy,
-            "captureTimingsMs": timings, "mediaSnapshot": attempt?.1 ?? [:],
+            "captureTimingsMs": timings, "mediaSnapshot": ["fallbackReason": "media_snapshot_validation_pending",
+                "geometryCheck": media?.1 ?? [:]],
             "backend": "apple-native", "deviceID": device, "sessionGeneration": generation,
             "captureID": UUID().uuidString, "captureStartedAt": started, "captureCompletedAt": Date().timeIntervalSince1970,
             "captureStartedUptime": monotonic, "screenshotCapturedAt": Date().timeIntervalSince1970,
@@ -331,8 +312,8 @@ final class AppleDeviceBackend: SessionBackend {
                 return (nil, ["fallbackReason": "no_fresh_complete_frame"])
             }
             do {
-                let (png, facts) = try NativeSnapshotImage.png(frame, display: display)
-                return (png, facts)
+                _ = try NativeSnapshotImage.validateGeometry(frame, display: display)
+                return (nil, ["geometryValidated": true, "displayRotation": display.rotation])
             } catch let error as IPhoneUseError where error.code == "native_snapshot_geometry_unavailable" {
                 throw error
             } catch {

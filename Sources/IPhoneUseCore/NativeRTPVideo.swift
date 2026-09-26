@@ -59,17 +59,21 @@ struct NativeHEVCDepacketizer {
     private let maximumBytes = 8 * 1024 * 1024
 
     mutating func receive(_ packet: NativeRTPPacket, receivedAt: Double? = nil) -> NativeVideoAccessUnit? {
+        var sequenceGap = false
         if let expected, expected != packet.sequence {
             // A duplicate/late packet must not advance expected or corrupt a
             // correctly ordered in-progress frame. A future packet means loss.
             if Int16(bitPattern: packet.sequence &- expected) < 0 { return nil }
-            discontinuities += 1; damaged = true; waitingForKeyframe = true
+            discontinuities += 1; sequenceGap = true; waitingForKeyframe = true
         }
         expected = packet.sequence &+ 1
         if let timestamp, timestamp != packet.timestamp {
             if !nals.isEmpty || !fragment.isEmpty { droppedUnits += 1; waitingForKeyframe = true }
             resetUnit()
         }
+        // Apply loss AFTER changing units: resetUnit must not erase damage on
+        // the first received packet of a new timestamp (possibly a partial IDR).
+        if sequenceGap { damaged = true }
         if timestamp == nil { firstPacketAt = receivedAt }
         timestamp = packet.timestamp
         do { try append(packet.payload) }

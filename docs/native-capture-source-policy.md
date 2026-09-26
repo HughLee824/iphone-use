@@ -1,5 +1,7 @@
 # 标准模式会话截图来源策略
 
+**当前策略已变更：** 真实 App 验收发现媒体截图残影后，标准模式暂时统一使用 Apple PNG；仍执行媒体几何检查。见[截图可靠性修复](native-snapshot-reliability.md)。下文保留此前媒体优先策略的实现和历史验收，不代表当前默认来源。
+
 日期：2026-09-26。接续[媒体截图性能](native-capture-performance.md)与[方向重新同步](native-rotation-synchronization.md)。范围仅为标准模式；不增加配置项，不改变 Runner 的截图实现。
 
 ## 问题与实现

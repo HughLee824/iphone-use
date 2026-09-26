@@ -24,15 +24,32 @@ final class NativeVideoSnapshot {
     private var queueOverflows = 0
     private var lastError: String?
     private var parser = NativeHEVCDepacketizer()
-    private var decoder = NativeSnapshotDecoder()
+    private let decode: (NativeVideoAccessUnit) throws -> CVPixelBuffer?
+    private let resetDecoder: () -> Void
+    private var droppedUnits = 0
+    private var discontinuities = 0
+    private var malformedPackets = 0
+    private var timestampRejections = 0
+    private var referenceResets = 0
+    private var waitingForKeyframe = true
     private var decoderGeneration = 0
     private var lastTimestamp: UInt32?
+
+    convenience init() {
+        let decoder = NativeSnapshotDecoder()
+        self.init(decode: { try decoder.decode($0) }, resetDecoder: { decoder.resetReferences() })
+    }
+
+    // Also used by deterministic transport/decoder-boundary regression tests.
+    init(decode: @escaping (NativeVideoAccessUnit) throws -> CVPixelBuffer?, resetDecoder: @escaping () -> Void) {
+        self.decode = decode; self.resetDecoder = resetDecoder
+    }
 
     func receive(_ data: Data, at receivedAt: Double) {
         condition.lock()
         guard !closed else { condition.unlock(); return }
         guard pendingBytes + data.count <= 4 * 1024 * 1024 else {
-            generation += 1; queueOverflows += 1; latest = nil; condition.broadcast(); condition.unlock(); return
+            generation += 1; queueOverflows += 1; latest = nil; waitingForKeyframe = true; condition.broadcast(); condition.unlock(); return
         }
         let admittedGeneration = generation
         pendingBytes += data.count
@@ -42,17 +59,37 @@ final class NativeVideoSnapshot {
             condition.lock(); let admitted = !closed && generation == admittedGeneration; condition.unlock()
             guard admitted else { return }
             if decoderGeneration != admittedGeneration {
-                parser = NativeHEVCDepacketizer(); decoder = NativeSnapshotDecoder()
+                parser = NativeHEVCDepacketizer(); resetDecoder()
                 lastTimestamp = nil; decoderGeneration = admittedGeneration
+                condition.lock(); referenceResets += 1; waitingForKeyframe = true; condition.unlock()
             }
             do {
                 let packet = try NativeRTPPacket(data)
                 guard packet.payloadType == 100 else { return }
-                guard let unit = parser.receive(packet, receivedAt: receivedAt), let unitStarted = unit.firstPacketAt else { return }
+                let previous = (parser.droppedUnits, parser.discontinuities, parser.malformedPackets)
+                let candidate = parser.receive(packet, receivedAt: receivedAt)
+                let dropped = parser.droppedUnits - previous.0
+                let gaps = parser.discontinuities - previous.1
+                let malformed = parser.malformedPackets - previous.2
+                condition.lock()
+                droppedUnits += dropped; discontinuities += gaps; malformedPackets += malformed
+                waitingForKeyframe = parser.waitingForKeyframe
+                if dropped > 0 || gaps > 0 || malformed > 0 { latest = nil; condition.broadcast() }
+                condition.unlock()
+                if dropped > 0 || gaps > 0 || malformed > 0 {
+                    resetDecoder(); lastTimestamp = nil
+                    condition.lock(); referenceResets += 1; condition.unlock()
+                }
+                guard let unit = candidate, let unitStarted = unit.firstPacketAt else { return }
                 // Parameter-set-only units are allowed to share a timestamp.
                 if let lastTimestamp, unit.nals.contains(where: { ($0[0] >> 1) & 63 <= 31 }),
-                   Int32(bitPattern: unit.timestamp &- lastTimestamp) <= 0 { return }
-                guard let pixels = try decoder.decode(unit) else { return }
+                   Int32(bitPattern: unit.timestamp &- lastTimestamp) <= 0 {
+                    condition.lock(); timestampRejections += 1; condition.unlock()
+                    // Skipping a reference picture and continuing the same decoder
+                    // can silently corrupt later output even when VT returns noErr.
+                    throw IPhoneUseError("native_snapshot_timestamp_invalid", "Non-increasing video timestamp; require a fresh keyframe")
+                }
+                guard let pixels = try decode(unit) else { return }
                 lastTimestamp = unit.timestamp
                 let frame = Frame(pixels: pixels, firstPacketAt: unitStarted,
                                   completedAt: ProcessInfo.processInfo.systemUptime, timestamp: unit.timestamp)
@@ -62,7 +99,7 @@ final class NativeVideoSnapshot {
             } catch {
                 // A broken dependency chain is never reused for observation.
                 condition.lock(); generation += 1; decodeErrors += 1; lastError = String(describing: error)
-                latest = nil; condition.broadcast(); condition.unlock()
+                latest = nil; waitingForKeyframe = true; condition.broadcast(); condition.unlock()
             }
         }
     }
@@ -96,12 +133,15 @@ final class NativeVideoSnapshot {
     func status() -> [String: Any] {
         condition.lock(); defer { condition.unlock() }
         return ["decodedFrames": decodedFrames, "decodeErrors": decodeErrors, "queueOverflows": queueOverflows,
+                "droppedUnits": droppedUnits, "discontinuities": discontinuities, "malformedPackets": malformedPackets,
+                "timestampRejections": timestampRejections, "referenceResets": referenceResets,
+                "waitingForKeyframe": waitingForKeyframe,
                 "pendingBytes": pendingBytes, "closed": closed, "lastError": lastError as Any? ?? NSNull(),
                 "lastFrameAgeSeconds": latest.map { ProcessInfo.processInfo.systemUptime - $0.firstPacketAt } as Any? ?? NSNull()]
     }
     func close() {
         condition.lock(); closed = true; latest = nil; condition.broadcast(); condition.unlock()
-        queue.sync { decoder = NativeSnapshotDecoder(); parser = NativeHEVCDepacketizer() }
+        queue.sync { resetDecoder(); parser = NativeHEVCDepacketizer() }
     }
 }
 
@@ -161,21 +201,25 @@ final class NativeSnapshotDecoder {
             sampleTimingEntryCount: 1, sampleTimingArray: &timing, sampleSizeEntryCount: 1, sampleSizeArray: &size, sampleBufferOut: &sample)
         guard status == noErr, let sample else { throw invalid("Video sample", status) }
         let result = Output()
-        status = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample, flags: [], infoFlagsOut: nil) { code, _, image, _, _ in
-            result.lock.lock(); result.status = code; result.pixels = image; result.lock.unlock()
+        status = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample, flags: [], infoFlagsOut: nil) { code, flags, image, _, _ in
+            result.lock.lock(); result.status = code; result.flags = flags; result.pixels = image; result.lock.unlock()
         }
         guard status == noErr else { throw invalid("Frame decode", status) }
         status = VTDecompressionSessionWaitForAsynchronousFrames(session)
         guard status == noErr else { throw invalid("Frame completion", status) }
         result.lock.lock(); defer { result.lock.unlock() }
-        guard result.status == noErr, let pixels = result.pixels else { throw invalid("Decoded frame unavailable", result.status) }
+        guard result.status == noErr, !result.flags.contains(.frameDropped), let pixels = result.pixels else {
+            throw invalid("Decoded frame unavailable (flags \(result.flags.rawValue))", result.status)
+        }
         return pixels
     }
     private final class Output {
         let lock = NSLock()
         var status: OSStatus = -1
         var pixels: CVPixelBuffer?
+        var flags: VTDecodeInfoFlags = []
     }
+    func resetReferences() { invalidate() }
     private func invalid(_ operation: String, _ status: OSStatus) -> IPhoneUseError {
         IPhoneUseError("native_snapshot_decode_failed", "\(operation) failed (\(status))")
     }

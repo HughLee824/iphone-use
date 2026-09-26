@@ -20,6 +20,48 @@ final class NativeCaretGuardTests: XCTestCase {
         }
     }
 
+    func testYellowCaretUsesSameBoundedFadeAndRejectsOtherChanges() throws {
+        let yellow: [UInt8] = [230, 185, 0]
+        for scale in [1, 2, 3] {
+            let rect = CGRect(x: stroke.minX * Double(scale), y: stroke.minY * Double(scale),
+                              width: stroke.width * Double(scale), height: stroke.height * Double(scale))
+            func image(_ color: [UInt8], extra: [(CGRect, [UInt8])] = []) throws -> Data {
+                try screenPNG(width: 390 * scale, height: 844 * scale, patches: [(rect, color)] + extra)
+            }
+            let baseline = try image(yellow)
+            let caret = try XCTUnwrap(NativeCaretGuard(png: baseline, context: screenTestContext(), field: field))
+            XCTAssertEqual(caret.caret, ScreenRect(stroke))
+            for color: [UInt8] in [[255,255,255], [242,220,128], yellow] {
+                XCTAssertTrue(try caret.acceptsBlink(png: image(color), context: screenTestContext()))
+            }
+            for color: [UInt8] in [[0,0,0], blue, [255,0,0]] {
+                XCTAssertFalse(try caret.acceptsBlink(png: image(color), context: screenTestContext()))
+            }
+            let text = CGRect(x: 75 * scale, y: 160 * scale, width: scale, height: 10 * scale)
+            XCTAssertFalse(try caret.acceptsBlink(png: image([255,255,255], extra: [(text, [0,0,0])]), context: screenTestContext()))
+            for changed in [rect.offsetBy(dx: 1, dy: 0), rect.insetBy(dx: -2, dy: 0)] {
+                XCTAssertFalse(try caret.acceptsBlink(png: screenPNG(width: 390 * scale, height: 844 * scale,
+                    patches: [(changed, yellow)]), context: screenTestContext()))
+            }
+            XCTAssertNil(try NativeCaretGuard(png: image(yellow, extra: [(rect.offsetBy(dx: 20 * Double(scale), dy: 0), blue)]),
+                context: screenTestContext(), field: field))
+        }
+        let baseline = try screenPNG(patches: [(stroke, yellow)])
+        XCTAssertNil(try NativeCaretGuard(png: baseline, context: screenTestContext(), field: field,
+                                         allowsAdjacentText: true, allowsYellowCaret: false))
+        let context = screenTestContext()
+        let caret = try XCTUnwrap(NativeCaretGuard(png: baseline, context: context, field: field))
+        let guardValue = try ScreenGuard(png: baseline, context: context, rects: [field], policy: .init())
+        let result = try NativeInputPreflight.check(guard: guardValue, displayID: 1, deadline: 8, maximumCaptures: 1,
+            caretGuard: caret, now: { 0 }) {
+                CapturedObservation(nodes: [], metadata: ["displayID": UInt64(1),
+                    "screenContext": try jsonObject(JSONEncoder().encode(context))], screenshot: try screenPNG())
+            }.0
+        XCTAssertTrue(result.accepted)
+        XCTAssertEqual(result.policy.maxRegionChange, 0)
+        XCTAssertEqual((result.result["caretBlinkException"] as? [String: Any])?["algorithm"] as? String, "source-blue-yellow-caret-fade-v2")
+    }
+
     func testCaretExceptionRejectsTextPositionShapeSelectionAndBackgroundChanges() throws {
         let baseline = try screenPNG(patches: [(stroke, blue)])
         let caret = try XCTUnwrap(NativeCaretGuard(png: baseline, context: screenTestContext(), field: field))

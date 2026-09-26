@@ -1,7 +1,7 @@
 import Foundation
 import CoreGraphics
 
-// An optional, source-anchored exception for a single blue UIKit-style caret.
+// An optional, source-anchored exception for a single blue or yellow UIKit-style caret.
 // Never infer a caret from a difference alone: a hidden source has no anchor.
 // This is pixel evidence, not independent confirmation of editor focus.
 struct NativeCaretGuard {
@@ -17,7 +17,7 @@ struct NativeCaretGuard {
     private let allowsAdjacentText: Bool
     let caret: ScreenRect
 
-    init?(png: Data, context: ScreenContext, field: ScreenRect, allowsAdjacentText: Bool = false) throws {
+    init?(png: Data, context: ScreenContext, field: ScreenRect, allowsAdjacentText: Bool = false, allowsYellowCaret: Bool = true) throws {
         guard context.valid, field.valid, context.screen.cgRect.contains(field.cgRect) else { return nil }
         let image = try ScreenImage(png: png)
         try image.validateMapping(to: context.screen)
@@ -30,7 +30,11 @@ struct NativeCaretGuard {
         for y in 0..<height { for x in 0..<width {
             let i = (y * width + x) * 3
             let r = Int(source[i]), g = Int(source[i + 1]), b = Int(source[i + 2])
-            if b >= 70 && b - r >= 30 && b - g >= 15 {
+            let blue = b >= 70 && b - r >= 30 && b - g >= 15
+            // Notes uses a yellow insertion caret. Keep a bounded color family;
+            // the same unique-stroke, background and whole-field fade checks apply.
+            let yellow = allowsYellowCaret && r >= 120 && g >= 100 && r - b >= 60 && g - b >= 45 && abs(r - g) <= 100
+            if blue || yellow {
                 left = min(left, x); right = max(right, x); top = min(top, y); bottom = max(bottom, y); count += 1
             }
         } }

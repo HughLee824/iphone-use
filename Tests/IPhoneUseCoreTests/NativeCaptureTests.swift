@@ -41,7 +41,7 @@ final class NativeCaptureTests: XCTestCase {
         var screenshots = 0
         var finalPhase = false
     }
-    func testMediaObservationRetainsPostCaptureLockAndGeometryGuards() throws {
+    func testAppleObservationRetainsPostCaptureLockGeometryAndCancellationGuards() throws {
         let png = try screenPNG(width: 12, height: 18)
         for changed in ["locked", "rotated", "off", "cancelled", "none"] {
             let state = State(), cancellation = NativeCancellation()
@@ -53,123 +53,99 @@ final class NativeCaptureTests: XCTestCase {
                         backlight: state.finalPhase && changed == "off" ? "off" : "activeOn")
                 }
                 state.screenshots += 1
-                XCTFail("Fresh media must not run the CLI screenshot command")
+                try png.write(to: URL(fileURLWithPath: try XCTUnwrap(arguments.last)))
+                state.finalPhase = true
+                if changed == "cancelled" { cancellation.cancel() }
                 return [:]
             })
-            let capture = {
-                try cli.capture(generation: "fixture", mediaCapture: { _, _ in
-                    state.lock.lock(); state.finalPhase = true; state.lock.unlock()
-                    if changed == "cancelled" { cancellation.cancel() }
-                    return (png, ["freshness": "fixture"])
-                })
-            }
+            let capture = { try cli.capture(generation: "fixture", mediaCapture: { _, _ in (png, [:]) }) }
             if changed == "none" {
                 let result = try capture()
-                XCTAssertEqual(result.metadata["captureSource"] as? String, "native_media")
+                XCTAssertEqual(result.metadata["captureSource"] as? String, "coredevice_screenshot")
                 XCTAssertEqual(result.screenshot, png)
             } else { XCTAssertThrowsError(try capture()) }
-            XCTAssertEqual(state.screenshots, 0)
+            XCTAssertEqual(state.screenshots, 1)
         }
     }
-    func testUnavailableMediaUsesFreshAppleScreenshotAndKeepsReason() throws {
+
+    func testFreshMediaCannotReplaceApplePixelsAndGeometryStillGatesCapture() throws {
         let png = try screenPNG(width: 12, height: 18), state = State()
         let cli = AppleDeviceCLI(device: "fixture", cancellation: NativeCancellation(), reader: { arguments in
-            state.lock.lock(); defer { state.lock.unlock() }
             if arguments.last == "lockState" { return ["passcodeRequired": false] }
             if arguments.last == "displays" { return self.display() }
             state.screenshots += 1
             try png.write(to: URL(fileURLWithPath: try XCTUnwrap(arguments.last)))
             return [:]
         })
-        let capture = try cli.capture(generation: "fixture", mediaCapture: { _, _ in (nil, ["fallbackReason": "no_fresh_complete_frame"]) })
-        XCTAssertEqual(state.screenshots, 1)
-        XCTAssertEqual(capture.metadata["captureSource"] as? String, "coredevice_screenshot")
-        XCTAssertEqual((capture.metadata["mediaSnapshot"] as? [String: String])?["fallbackReason"], "no_fresh_complete_frame")
-        XCTAssertEqual(capture.screenshot, png)
-        var geometryChecked = false
-        let preferred = try cli.capture(generation: "fixture", preferredSource: "coredevice_screenshot", mediaCapture: { _, _ in
-            geometryChecked = true
-            return (png, [:])
-        })
-        XCTAssertTrue(geometryChecked)
-        XCTAssertEqual(state.screenshots, 2)
-        for source: String? in [nil, "coredevice_screenshot"] {
-            XCTAssertThrowsError(try cli.capture(generation: "fixture", preferredSource: source, mediaCapture: { _, _ in
-                throw IPhoneUseError("native_snapshot_geometry_unavailable", "Conflicting axes")
-            }))
+        let mediaPNG = try screenPNG(width: 12, height: 18, patches: [(CGRect(x: 0, y: 0, width: 6, height: 9), [0,0,0])])
+        var geometryChecks = 0
+        for preferred: String? in [nil, "native_media", "coredevice_screenshot"] {
+            for fresh in [true, false] {
+                let capture = try cli.capture(generation: "fixture", preferredSource: preferred, mediaCapture: { _, _ in
+                    geometryChecks += 1
+                    return (fresh ? mediaPNG : nil, ["fresh": fresh])
+                })
+                XCTAssertEqual(capture.screenshot, png)
+                XCTAssertEqual(capture.metadata["captureSource"] as? String, "coredevice_screenshot")
+                XCTAssertEqual((capture.metadata["captureSourcePolicy"] as? [String: Any])?["fallbackReason"] as? String,
+                               "media_snapshot_validation_pending")
+            }
         }
-        XCTAssertEqual(state.screenshots, 2, "Conflicting media geometry must never fall back to a possibly inverted Apple PNG")
-        XCTAssertEqual(preferred.metadata["captureSource"] as? String, "coredevice_screenshot")
+        XCTAssertEqual(geometryChecks, 6)
+        XCTAssertEqual(state.screenshots, 6)
+        XCTAssertThrowsError(try cli.capture(generation: "fixture", mediaCapture: { _, _ in
+            throw IPhoneUseError("native_snapshot_geometry_unavailable", "Conflicting axes")
+        }))
+        XCTAssertEqual(state.screenshots, 6, "Conflicting geometry cannot fall back to a possibly inverted PNG")
     }
-    func testSessionDowngradePersistsAcrossFreshMediaAndPreflightWithoutWeakeningGuard() throws {
+
+    func testApplePreflightRejectsRealChangesAndOldMediaObservations() throws {
         let baseline = try screenPNG(width: 12, height: 18)
-        var applePNG = baseline, screenshots = 0, mediaChecks = 0
+        var applePNG = baseline
         let cli = AppleDeviceCLI(device: "fixture", cancellation: NativeCancellation(), reader: { arguments in
             if arguments.last == "lockState" { return ["passcodeRequired": false] }
             if arguments.last == "displays" { return self.display() }
-            screenshots += 1
             try applePNG.write(to: URL(fileURLWithPath: try XCTUnwrap(arguments.last)))
             return [:]
         })
-        func capture(_ fresh: Bool, preferred: String? = nil) throws -> CapturedObservation {
-            try cli.capture(generation: "fixture", preferredSource: preferred, mediaCapture: { _, _ in
-                mediaChecks += 1
-                return (fresh ? baseline : nil, fresh ? [:] : ["fallbackReason": "no_fresh_complete_frame"])
-            })
+        let display = try NativeDisplay(display())
+        let guardValue = try ScreenGuard(png: baseline, context: display.context, rects: [display.screen], policy: .init())
+        func preflight(_ source: String) throws -> ScreenGuard.Check {
+            try NativeInputPreflight.check(guard: guardValue, displayID: display.id, captureSource: source,
+                deadline: 8, maximumCaptures: 1, now: { 0 }) {
+                    try cli.capture(generation: "fixture", mediaCapture: { _, _ in (baseline, [:]) })
+                }.0
         }
-        let first = try capture(true), display = try NativeDisplay(display())
-        let guardValue = try ScreenGuard(png: first.screenshot, context: display.context, rects: [display.screen], policy: .init())
-        XCTAssertEqual(first.metadata["captureSource"] as? String, "native_media")
-        XCTAssertEqual(cli.captureSourcePolicy["strategy"] as? String, "prefer_media")
-        XCTAssertThrowsError(try NativeInputPreflight.check(guard: guardValue, displayID: display.id,
-            captureSource: "native_media", deadline: 8, maximumCaptures: 3, now: { 0 }) { try capture(false) }) {
+        XCTAssertTrue(try preflight("coredevice_screenshot").accepted)
+        XCTAssertThrowsError(try preflight("native_media")) {
             let failure = $0 as? ActionFailure
             XCTAssertEqual(failure?.possiblyExecuted, false)
             XCTAssertEqual(failure?.result?["captureSourceChanged"] as? Bool, true)
-            XCTAssertEqual(failure?.rejectedCapture?.metadata["captureSource"] as? String, "coredevice_screenshot")
         }
-        // The agent's next observation, action preflight and post-action
-        // observation all keep Apple pixels even when video resumes.
-        for preferred: String? in [nil, "coredevice_screenshot", "native_media", nil] {
-            let frame = try capture(true, preferred: preferred)
-            XCTAssertEqual(frame.metadata["captureSource"] as? String, "coredevice_screenshot")
-            XCTAssertEqual((frame.metadata["captureSourcePolicy"] as? [String: Any])?["strategy"] as? String, "coredevice_only")
+        applePNG = try screenPNG(width: 12, height: 18, patches: [(CGRect(x: 0, y: 0, width: 6, height: 9), [0,0,0])])
+        XCTAssertThrowsError(try preflight("coredevice_screenshot")) {
+            XCTAssertEqual(($0 as? ActionFailure)?.possiblyExecuted, false)
+            XCTAssertEqual(($0 as? ActionFailure)?.rejectedCapture?.screenshot, applePNG)
         }
-        XCTAssertTrue(try NativeInputPreflight.check(guard: guardValue, displayID: display.id,
-            captureSource: "coredevice_screenshot", deadline: 8, maximumCaptures: 1, now: { 0 }) { try capture(true) }.0.accepted)
-        applePNG = try screenPNG(width: 12, height: 18, patches: [(CGRect(x: 0, y: 0, width: 6, height: 9), [0, 0, 0])])
-        XCTAssertThrowsError(try NativeInputPreflight.check(guard: guardValue, displayID: display.id,
-            captureSource: "coredevice_screenshot", deadline: 8, maximumCaptures: 1, now: { 0 }) { try capture(true) }) {
-            let failure = $0 as? ActionFailure
-            XCTAssertEqual(failure?.possiblyExecuted, false)
-            XCTAssertEqual(failure?.rejectedCapture?.screenshot, applePNG)
-            XCTAssertEqual((failure?.result?["screenGuard"] as? [String: Any])?["accepted"] as? Bool, false)
-        }
-        XCTAssertEqual(mediaChecks, 8, "Pinned Apple capture must still validate media geometry")
-        XCTAssertEqual(screenshots, 7)
-        XCTAssertEqual(cli.captureSourcePolicy["fallbackReason"] as? String, "no_fresh_complete_frame")
-        let nextSession = AppleDeviceCLI(device: "fixture", cancellation: NativeCancellation(), reader: { arguments in
-            arguments.last == "lockState" ? ["passcodeRequired": false] : self.display()
-        })
-        XCTAssertEqual(try nextSession.capture(generation: "new", mediaCapture: { _, _ in (baseline, [:]) }).metadata["captureSource"] as? String, "native_media")
     }
 
-    func testFailedFallbackDoesNotPinSessionAndPinnedCaptureStillChecksLock() throws {
+    func testAppleFailureNeverUsesMediaAndNewSessionsStayAppleOnly() throws {
         let png = try screenPNG(width: 12, height: 18)
         var locked = false, screenshots = 0
-        let cli = AppleDeviceCLI(device: "fixture", cancellation: NativeCancellation(), reader: { arguments in
-            if arguments.last == "lockState" { return ["passcodeRequired": locked] }
-            if arguments.last == "displays" { return self.display() }
-            screenshots += 1
-            if screenshots == 1 { throw IPhoneUseError("fixture", "Apple screenshot failed") }
-            try png.write(to: URL(fileURLWithPath: try XCTUnwrap(arguments.last)))
-            return [:]
-        })
-        XCTAssertThrowsError(try cli.capture(generation: "fixture"))
-        XCTAssertEqual(cli.captureSourcePolicy["strategy"] as? String, "prefer_media")
-        _ = try cli.capture(generation: "fixture")
-        XCTAssertEqual(cli.captureSourcePolicy["strategy"] as? String, "coredevice_only")
+        for _ in 0..<2 {
+            let cli = AppleDeviceCLI(device: "fixture", cancellation: NativeCancellation(), reader: { arguments in
+                if arguments.last == "lockState" { return ["passcodeRequired": locked] }
+                if arguments.last == "displays" { return self.display() }
+                screenshots += 1
+                throw IPhoneUseError("fixture", "Apple screenshot failed")
+            })
+            XCTAssertEqual(cli.captureSourcePolicy["strategy"] as? String, "coredevice_only")
+            XCTAssertThrowsError(try cli.capture(generation: "fixture", mediaCapture: { _, _ in (png, [:]) }))
+        }
         locked = true
+        let cli = AppleDeviceCLI(device: "fixture", cancellation: NativeCancellation(), reader: {
+            $0.last == "lockState" ? ["passcodeRequired": locked] : self.display()
+        })
         XCTAssertThrowsError(try cli.capture(generation: "fixture", mediaCapture: { _, _ in
             XCTFail("Locked capture must stop before acquiring pixels"); return (png, [:])
         }))

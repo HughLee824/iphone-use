@@ -75,7 +75,7 @@ struct ScreenGuard: Codable {
              "regionChanges": regionChanges, "maxScreenChange": policy.maxScreenChange,
              "maxRegionChange": policy.maxRegionChange, "pixelTolerance": ScreenGuard.pixelTolerance]
             if let caret = ignoredCaretBlink {
-                result["caretBlinkException"] = ["algorithm": "source-blue-caret-fade-v1", "ignored": true,
+                result["caretBlinkException"] = ["algorithm": "source-blue-yellow-caret-fade-v2", "ignored": true,
                     "rect": ["x": caret.x, "y": caret.y, "width": caret.width, "height": caret.height]]
             }
             return result

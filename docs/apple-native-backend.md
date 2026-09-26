@@ -15,7 +15,7 @@ Reproducible host, media/lifecycle, visual-tap and fault-injection procedures: [
 
 ## Current implementation notes (2026-09-26)
 
-The dated sections below preserve historical evidence and stage-specific limitations. Current capture uses [session-sticky source selection](native-capture-source-policy.md) and [owned-media orientation resynchronization](native-rotation-synchronization.md). Recording is [shared by both control modes](runner-recording.md), with [explicit final-frame hold timing](native-recording-timeline.md) on healthy normal stops. See [actions](actions.md) for the current command contract, including portrait/landscape gestures and text-finish.
+The dated sections below preserve historical evidence and stage-specific limitations. Current capture uses [Apple PNG while media snapshots remain quarantined](native-snapshot-reliability.md) and [owned-media orientation resynchronization](native-rotation-synchronization.md). Recording is [shared by both control modes](runner-recording.md), with [explicit final-frame hold timing](native-recording-timeline.md) on healthy normal stops. See [actions](actions.md) for the current command contract, including portrait/landscape gestures and text-finish.
 
 ## Run from source
 
