@@ -27,6 +27,9 @@ final class NativeVideoWriter {
     private var ticks: Int64 = 0
     private var pending: (nals: [Data], time: CMTime, keyframe: Bool)?
     private(set) var frames = 0
+    private(set) var firstFrameReceivedAt: Double?
+    private(set) var lastFrameReceivedAt: Double?
+    var mediaSpanSeconds: Double { Double(ticks) / Double(timescale) }
     var hasFrame: Bool { pending != nil }
 
     init(url: URL, timescale: Int32, orientation: NativeVideoOrientation = .portrait) {
@@ -74,6 +77,8 @@ final class NativeVideoWriter {
         let time = CMTime(value: ticks, timescale: timescale)
         if let pending { try write(pending, duration: CMTimeSubtract(time, pending.time)) }
         pending = (nals, time, unit.keyframe); lastTimestamp = unit.timestamp
+        if firstFrameReceivedAt == nil { firstFrameReceivedAt = unit.firstPacketAt }
+        lastFrameReceivedAt = unit.firstPacketAt
     }
 
     private func write(_ frame: (nals: [Data], time: CMTime, keyframe: Bool), duration: CMTime) throws {
@@ -108,9 +113,14 @@ final class NativeVideoWriter {
         frames += 1
     }
 
-    func finish() throws {
+    func finish(lastFrameDurationSeconds: Double = 1.0 / 60) throws {
         guard let writer, let input, let pending else { throw IPhoneUseError("recording_no_keyframe", "No complete HEVC IDR with VPS/SPS/PPS was received") }
-        try write(pending, duration: CMTime(value: 1, timescale: 60)); self.pending = nil
+        guard lastFrameDurationSeconds.isFinite, lastFrameDurationSeconds > 0, lastFrameDurationSeconds <= 330 else {
+            throw IPhoneUseError("recording_timestamp_invalid", "Invalid final video sample duration")
+        }
+        // Variable frame rate: keep every RTP presentation time intact and hold
+        // only the final received image. This adds no samples or encoded pixels.
+        try write(pending, duration: CMTime(seconds: lastFrameDurationSeconds, preferredTimescale: timescale)); self.pending = nil
         input.markAsFinished()
         let done = DispatchSemaphore(value: 0)
         writer.finishWriting { done.signal() }

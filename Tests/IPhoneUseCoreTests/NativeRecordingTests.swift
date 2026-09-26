@@ -7,14 +7,23 @@ import Darwin
 private final class RecordingSource: NativeRecordingSource {
     private let lock = NSLock()
     private var handler: ((Data) -> Void)?
+    private var healthy = true
     var configuration: [String: Any] = ["RxPayloadType": 100, "TilesPerFrame": 1, "SRTPCipherSuite": 0, "RTPClockRate": Int32(24000), "LocalSSRC": 123]
     private(set) var keyframeRequests = 0
     func recordingConfiguration() -> [String: Any] { configuration }
     func setVideoHandler(_ handler: ((Data) -> Void)?) { lock.lock(); self.handler = handler; lock.unlock() }
     func requestKeyframe() { keyframeRequests += 1 }
-    func health() -> [String: Any] { ["healthy": true] }
+    func health() -> [String: Any] { lock.lock(); defer { lock.unlock() }; return ["healthy": healthy] }
+    func setHealthy(_ value: Bool) { lock.lock(); healthy = value; lock.unlock() }
     var attached: Bool { lock.lock(); defer { lock.unlock() }; return handler != nil }
     func send(_ data: Data) { lock.lock(); let callback = handler; lock.unlock(); callback?(data) }
+}
+
+private final class RecordingTestClock {
+    private let lock = NSLock()
+    private var value = 100.0
+    func now() -> Double { lock.lock(); defer { lock.unlock() }; return value }
+    func set(_ value: Double) { lock.lock(); self.value = value; lock.unlock() }
 }
 
 final class NativeRecordingTests: XCTestCase {
@@ -165,14 +174,113 @@ final class NativeRecordingTests: XCTestCase {
         XCTAssertTrue(units[0].keyframe); XCTAssertFalse(units[1].keyframe)
         return units
     }
-    private func packets(_ units: [NativeVideoAccessUnit], to source: RecordingSource, omitMarkerAt: UInt32? = nil) {
+    private func packets(_ units: [NativeVideoAccessUnit], to source: RecordingSource, omitMarkerAt: UInt32? = nil,
+                         beforeUnit: ((NativeVideoAccessUnit) -> Void)? = nil) {
         var sequence: UInt16 = 1
         for unit in units {
+            beforeUnit?(unit)
             for (index, nal) in unit.nals.enumerated() {
                 var packet = Data([0x80, index == unit.nals.count - 1 && unit.timestamp != omitMarkerAt ? 0xe4 : 0x64, UInt8(sequence >> 8), UInt8(sequence & 255)])
                 for value in [unit.timestamp, UInt32(123)] { var big = value.bigEndian; withUnsafeBytes(of: &big) { packet.append(contentsOf: $0) } }
                 packet.append(nal); source.send(packet); sequence &+= 1
             }
+        }
+    }
+    func testFinalHoldPreservesRTPGapsWrapAndAllOriginalSamples() throws {
+        let dir = try root(), units = try fixture(dir), url = dir.appendingPathComponent("held.mp4")
+        let writer = NativeVideoWriter(url: url, timescale: 24000, orientation: .right)
+        var expected: [Double] = []
+        for (index, unit) in units.enumerated() {
+            let ticks = unit.timestamp + (index >= 10 ? 120000 : 0)
+            expected.append(Double(ticks) / 24000)
+            try writer.append(NativeVideoAccessUnit(timestamp: (UInt32.max - 12000) &+ ticks,
+                nals: unit.nals, keyframe: unit.keyframe, firstPacketAt: 101 + Double(ticks) / 24000))
+        }
+        XCTAssertEqual(writer.mediaSpanSeconds, 6.9, accuracy: 0.0001)
+        XCTAssertEqual(writer.firstFrameReceivedAt, 101)
+        XCTAssertEqual(writer.lastFrameReceivedAt!, 107.9, accuracy: 0.0001)
+        try writer.finish(lastFrameDurationSeconds: 3.1)
+        let facts = try NativeRecordingValidation.inspect(url)
+        XCTAssertEqual(facts["decodedFrames"] as? Int, 20, "Holding must not invent extra frames")
+        XCTAssertEqual(facts["durationSeconds"] as! Double, 10, accuracy: 0.001)
+        let asset = AVURLAsset(url: url)
+        let reader = try AVAssetReader(asset: asset)
+        let track = try XCTUnwrap(asset.tracks(withMediaType: .video).first)
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
+        reader.add(output); XCTAssertTrue(reader.startReading())
+        var times: [Double] = [], durations: [Double] = []
+        while let sample = output.copyNextSampleBuffer() {
+            if CMSampleBufferGetNumSamples(sample) == 0 { continue }
+            times.append(CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sample)))
+            durations.append(CMTimeGetSeconds(CMSampleBufferGetDuration(sample)))
+        }
+        XCTAssertEqual(reader.status, .completed)
+        XCTAssertEqual(times.count, expected.count)
+        for (actual, expected) in zip(times, expected) { XCTAssertEqual(actual, expected, accuracy: 0.001) }
+        XCTAssertEqual(durations.last!, 3.1, accuracy: 0.001)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        // Seek into the terminal hold, allowing the decoder to select the last
+        // real sample. No new sample is asserted to exist at this time.
+        let image = try generator.copyCGImage(at: CMTime(seconds: 9.5, preferredTimescale: 24000), actualTime: nil)
+        XCTAssertEqual(image.width, 96); XCTAssertEqual(image.height, 64)
+    }
+
+    func testNormalStopKeepsStaticTailAndInitialKeyframeDelayExplicit() throws {
+        let dir = try root(), units = try fixture(dir)
+        for automatic in [false, true] {
+            let source = RecordingSource(), clock = RecordingTestClock()
+            let recorder = NativeStreamRecording(root: dir.appendingPathComponent("normal-\(automatic)"), now: clock.now)
+            defer { _ = recorder.close() }
+            let start = try recorder.start(duration: 6, receiver: source, mediaID: "owned", rotation: "rot0")
+            packets(units, to: source) { clock.set(101 + Double($0.timestamp) / 24000) }
+            _ = recorder.status() // Drain all admitted packets before stopping the test clock.
+            clock.set(106)
+            if automatic {
+                let deadline = Date().addingTimeInterval(3)
+                while recorder.isActive, Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
+                XCTAssertFalse(recorder.isActive)
+            }
+            let result = try recorder.stop(id: start["recordingID"] as! String)
+            XCTAssertEqual(result["state"] as? String, "completed")
+            XCTAssertEqual(result["stopReason"] as? String, automatic ? "duration" : "requested")
+            XCTAssertEqual(result["elapsedSeconds"] as! Double, 6, accuracy: 0.0001)
+            XCTAssertEqual(result["firstFrameDelaySeconds"] as! Double, 1, accuracy: 0.0001)
+            XCTAssertEqual(result["frameReceiveSpanSeconds"] as! Double, 1.9, accuracy: 0.0001)
+            XCTAssertEqual(result["mediaSpanSeconds"] as! Double, 1.9, accuracy: 0.0001)
+            XCTAssertEqual(result["lastFrameDurationSeconds"] as! Double, 3.1, accuracy: 0.0001)
+            XCTAssertEqual(result["tailTimingSource"] as? String, "host_monotonic_receive")
+            let video = try XCTUnwrap(result["video"] as? [String: Any])
+            XCTAssertEqual(video["durationSeconds"] as! Double, 5, accuracy: 0.001)
+            XCTAssertEqual(video["decodedFrames"] as? Int, 20)
+            XCTAssertFalse(source.attached)
+        }
+    }
+
+    func testUnhealthyDamagedAndInterruptedSegmentsNeverExtendTail() throws {
+        let dir = try root(), units = try fixture(dir)
+        for cause in ["media_lost", "packet_loss", "queue_overflow", "display_changed", "session_closed"] {
+            let source = RecordingSource(), clock = RecordingTestClock()
+            let recorder = NativeStreamRecording(root: dir.appendingPathComponent(cause), now: clock.now)
+            defer { _ = recorder.close() }
+            let start = try recorder.start(duration: 30, receiver: source, mediaID: "owned", rotation: "rot0")
+            packets(units, to: source, omitMarkerAt: cause == "packet_loss" ? units[1].timestamp : nil) {
+                clock.set(101 + Double($0.timestamp) / 24000)
+            }
+            _ = recorder.status(); clock.set(106)
+            if cause == "media_lost" { source.setHealthy(false) }
+            if cause == "queue_overflow" { source.send(Data(repeating: 0, count: 4 * 1024 * 1024 + 1)) }
+            if cause == "display_changed" { recorder.endSegment(reason: cause) }
+            if cause == "session_closed" { _ = recorder.close() }
+            let result = try recorder.stop(id: start["recordingID"] as! String)
+            XCTAssertEqual(result["tailTimingSource"] as? String, "nominal_frame_duration")
+            XCTAssertEqual(result["lastFrameDurationSeconds"] as! Double, 1.0 / 60, accuracy: 0.0001)
+            XCTAssertEqual((result["video"] as? [String: Any])?["durationSeconds"] as! Double, 1.916666, accuracy: 0.001)
+            if ["media_lost", "packet_loss", "queue_overflow"].contains(cause) {
+                XCTAssertEqual(result["state"] as? String, "failed")
+                XCTAssertEqual(result["fileValidated"] as? Bool, false)
+            }
+            XCTAssertFalse(source.attached)
         }
     }
     func testHEVCMuxKeepsSyncIndexAndSupportsRandomSeek() throws {

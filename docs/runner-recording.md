@@ -37,6 +37,8 @@ iphone-use --session "$SESSION" record-stop "$RECORDING_ID"
 
 这是固定方向下的点击共存验收，不是全部手势、连续旋转、长时间录制或断连/取消注入的真机验收。媒体时间戳时长不等于宿主录制耗时（本次分别约 39.724、50.916、45.716 秒），静态末段没有补帧延长到停止时间；不承诺固定帧率或逐帧覆盖全部墙钟时间。三段各有 1 个启动阶段丢弃的 access unit，均无后续 discontinuity 或 malformed packet。
 
+后续共享写入器已支持正常结束时保留静态末帧的显示时长，见[原生录屏时间轴修复](native-recording-timeline.md)。上述 Runner 数据属于修复前验收；本次修复有共享宿主回归与标准模式真机验收，没有重新执行 Runner 真机录制。
+
 原始证据保存在 `.local/research/runner-shared-recording-20260926/`：`coexist-*-start/stop.json`、动作及观察、前后视频抽帧、三个 MP4、最终 status 和 disconnect，以及保留的首次占用拒绝。生产实现无需因本次验收修改；本轮仅更新验收文档，不重复运行已经通过的宿主测试。
 
 ## 旧路线：XCTest 附件录屏探针

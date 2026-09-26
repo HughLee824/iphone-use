@@ -17,7 +17,7 @@ final class NativeStreamRecording {
         let directory: URL
         let duration: Double
         let startedAt = Date().timeIntervalSince1970
-        let started = ProcessInfo.processInfo.systemUptime
+        let started: Double
         let mediaID: String
         let configuration: [String: Any]
         let rotation: String
@@ -30,8 +30,9 @@ final class NativeStreamRecording {
         var firstFrameAt: Double?
         var startupDroppedUnits = 0
         var failure: Error?
-        init(root: URL, duration: Double, receiver: NativeRecordingSource, mediaID: String, orientation: NativeVideoOrientation, configuration: [String: Any], clock: Int32) {
+        init(root: URL, duration: Double, receiver: NativeRecordingSource, mediaID: String, orientation: NativeVideoOrientation, configuration: [String: Any], clock: Int32, started: Double) {
             self.duration = duration; self.receiver = receiver; self.mediaID = mediaID
+            self.started = started
             self.configuration = configuration; self.rotation = orientation.rawValue
             directory = root.appendingPathComponent(id)
             writer = NativeVideoWriter(url: directory.appendingPathComponent("screen.mp4"), timescale: clock, orientation: orientation)
@@ -43,10 +44,11 @@ final class NativeStreamRecording {
     private var overflow = false
     private var timer: DispatchSourceTimer?
     private let root: URL
+    private let now: () -> Double
     private var current: Job?
     private var jobs: [String: Job] = [:]
     private var closed = false
-    init(root: URL) { self.root = root }
+    init(root: URL, now: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime }) { self.root = root; self.now = now }
 
     static func supports(_ config: [String: Any]) -> Bool {
         config["RxPayloadType"] as? Int == 100 && config["TilesPerFrame"] as? Int == 1
@@ -67,7 +69,7 @@ final class NativeStreamRecording {
             guard Self.supports(config), let clock = config["RTPClockRate"] as? Int32 else {
                 throw IPhoneUseError("native_recording_format_unavailable", "Need the observed single-layer HEVC payload and a clock confirmed by sender reports")
             }
-            let job = Job(root: root, duration: duration, receiver: receiver, mediaID: mediaID, orientation: orientation, configuration: config, clock: clock)
+            let job = Job(root: root, duration: duration, receiver: receiver, mediaID: mediaID, orientation: orientation, configuration: config, clock: clock, started: now())
             try SessionPaths.secureDirectory(root); try SessionPaths.secureDirectory(job.directory)
             jobs[job.id] = job; current = job
             pendingLock.lock(); overflow = false; pendingLock.unlock()
@@ -85,6 +87,9 @@ final class NativeStreamRecording {
     }
 
     private func enqueue(_ data: Data, job: Job) {
+        // Stamp on admission, before waiting behind disk/codec work. Carry the
+        // first packet's receive time through access-unit assembly.
+        let receivedAt = now()
         pendingLock.lock()
         guard pendingBytes + data.count <= 4 * 1024 * 1024 else { overflow = true; pendingLock.unlock(); return }
         pendingBytes += data.count; pendingLock.unlock()
@@ -95,14 +100,14 @@ final class NativeStreamRecording {
                 let packet = try NativeRTPPacket(data)
                 guard packet.payloadType == 100, packet.ssrc == (job.configuration["LocalSSRC"] as? NSNumber)?.uint32Value else { return }
                 job.packets += 1
-                if let unit = job.parser.receive(packet) {
+                if let unit = job.parser.receive(packet, receivedAt: receivedAt) {
                     let before = job.writer.frames
                     try job.writer.append(unit)
                     if job.writer.hasFrame, job.firstFrameAt == nil {
-                        job.firstFrameAt = ProcessInfo.processInfo.systemUptime
+                        job.firstFrameAt = job.writer.firstFrameReceivedAt
                         job.startupDroppedUnits = job.parser.droppedUnits
                     }
-                    if job.writer.frames > before { job.lastPLI = ProcessInfo.processInfo.systemUptime }
+                    if job.writer.frames > before { job.lastPLI = now() }
                 }
             } catch { job.failure = error; finish(job, reason: "video_error") }
         }
@@ -110,7 +115,7 @@ final class NativeStreamRecording {
 
     private func tick() {
         guard let job = current, job.result == nil else { return }
-        let now = ProcessInfo.processInfo.systemUptime
+        let now = now()
         pendingLock.lock(); let overflowed = overflow; pendingLock.unlock()
         if overflowed { job.failure = IPhoneUseError("recording_backpressure", "Bounded video queue overflowed"); finish(job, reason: "video_error"); return }
         guard job.receiver?.health()["healthy"] as? Bool == true else {
@@ -158,19 +163,49 @@ final class NativeStreamRecording {
     }
     private func finish(_ job: Job, reason: String) {
         job.receiver?.setVideoHandler(nil); timer?.cancel(); timer = nil
+        let stopped = now()
+        let health = job.receiver?.health() ?? [:]
         var result = facts(job)
         result["stopReason"] = reason; result["sinkDetached"] = true
         result["stoppedAt"] = Date().timeIntervalSince1970
-        result["elapsedSeconds"] = ProcessInfo.processInfo.systemUptime - job.started
+        result["elapsedSeconds"] = stopped - job.started
         result["firstFrameDelaySeconds"] = job.firstFrameAt.map { $0 - job.started } as Any? ?? NSNull()
+        result["mediaSpanSeconds"] = job.writer.mediaSpanSeconds
+        result["lastFrameAgeSeconds"] = job.writer.lastFrameReceivedAt.map { stopped - $0 } as Any? ?? NSNull()
+        if let first = job.writer.firstFrameReceivedAt, let last = job.writer.lastFrameReceivedAt {
+            result["frameReceiveSpanSeconds"] = last - first
+        }
+        result["receiverHealthAtStop"] = health
+        result["rtpClockRateAtStop"] = job.receiver?.recordingConfiguration()["RTPClockRate"]
+        // Explicit stop can beat the next timer tick that checks overflow.
+        pendingLock.lock(); let overflowed = overflow; pendingLock.unlock()
+        if overflowed, job.failure == nil {
+            job.failure = IPhoneUseError("recording_backpressure", "Bounded video queue overflowed")
+        }
+        let normalStop = reason == "requested" || reason == "duration"
+        if normalStop, health["healthy"] as? Bool != true, job.failure == nil {
+            job.failure = IPhoneUseError("recording_media_lost", "Owned media lost health before recording stopped")
+        }
+        let intact = job.parser.malformedPackets == 0 && job.parser.discontinuities == 0
+            && job.parser.droppedUnits == job.startupDroppedUnits
+        var lastFrameDuration = 1.0 / 60
+        var tailTimingSource = "nominal_frame_duration"
+        if normalStop, job.failure == nil, intact, let last = job.writer.lastFrameReceivedAt {
+            // A live static stream can send RTCP but no video. Preserve that
+            // terminal hold, not a rescaled movie. Liveness does not prove the
+            // screen was unchanged; report its last-frame age explicitly.
+            lastFrameDuration = max(lastFrameDuration, stopped - last)
+            tailTimingSource = "host_monotonic_receive"
+        }
+        result["lastFrameDurationSeconds"] = lastFrameDuration
+        result["tailTimingSource"] = tailTimingSource
         do {
-            try job.writer.finish()
+            try job.writer.finish(lastFrameDurationSeconds: lastFrameDuration)
             result["writtenFrames"] = job.writer.frames
             let video = try NativeRecordingValidation.inspect(job.directory.appendingPathComponent("screen.mp4"))
             result["video"] = video
             if let failure = job.failure { throw failure }
-            guard job.parser.malformedPackets == 0, job.parser.discontinuities == 0,
-                  job.parser.droppedUnits == job.startupDroppedUnits else {
+            guard intact else {
                 throw IPhoneUseError("recording_incomplete", "Video contains a recovered RTP interruption; preserved segment is not a complete recording")
             }
             result["state"] = "completed"; result["fileValidated"] = true
