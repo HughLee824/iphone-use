@@ -22,13 +22,16 @@
 
 它从本轮未提交工作区构建，`sourceDirty=true`，不是公开发行包。Release CLI 与无开发签名 Runner 构建成功；归档、签名、源码路径泄漏检查、搬移后软链接入口、新旧命令版本及模式隔离检查通过。`verify-release.py` 返回 `deviceVerified:false`，真机结果单独记录。
 
-## 真机进度
+## 真机验证
 
 环境为 Apple Silicon / macOS 27.0 (26A428)、Xcode 27.0 (27A266a)、iPhone 12 Pro / iOS 27.0 (24A437)。设备通过本次候选 CLI 发现，未将设备标识写入产品。执行的 CLI、工作目录与配置目录都位于源码目录外；保留共享设备锁以免隔离验收绕过互斥。
 
 - 首个候选省略 mode、未运行 setup、未提供 xctestrun，成功选择 `mode=standard` / `modeSource=default`，`runnerStarted=false`。原生截图成功，但媒体被占用，`controlAvailable=false` / `native_media_busy`。未发送点击，自有媒体/隧道及宿主均确认清理；发现 Device Hub 进程，但进程存在本身不能证明某个流的所有者。
 - 最终候选的包内 Runner 使用已有合法开发签名完成 setup，返回 `compiled:false`，验证连接、截图采集和退出。显式 `--mode runner` 使用同一包重签产物连接成功，打开普通 Probe，截图已目视确认，正常 disconnect。没有使用源码 `.xctestrun` 代替包内产物。
 - setup 与显式 Runner 连接后，隔离配置仍返回 `standard` / `default` / `saved:false`，没有将默认模式改成 Runner。
-- **标准模式首次点击闭环尚未验收通过**：等待用户释放测试设备的其他媒体连接后，在最终候选上重新执行空配置默认连接、Probe 截图、一次点击及清理。不能把源码后端过去的成功测试或本次 Runner 回归代替这项验收。
+- 最终候选在其他媒体连接释放后，以空配置、省略 mode 连接成功，返回 `standard` / `default`、`controlAvailable=true`、`runnerStarted=false`。首次连接保存 standard 偏好；后续重连读取此配置，返回 `modeSource=configuration`，没有使用显式 mode 覆盖。
+- 等待解锁期间旧媒体停止接收数据。解锁后截图成功，但点击被媒体健康保护拒绝，返回 `not_dispatched`；只读 status 确认持续 `rtp_stale` 后，先关闭自有会话，再显式重连。旧会话的媒体停止与隧道释放均收到确认；这次验证没有实现或证明锁屏后的自动媒体恢复。
+- **最终候选的标准模式截图 → HID 点击 → 新截图闭环通过**：重连后媒体健康，目视确认普通 Probe 的 A/B/C/D 均为 1。原图为 1170×2532，屏幕为 390×844 points，以观察 `o1` 的 `(71, 122)` points 点击 A 一次；新观察 `o2` 确认 A 为 2，B/C/D 仍为 1。执行前屏幕保护通过，触点释放已排队，没有启动 Runner。
+- 点击返回 `native_input_unacknowledged` / `outcome=unknown`、CLI 退出码 1：原生通道仅确认输入已排队，未将其宣称为设备执行成功，也没有重放。上述验收结论来自前后截图的实际计数变化。最终 disconnect 确认自有媒体停止、接收器关闭、连接关闭、隧道释放与宿主关闭，并删除观察缓存。
 
 原始归档、日志、截图和 JSON 保存在 `.local/research/standard-package-onboarding-20260926/`，不提交私人设备信息。全新 Mac、无既有配对的首次信任、免费签名、浏览器下载/Gatekeeper 和公开 Homebrew 渠道不在本轮验收范围。
