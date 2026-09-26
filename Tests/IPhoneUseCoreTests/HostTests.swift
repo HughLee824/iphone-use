@@ -149,9 +149,9 @@ final class HostTests: XCTestCase {
             XCTAssertEqual(invalid["ok"] as? Bool, false)
             XCTAssertEqual(backend.recordingStarts, 0)
             let started = try call(paths, session: session, op: "record-start", fields: ["duration": 5])
-            XCTAssertEqual(started["ok"] as? Bool, native)
-            XCTAssertEqual(backend.recordingStarts, native ? 1 : 0)
-            if native {
+            XCTAssertEqual(started["ok"] as? Bool, true)
+            XCTAssertEqual(backend.recordingStarts, 1)
+            do {
                 let stale = try call(paths, session: session, op: "tap", fields: ["reference": "o1:e11"])
                 XCTAssertEqual(stale["outcome"] as? String, "not_dispatched")
                 XCTAssertEqual(backend.inputCount, 0)
@@ -159,8 +159,8 @@ final class HostTests: XCTestCase {
             let invalidStop = try call(paths, session: session, op: "record-stop", fields: ["recordingID": "bad"])
             XCTAssertEqual(invalidStop["ok"] as? Bool, false)
             let stopped = try call(paths, session: session, op: "record-stop", fields: ["recordingID": "00000000-0000-0000-0000-000000000001"])
-            XCTAssertEqual(stopped["ok"] as? Bool, native)
-            XCTAssertEqual(backend.recordingStops, native ? 1 : 0)
+            XCTAssertEqual(stopped["ok"] as? Bool, true)
+            XCTAssertEqual(backend.recordingStops, 1)
         }
     }
 
@@ -469,7 +469,7 @@ final class HostTests: XCTestCase {
             let status = try call(paths, session: session, op: "status")
             XCTAssertEqual((status["result"] as? [String: Any])?["mode"] as? String, expectedMode)
             let support = (status["result"] as? [String: Any])?["support"] as? [String: Any]
-            XCTAssertEqual((support?["operations"] as? [String])?.contains("record-start"), native)
+            XCTAssertEqual((support?["operations"] as? [String])?.contains("record-start"), true)
             XCTAssertEqual(support?["textModes"] as? [String], ["insert", "replace", "append"])
             let observed = try call(paths, session: session, op: "observe")
             let rejected = try call(paths, session: session, op: "not-an-operation")

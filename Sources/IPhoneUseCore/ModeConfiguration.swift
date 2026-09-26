@@ -7,9 +7,9 @@ public enum ControlMode: String, Codable {
 
     /// Implemented command forms, independent of transient device/service readiness.
     var support: [String: Any] {
-        let common = ["status", "apps", "open", "home", "terminate", "relaunch", "observe", "inspect", "tap", "double-tap", "long-press", "pinch", "swipe", "type", "press", "disconnect"]
+        let common = ["status", "apps", "open", "home", "terminate", "relaunch", "observe", "inspect", "tap", "double-tap", "long-press", "pinch", "swipe", "type", "press", "disconnect", "record-start", "record-stop"]
         if self == .standard {
-            return ["operations": common + ["text-prepare", "text-finish", "record-start", "record-stop"],
+            return ["operations": common + ["text-prepare", "text-finish"],
                     "observationSources": ["screenshot"],
                     "actionTargets": ["tap": ["screen_point"], "swipe": ["screen_path"],
                                       "type": ["visually_focused_input"], "press": ["visually_focused_input"]],

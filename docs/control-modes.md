@@ -69,8 +69,8 @@ Runner implements Return, Backspace, arrows and Tab/Shift+Tab with the same name
 
 ## Follow-up: feature parity
 
-Runner should progressively support the same user operations: the outstanding areas include remaining system controls, backend-specific text limitations, and recording. Keep backend-specific implementations and validate each before advertising support. Standard-mode code must not start Runner to fill a gap; Runner must not silently establish a native control session. Mode selection does not imply complete feature parity.
+Runner should progressively support the same user operations: the outstanding areas include remaining system controls and backend-specific text limitations. Keep backend-specific implementations and validate each before advertising support. Standard-mode code must not start Runner to fill a gap; Runner must not silently establish a native control session. Mode selection does not imply complete feature parity.
 
-The [Runner recording probe](runner-recording.md) verifies owned XCTest recording and post-session video export. Live export remains blocked on the tested path, so Runner recording is still unsupported; it does not end or recreate the session implicitly.
+Both modes implement `record-start` / `record-stop` through the shared native media recorder. In Runner mode this opens only an owned display/media connection on explicit recording start; input stays on XCTest. It neither creates a HID control session nor waits for XCTest attachment export. See [Runner recording](runner-recording.md) for ownership, availability and acceptance status.
 
 See [rename and upgrade behavior](rename-to-iphone-use.md) for old configuration, active sessions and the new Runner bundle IDs.

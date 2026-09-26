@@ -437,7 +437,7 @@ struct Press: ParsableCommand {
 
 
 struct RecordStart: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "record-start", abstract: "Start an owned native screen recording; status reports completion and the MP4 path.")
+    static let configuration = CommandConfiguration(commandName: "record-start", abstract: "Start an owned native media recording in either control mode; status reports its MP4.")
     @OptionGroup var options: SessionOptions
     @Option(help: "Automatic stop after 1–300 seconds (default 60); record-stop may end it earlier.") var duration: Double = 60
     mutating func run() throws {

@@ -111,7 +111,6 @@ final class SessionHost {
         }
         if operation == "record-start" || operation == "record-stop" {
             do {
-                guard config.backend == "apple-native" else { throw IPhoneUseError("native_action_unsupported", "Recording applies only to apple-native") }
                 if operation == "record-start" { _ = try NativeRecordingOptions.duration(request) }
                 else if UUID(uuidString: request["recordingID"] as? String ?? "") == nil {
                     throw IPhoneUseError("invalid_recording_id", "Use the recording ID returned by record-start or status")

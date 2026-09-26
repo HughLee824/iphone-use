@@ -1,6 +1,29 @@
-# Runner 录屏：可执行验证与当前阻塞
+# Runner 原生媒体录屏
 
-2026-09-26。**尚未完成 Runner `record-start` / `record-stop` 功能对齐。** 当前交付是可构建、签名和运行的独立 Probe，验证真实录制、UUID 停止、附件导出及视频完整解码。生产 Runner、SessionHost 和模式能力表没有改动，Runner 仍明确拒绝录屏，不切换到标准模式。
+本次实现将控制模式与录屏传输分开：Runner 的截图、元素、点击和输入仍由 XCTest 执行；显式 `record-start` 创建自有 CoreDevice displayservice 媒体连接，使用与标准模式相同的 HEVC/RTP 接收、MP4 写入和完整解码验证。不会建立 HID 或剪贴板服务。真机共存验收结果见下方，不能把旧的 XCTest 附件探针结果当成本实现的验收。
+
+```sh
+iphone-use connect --mode runner --device "$DEVICE" --xctestrun "$XCTESTRUN"
+iphone-use --session "$SESSION" record-start --duration 60
+# 重新 observe，再按新截图/元素引用执行 Runner 动作。
+iphone-use --session "$SESSION" record-stop "$RECORDING_ID"
+```
+
+- 复用同一组命令、1–300 秒时长、录制 ID 和 `recordings/<UUID>/screen.mp4` 文件契约。
+- 连接 Runner 时不创建原生媒体会话；`recordingSupport.availability=not_checked` 不是可录制的证明。显式开始时再检查 macOS/iOS 27、配对、解锁、方向、媒体互斥、协议及 RTP 时钟。
+- 每个新录制创建独立媒体流，停止只作用于其自有 UUID。旧 ID 重复停止不会影响后续录制；未知 ID 被拒绝。开始或清理失败后不重放，要求显式重连。
+- `record-stop` 在同一 Runner 会话内完成文件写入、完整解码和媒体清理；不等待 XCTest 结束，也不重建 Runner。清理未确认时保留文件事实并返回 unknown。
+- 时长到达由现有录制队列自动结束文件；随后的 status、观察、动作或 disconnect 回收媒体。会话 idle/signal 清理也先结束文件，再关闭媒体和 Runner。
+- status、观察和动作边界检查显示状态。发现方向/锁屏变化时结束本段；不承诺连续旋转录制。每个视频帧都不是 observation，录制开始/停止会使旧 observation 失效。
+- 会话使用独立 `.xctestrun` 副本，将本次测试自动诊断捕获设为截图。原始签名产物及调用者的清单不改动。
+
+## 共享媒体实现的验证
+
+宿主完整测试 296 项、1 项既有跳过、0 失败；CLI 测试 22 项通过。Release CLI 已构建。首次真机连接在 iOS 的“为 XCTest 输入密码以启用 UI 自动化”页面超时，媒体尚未创建。当前等待系统授权后的实际共存验收。
+
+## 旧路线：XCTest 附件录屏探针
+
+以下保留 2026-09-26 早先的独立 XCTest 附件通道研究记录。该探针当时没有接入生产 Runner；它不再是当前录屏的实现路线。
 
 ## 已获得的真机证据
 
@@ -50,6 +73,6 @@ Apple 工具可能需要宿主的系统服务访问权限：本次 `xcresulttool
 
 ## 后续实现边界
 
-继续实现前，需要找到可在现有 XCTest 会话内取回**本次录制文件**的合法传输通道，再接入已有录制 ID、时长、状态及验证契约。不得把结束/重建 Runner 会话藏在 `record-stop` 中，也不能将停止确认当成 `fileValidated=true`。
+若未来继续此附件路线，需要找到可在现有 XCTest 会话内取回**本次录制文件**的合法传输通道。当前共享原生媒体路线已绕开这项附件导出依赖。不得把结束/重建 Runner 会话藏在 `record-stop` 中，也不能将停止确认当成 `fileValidated=true`。
 
 Runner 截图采样后编码 MP4 是另一种可研究的实现，但帧率、控制延迟和连续动画保真度有明显不同；本次没有将它当成原录屏通道的等价替代，也没有偷偷建立原生媒体会话。横屏、控制共存和完整生产故障场景仍未验证。

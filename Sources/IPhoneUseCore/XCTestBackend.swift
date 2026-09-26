@@ -25,10 +25,10 @@ extension SessionBackend {
     }
     func cancelCurrent() {}
     func startRecording(duration: Double) throws -> [String: Any] {
-        throw IPhoneUseError("native_action_unsupported", "Recording applies only to apple-native")
+        throw IPhoneUseError("native_action_unsupported", "This backend does not implement recording")
     }
     func stopRecording(id: String) throws -> [String: Any] {
-        throw IPhoneUseError("native_action_unsupported", "Recording applies only to apple-native")
+        throw IPhoneUseError("native_action_unsupported", "This backend does not implement recording")
     }
     func prepareText() throws -> [String: Any] {
         throw IPhoneUseError("native_action_unsupported", "text-prepare applies only to apple-native")
@@ -49,6 +49,9 @@ final class XCTestBackend: SessionBackend {
     private var identity: String?
     private var runnerPID: Int?
     private var deviceUDID: String?
+    private let recordingCancellation = NativeCancellation()
+    private var recording: RunnerNativeRecording?
+    private var recordingPlatformSupported = false
 
     init(config: HostConfiguration, paths: SessionPaths) {
         self.config = config
@@ -73,10 +76,16 @@ final class XCTestBackend: SessionBackend {
         if lockState["passcodeRequired"] as? Bool == true {
             throw IPhoneUseError("device_locked", "Unlock the iPhone and connect again")
         }
+        recordingPlatformSupported = ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 27 &&
+            ((details["deviceProperties"] as? [String: Any])?["osVersionNumber"] as? String)?.hasPrefix("27.") == true
+        recording = RunnerNativeRecording(device: udid, root: paths.directory.appendingPathComponent("recordings"),
+                                          cancellation: recordingCancellation)
+        let manifest = paths.directory.appendingPathComponent("runner.xctestrun")
+        try RunnerSessionManifest.prepare(source: URL(fileURLWithPath: config.xctestrun), destination: manifest)
         endpoint = .hostPort(host: .init(address), port: 47821)
         let runner = Process()
         runner.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-        runner.arguments = ["xcodebuild", "test-without-building", "-xctestrun", config.xctestrun,
+        runner.arguments = ["xcodebuild", "test-without-building", "-xctestrun", manifest.path,
             "-destination", "platform=iOS,id=\(udid)", "-parallel-testing-enabled", "NO",
             "-only-testing:IPhoneUseTests/LiveSessionTests/testCommandSession",
             "-resultBundlePath", paths.directory.appendingPathComponent("run.xcresult").path]
@@ -143,16 +152,25 @@ final class XCTestBackend: SessionBackend {
         }
         var result = metadata()
         result["sequence"] = response["sequence"]
+        let recordingStatus = recording?.status() ?? ["state": "idle"]
+        result["recording"] = recordingStatus
+        result["recordingSupport"] = ["supported": recordingPlatformSupported, "method": "native_rtp", "source": "owned_native_rtp", "codec": "hevc",
+                                      "connectionPolicy": "on_explicit_record_start", "hidServiceOpened": false,
+                                      "availability": !recordingPlatformSupported ? "unsupported_platform" :
+                                        (recordingStatus["reconnectRequired"] as? Bool == true ? "reconnect_required" :
+                                         (recordingStatus["mediaConnectionOpen"] as? Bool == true ? "prepared" : "not_checked"))]
         return result
     }
 
     func open(bundle: String) throws -> [String: Any] {
+        defer { recording?.checkDisplay() }
         try apps().requireInstalled(bundle)
         let response = try request("launch", fields: ["bundleId": bundle])
         return try ActionReply.decode(response)
     }
 
     func appLifecycle(bundle: String, relaunch: Bool) throws -> [String: Any] {
+        defer { recording?.checkDisplay() }
         try apps().requireInstalled(bundle)
         let response = try request("app-lifecycle", fields: ["bundleId": bundle, "relaunch": relaunch])
         return try Self.lifecycleResponse(response, bundle: bundle, relaunch: relaunch)
@@ -191,6 +209,8 @@ final class XCTestBackend: SessionBackend {
     }
 
     func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any] {
+        recording?.checkDisplay()
+        defer { recording?.checkDisplay() }
         let response = try request("act", fields: Self.actionFields(action, target: target))
         return try ActionReply.decode(XCTestCapture.actionResponse(response, directory: paths.directory,
             expectedGuard: target.gesture?.screenGuard ?? target.textGuard, expectedMotion: target.gesture?.motion,
@@ -235,6 +255,8 @@ final class XCTestBackend: SessionBackend {
     }
 
     func observe() throws -> CapturedObservation {
+        recording?.checkDisplay()
+        defer { recording?.checkDisplay() }
         let response = try request("observe")
         guard let result = response["result"] as? [String: Any],
               response["ok"] as? Bool == true || result["axStatus"] as? String == "unavailable" else {
@@ -243,10 +265,24 @@ final class XCTestBackend: SessionBackend {
         return try XCTestCapture.decode(result)
     }
 
+    func startRecording(duration: Double) throws -> [String: Any] {
+        guard let recording, process?.isRunning == true else { throw IPhoneUseError("backend_unavailable", "Runner is not connected") }
+        return try recording.start(duration: duration)
+    }
+
+    func stopRecording(id: String) throws -> [String: Any] {
+        guard let recording else { throw IPhoneUseError("backend_unavailable", "Runner is not connected") }
+        return try recording.stop(id: id)
+    }
+
+    func cancelCurrent() { recordingCancellation.cancel() }
+
     func stop() -> [String: Any] {
+        recordingCancellation.cancel()
+        let recordingCleanup = recording?.close() ?? ["recordingCleanupAcknowledged": true]
         guard let runner = process else {
             deviceLock = nil
-            return ["xcodebuildExited": true]
+            return ["xcodebuildExited": true, "recordingCleanup": recordingCleanup]
         }
         var acknowledged = false
         if identity != nil, runner.isRunning {
@@ -267,7 +303,8 @@ final class XCTestBackend: SessionBackend {
         deviceLock = nil
         try? log?.close()
         log = nil
-        return ["shutdownAcknowledged": acknowledged, "xcodebuildExited": true,
+        return ["shutdownAcknowledged": acknowledged && recordingCleanup["recordingCleanupAcknowledged"] as? Bool == true,
+                "runnerShutdownAcknowledged": acknowledged, "recordingCleanup": recordingCleanup, "xcodebuildExited": true,
                 "xcodebuildExitCode": Int(runner.terminationStatus), "forced": forced]
     }
 }
