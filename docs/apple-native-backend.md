@@ -13,6 +13,10 @@ Earlier discovery experiments found that socket-inventory reads and child `netst
 
 Reproducible host, media/lifecycle, visual-tap and fault-injection procedures: [M2–M3 acceptance](apple-native-acceptance.md).
 
+## Current implementation notes (2026-09-26)
+
+The dated sections below preserve historical evidence and stage-specific limitations. Current capture uses [session-sticky source selection](native-capture-source-policy.md) and [owned-media orientation resynchronization](native-rotation-synchronization.md). Recording is [shared by both control modes](runner-recording.md), with [explicit final-frame hold timing](native-recording-timeline.md) on healthy normal stops. See [actions](actions.md) for the current command contract, including portrait/landscape gestures and text-finish.
+
 ## Run from source
 
 ```sh

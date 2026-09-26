@@ -5,7 +5,7 @@ This checkout adds mode selection; these changes have not been released. Older i
 ## Choose a mode
 
 - **standard** → `apple-native`: screenshots, visual coordinate selection and native HID; Unicode/multiline input uses the device clipboard and HID Paste. It does not install/start a Runner or fall back to XCTest. Current acceptance requires the documented macOS/Xcode/iOS 27 environment, pairing, Developer Mode and an unlocked device. No Runner signing is needed for control; the signed Probe is only a development fixture. This is not a claim of no-Xcode or no-Developer-Mode support.
-- **runner** → `xctest`: the existing signed XCTest Runner, screenshots and available element data. Existing setup/build-runner workflows remain. Runner does not yet implement every standard-mode operation; feature parity is the follow-up goal, not a current guarantee.
+- **runner** → `xctest`: the existing signed XCTest Runner, screenshots and available element data. Existing setup/build-runner workflows remain. Both modes implement the main gestures, app lifecycle operations and shared native recording. Element access and text/key behavior differ; identical operation names do not promise identical behavior in every app.
 
 ```sh
 iphone-use config get mode
@@ -69,9 +69,9 @@ Runner supports `home oN`, `terminate BUNDLE` and `relaunch BUNDLE` through XCTe
 
 Runner implements Return, Backspace, arrows and Tab/Shift+Tab with the same names as standard mode, current element references and XCTest execution. Runner Escape remains unsupported after device validation; it does not switch modes. See [Runner editing keys](runner-editing-keys.md) for the validated scope and limitations.
 
-## Follow-up: feature parity
+## Current differences
 
-Runner should progressively support the same user operations: the outstanding areas include remaining system controls and backend-specific text limitations. Keep backend-specific implementations and validate each before advertising support. Standard-mode code must not start Runner to fill a gap; Runner must not silently establish a native control session. Mode selection does not imply complete feature parity.
+Both modes support coordinate tap, long-press, swipe/drag, double-tap, pinch, Home and application lifecycle commands. Runner also exposes available elements and uses element references for text/press; standard mode uses visually confirmed focus and optional screenshot field rectangles. Runner Escape remains unsupported, and Runner rejects CR/CRLF text while standard paste preserves it. Standard-only text preparation, clipboard completion and method selection are not Runner requirements. Keep these differences explicit in session support; neither mode silently starts the other control backend.
 
 Both modes implement `record-start` / `record-stop` through the shared native media recorder. In Runner mode this opens only an owned display/media connection on explicit recording start; input stays on XCTest. It neither creates a HID control session nor waits for XCTest attachment export. See [Runner recording](runner-recording.md) for ownership, availability and acceptance status.
 

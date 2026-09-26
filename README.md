@@ -25,7 +25,7 @@ This checkout implements the local AgentSoma → iPhone-use rename. Remote repos
 
 This checkout supports **standard** (screenshot + native HID) and **runner** (XCTest). Choose with `iphone-use config set mode standard` or `runner`, then `iphone-use connect --device "$DEVICE"`; override one connection with `--mode standard|runner`. Preferences live in `~/.iphone-use/config.json`. Existing `--backend` and signed `--xctestrun` usage remain compatible. New users default to standard; valid legacy Runner setup migrates to runner. An active session never changes backend when preferences change.
 
-Standard currently requires the documented macOS/Xcode/iOS 27 environment, pairing, Developer Mode and unlock, but no Runner signing. Runner feature parity is planned; consult the returned support/readiness fields. See [mode selection, migration and Agent rules](docs/control-modes.md). The walkthrough below starts with standard mode; Runner signing is optional.
+Standard currently requires the documented macOS/Xcode/iOS 27 environment, pairing, Developer Mode and unlock, but no Runner signing. Both modes provide the main gestures, app lifecycle operations and shared native recording; element access and text/key behavior still differ. Consult the returned support/readiness fields. See [mode selection, migration and Agent rules](docs/control-modes.md). The walkthrough below starts with standard mode; Runner signing is optional.
 
 ## Why iPhone-use?
 

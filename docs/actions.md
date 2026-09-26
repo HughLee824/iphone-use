@@ -1,6 +1,6 @@
 # 设备动作与引用校验
 
-当前提供按引用或明确坐标的画面校验点击/滑动，以及按输入框引用的光标插入、整段替换和独立编辑按键；文本可从参数或 stdin 读取。用户或调用 agent 负责选择动作并观察结果；iPhone-use 不解释自然语言任务。
+当前提供画面保护下的点击、双击、长按、滑动/拖放、捏合、Home、应用生命周期、文字与编辑按键，以及原生媒体录屏。标准模式以当前截图和屏幕点操作，Runner 另支持已采集的元素引用；具体目标形式和文本差异以会话 support 及下文为准。用户或调用 agent 负责选择动作并观察结果；iPhone-use 不解释自然语言任务。
 
 ## 实验性原生文字输入
 
@@ -20,7 +20,7 @@
 
 此前的软键盘“你好”与 HID 拼音 `zhongwen` 选词测试只证明输入法闭环。本轮另外完成了直接 `type --text '中文'` 和中英/标点/emoji 的 Probe 验证，见[原生 Unicode 输入](apple-native-backend.md#unicode-text-input-2026-09-20)。
 
-Unicode 输入会读取并在内存中备份设备通用剪贴板，写入整段文本，核对内容与变化计数后发送一次 Command-V。原内容保留到会话关闭，期间测试文本继续占用剪贴板，以便系统确认框中的粘贴仍能读取它。调用方必须先处理粘贴确认框、核对结果，再关闭会话；后端不自动允许系统弹窗。`pasteShortcutQueued` 不是文字已提交的证明，API 仍返回 `unknown` 和新截图。
+Unicode 输入会读取并在内存中备份设备通用剪贴板，写入整段文本，核对内容与变化计数后发送一次 Command-V。原内容在内存中保留到显式 text-finish 或会话关闭，期间写入文本继续占用剪贴板，以便系统确认框中的粘贴仍能读取它。调用方必须先处理粘贴确认框、核对结果，再用当前观察和事务 ID 执行 text-finish，或关闭会话；后端不自动允许系统弹窗。`pasteShortcutQueued` 不是文字已提交的证明，API 仍返回 `unknown` 和新截图。
 
 关闭时仅在内容和身份/计数仍匹配时尝试恢复；`pasteboardRestoreAcknowledged=false` 会使整体清理不确认。协议不提供原子比较后恢复，不能与其他剪贴板写入者并发使用；宿主崩溃、断连、写入回包丢失可能导致无法恢复。原剪贴板正文不写入诊断日志或磁盘备份，不能恢复时不得宣称清理成功。
 
@@ -119,7 +119,7 @@ iphone-use --session "$SESSION" observe
 
 成功回执增加 `result.motion`，例如 `{"velocity":100,"pressDuration":0.5,"holdDuration":0.2}`。它表示 Runner 调用 XCTest 时采用的参数，不是从触摸硬件采样出的实测速度。宿主核对它与请求一致；缺失或不一致时保留输入事实及可用结果帧，返回 `unknown` / `missing_swipe_motion_facts`，不重放。`completed` 仍只表示输入结束且画面稳定，目标值必须由调用 agent 核验。
 
-实验性 `apple-native` 后端仅支持基于当前截图 `oN` 的坐标 swipe，要求原始竖屏，不读取 AX 或启动 Runner。它按原始截图比例换算速度，至少用一个 1/60 秒采样间隔完成移动，并返回 `motionVelocityUnit=original_screenshot_pixels_per_second`、计划移动时长及实际排队的 MOVE 数量。采样目标为 60 Hz，发送延迟时跳过过期点；速度是计划值，不是设备实测值。整个输入有 10 秒执行期限（释放清理另有最多 3 秒等待）。按住和末端停留沿用 `--press-duration`、`--hold-duration`；这不等于已验收拖放或长按菜单行为。
+实验性 `apple-native` 后端使用当前截图 `oN` 的屏幕点轨迹，不读取 AX 或启动 Runner。对原生竖屏轴的显示器，支持当前画面为竖屏及左右横屏；两端坐标按本次观察方向映射，旋转后必须重新观察。它按原始截图比例换算速度，至少用一个 1/60 秒采样间隔完成移动，并返回 `motionVelocityUnit=original_screenshot_pixels_per_second`、计划移动时长及实际排队的 MOVE 数量。采样目标为 60 Hz，发送延迟时跳过过期点；速度是计划值，不是设备实测值。整个输入有 10 秒执行期限（释放清理另有最多 3 秒等待）。按住和末端停留沿用 `--press-duration`、`--hold-duration`；Probe 的长按菜单和拖放已完成竖屏及左右横屏验收，具体范围见[原生手势与方向记录](apple-native-backend.md#landscape-touch-and-static-display-liveness-2026-09-21)，不外推所有 App。
 
 原生 CONTACT/MOVE/RELEASE 的发送完成不是设备执行确认，因此始终保留 `outcome=unknown`，附带新的截图供外部 Agent 判断滚动方向和目标状态。取消、媒体失活或发送异常时尝试在最后发送位置释放，撤销该会话后续输入能力，不补发 MOVE，不重放动作；需显式建立新会话并重新观察。
 
@@ -267,3 +267,9 @@ Apple 终止接口只接受 PID，进程列表没有进程出生令牌，因此�
 `home oN --observe` 要求当前已知 App 或弹窗的截图观察，先检查 App/弹窗范围和整屏变化，再调用一次 XCTest Home 按下/释放。整屏和整屏保护区域均使用 1% 阈值。Home 成功回执只确认 `homePressCompleted=true`，保留 `homeScreenConfirmed=false`，不等待目的画面静止：主屏幕时钟等内容会持续更新。新截图仍由外部 Agent 核对，不把输入完成等同于主屏幕已确认。
 
 Home 后 Runner 清除当前 App 目标，观察可能为 `scope=unknown`、截图可用而 AX 不可用；用明确 bundle ID 的 open 恢复已知 App 目标。不会把主屏幕图标伪造成可操作引用。Home 的专用回执不改变其他 Runner 手势的动作后判稳。详见 [实现与验收](runner-app-lifecycle.md)。
+
+## 两种模式的录屏
+
+`record-start --duration 60` 与 `record-stop RECORDING_ID` 在两种模式中均使用自有原生媒体接收器和 Apple 视频写入框架。Runner 模式仅为显式录屏创建媒体连接，控制仍由 XCTest 执行；标准模式不会启动 Runner。开始/停止录屏会使旧观察失效，后续输入必须重新 observe。
+
+视频帧不是 observation，文件解码成功不确认动作效果。正常手动/定时停止会在媒体健康且接收完整时保留最后一帧到停止时间的显示时长，原 RTP 时间戳不变；保持区间明确记录，不能作为持续收到新画面的证明。方向变化结束当前片段，不承诺连续旋转录制。详见[共享录屏契约](runner-recording.md)与[时间轴修复](native-recording-timeline.md)。
