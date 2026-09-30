@@ -3,6 +3,33 @@ import Foundation
 // These two reads are independent. Both must finish successfully before the
 // screenshot (and both run again after it); neither result is cached.
 enum NativeCaptureChecks {
+    // A quiet owned stream cannot certify Apple's cached display transform.
+    // One UUID-scoped refresh is permitted; a second failure must not recurse.
+    static func withOrientationRecovery(capture: (_ afterRefresh: Bool) throws -> CapturedObservation,
+                                        resynchronize: () throws -> Bool) throws -> CapturedObservation {
+        do { return try capture(false) }
+        catch let error as IPhoneUseError where needsOrientationRecovery(error) {
+            do {
+                let geometryChanged = try resynchronize()
+                let frame = try capture(true)
+                var metadata = frame.metadata
+                // Quiet frames alone do not invalidate an otherwise identical
+                // reference. Input still compares source, geometry, pixels and
+                // deadline against its ORIGINAL observation after this capture.
+                let revalidated = error.code == "native_snapshot_freshness_unavailable" && !geometryChanged
+                metadata[revalidated ? "orientationRevalidated" : "orientationResynchronized"] = true
+                metadata["orientationResynchronizationReason"] = error.code
+                return CapturedObservation(nodes: frame.nodes, metadata: metadata, screenshot: frame.screenshot)
+            } catch {
+                throw IPhoneUseError("native_orientation_unverified",
+                    "Display could not be verified after one owned-media resynchronization; reconnect explicitly: \(error)")
+            }
+        }
+    }
+    static func needsOrientationRecovery(_ error: IPhoneUseError) -> Bool {
+        ["native_snapshot_geometry_unavailable", "native_snapshot_freshness_unavailable"].contains(error.code)
+    }
+
     private final class Results {
         let lock = NSLock()
         var replies: [String: Result<[String: Any], Error>] = [:]

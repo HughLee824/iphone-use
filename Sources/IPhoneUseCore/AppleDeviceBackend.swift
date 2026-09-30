@@ -264,31 +264,29 @@ final class AppleDeviceBackend: SessionBackend {
         guard controlErrorCode != "native_orientation_unverified" else {
             throw IPhoneUseError("native_orientation_unverified", controlError!)
         }
-        do { return try captureOnce(preferredSource: preferredSource) }
-        catch let error as IPhoneUseError where error.code == "native_snapshot_geometry_unavailable" {
-            guard let cli, let media else { throw error }
-            // A CLI screenshot can share the same stale Apple transform. Do
-            // not turn this conflict into a valid fallback observation.
-            if recording?.isActive == true { recording?.endSegment(reason: "orientation_unverified") }
-            try media.resynchronizeOrientation(mayReplace: hid?.state == .ready) {
-                let first = try NativeCaptureChecks.read { try cli.read($0) }.display
-                let second = try NativeCaptureChecks.read { try cli.read($0) }.display
-                guard first == second else { throw IPhoneUseError("capture_context_changed", "Display changed while resynchronizing orientation") }
-                return second
-            }
-            do {
-                let frame = try captureOnce(preferredSource: preferredSource)
-                var metadata = frame.metadata
-                metadata["orientationResynchronized"] = true
-                return CapturedObservation(nodes: frame.nodes, metadata: metadata, screenshot: frame.screenshot)
-            } catch {
-                controlErrorCode = "native_orientation_unverified"
-                controlError = "Display could not be verified after one owned-media resynchronization; reconnect explicitly"
-                throw error
-            }
+        do {
+            return try NativeCaptureChecks.withOrientationRecovery(capture: { afterRefresh in
+                try self.captureOnce(preferredSource: preferredSource, mediaTimeout: afterRefresh ? 1 : 0.15)
+            }, resynchronize: {
+                guard let cli = self.cli, let media = self.media else {
+                    throw IPhoneUseError("native_orientation_unverified", "Owned media is unavailable")
+                }
+                // A CLI screenshot can share the same stale Apple transform.
+                if self.recording?.isActive == true { self.recording?.endSegment(reason: "orientation_unverified") }
+                return try media.resynchronizeOrientation(mayReplace: self.hid?.state == .ready) {
+                    let first = try NativeCaptureChecks.read { try cli.read($0) }.display
+                    let second = try NativeCaptureChecks.read { try cli.read($0) }.display
+                    guard first == second else { throw IPhoneUseError("capture_context_changed", "Display changed while resynchronizing orientation") }
+                    return second
+                }
+            })
+        } catch let error as IPhoneUseError where error.code == "native_orientation_unverified" {
+            controlErrorCode = error.code
+            controlError = String(describing: error)
+            throw error
         }
     }
-    private func captureOnce(preferredSource: String?) throws -> CapturedObservation {
+    private func captureOnce(preferredSource: String?, mediaTimeout: Double) throws -> CapturedObservation {
         guard let cli else { throw IPhoneUseError("backend_unavailable", "Native backend not started") }
         let captured = try cli.capture(generation: generation, preferredSource: preferredSource, prepareDisplay: { display in
             try self.cancellation.check()
@@ -302,23 +300,20 @@ final class AppleDeviceBackend: SessionBackend {
             }
         }, mediaCapture: { display, requestedAt in
             try self.cancellation.check()
-            guard self.controlError == nil, let media = self.media,
-                  media.matchesDisplay(display), media.health()["healthy"] as? Bool == true,
-                  let receiver = media.recordingReceiver, receiver.snapshots != nil else {
+            guard self.controlError == nil else {
                 return (nil, ["fallbackReason": "owned_media_unavailable"])
             }
-            guard let frame = try receiver.snapshot(after: requestedAt, cancellation: self.cancellation) else {
+            guard let media = self.media,
+                  media.matchesDisplay(display), media.health()["healthy"] as? Bool == true,
+                  let receiver = media.recordingReceiver, receiver.snapshots != nil else {
+                throw IPhoneUseError("native_orientation_unverified", "Owned media cannot verify display geometry; reconnect explicitly")
+            }
+            let frame = try receiver.snapshot(after: requestedAt, timeout: mediaTimeout, cancellation: self.cancellation)
+            if frame == nil {
                 try receiver.snapshots?.rejectConflictingGeometry(display)
-                return (nil, ["fallbackReason": "no_fresh_complete_frame"])
             }
-            do {
-                _ = try NativeSnapshotImage.validateGeometry(frame, display: display)
-                return (nil, ["geometryValidated": true, "displayRotation": display.rotation])
-            } catch let error as IPhoneUseError where error.code == "native_snapshot_geometry_unavailable" {
-                throw error
-            } catch {
-                return (nil, ["fallbackReason": (error as? IPhoneUseError)?.code ?? "media_image_unavailable"])
-            }
+            _ = try NativeSnapshotImage.validateGeometry(frame, display: display)
+            return (nil, ["geometryValidated": true, "displayRotation": display.rotation])
         })
         var metadata = captured.metadata
         if controlError == nil, let health = media?.health() {

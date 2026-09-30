@@ -42,11 +42,14 @@ final class NativeDisplayMediaSession {
 
     // An active stream can leave Apple's display topology at the previous
     // orientation. Read again only AFTER a confirmed, UUID-scoped stop.
-    func resynchronizeOrientation(mayReplace: Bool, readDisplay: () throws -> NativeDisplay) throws {
+    // Returns whether any bound display geometry changed across the refresh.
+    @discardableResult
+    func resynchronizeOrientation(mayReplace: Bool, readDisplay: () throws -> NativeDisplay) throws -> Bool {
         guard !closed, failure == nil, mayReplace, let current = session,
               current.health()["healthy"] as? Bool == true else {
             throw IPhoneUseError("native_orientation_unverified", "Cannot resynchronize orientation while media or input is not ready")
         }
+        let previousGeometry = geometry
         do {
             let cleanup = current.close()
             lastOrientationRefreshCleanup = cleanup
@@ -58,6 +61,7 @@ final class NativeDisplayMediaSession {
             guard display.backlightOn else { throw IPhoneUseError("capture_unavailable", "Wake the display before resynchronizing") }
             try bind(display, mayReplace: true, forRecording: false)
             orientationRefreshCount += 1
+            return previousGeometry != geometry
         } catch {
             failure = String(describing: error)
             _ = session?.close()

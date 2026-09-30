@@ -82,6 +82,7 @@ enum NativeInputPreflight {
                     "captureAndCheckMs": (checkedAt - captureStarted) * 1000,
                     "captureSource": frame.metadata["captureSource"] ?? "unknown",
                     "captureTimingsMs": frame.metadata["captureTimingsMs"] ?? [:],
+                    "orientationRevalidated": frame.metadata["orientationRevalidated"] as? Bool ?? false,
                     "screenGuard": check.result, "inTime": inTime])
             if check.accepted && inTime { return (check, attempt) }
             if attempt == maximumCaptures || !inTime || check.screenChange > check.policy.maxScreenChange {

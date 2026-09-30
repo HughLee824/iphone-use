@@ -104,6 +104,8 @@
 
 这说明“Apple PNG + 重复一致的 display 元数据 + 旧媒体帧未发现冲突”不能证明当前方向正确。新鲜帧缺失时，缓存只能提供已知冲突的反证，不能证明无冲突；当前回退路径仍可能提供方向错误的观察。自有媒体刷新前后的对照支持方向状态滞后，但不证明 Apple 内部具体缓存机制，也不证明 `record-stop` 是原因。下一步应针对这条无新帧时的方向可信度缺口设计有界重新同步及旧引用拒绝，不能只更改 `captureSourcePolicy` 或扩大图像容差。
 
+后续进展：这条缺帧路径已补上有界同步，并完成宿主及 Probe 真机回归；静止画面的同几何重新确认与方向变化后的旧引用拒绝分开处理。实现及验收见[方向同步补强](native-rotation-synchronization.md#无新鲜媒体帧时的补强2026-09-30-至-10-01)。媒体截图优先仍未启用。
+
 结束时已目视确认 Probe 恢复竖屏。本次 disconnect 正常返回，自有 UUID 停止、接收器/连接关闭、隧道释放和 shutdown 均确认；独立检查宿主 PID 不存在、socket 和观察目录已移除。没有 stopAll。首个进入 Rotation 的点击因画面保护拒绝且未发送，查看附带新图后才重新选择；未放宽保护。
 
 私有证据目录为 `.local/research/media-vra-rotation-20261001/`（目录名不代表执行日期），包含诊断源副本、构建日志、配对 PNG、左右 MP4、抽帧实际时间、动作/状态 JSON、退出事实和哈希清单。关键复现为 `right-snapshot.json`、`corner-c-snapshot.json`、`renewed-snapshot.json`、`restore.png` 与 `restored.png`。本轮只补充验证报告，未修改产品代码；未重跑无关宿主测试，未发布或推送。

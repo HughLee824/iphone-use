@@ -194,12 +194,12 @@ final class NativeRTPReceiver: NativeMediaReceiver {
     }
     // The handler must only enqueue bounded work; it runs on the RTP/RTCP queue.
     func setVideoHandler(_ handler: ((Data) -> Void)?) { queue.sync { videoHandler = handler } }
-    func snapshot(after requestedAt: Double, cancellation: NativeCancellation) throws -> NativeVideoSnapshot.Frame? {
+    func snapshot(after requestedAt: Double, timeout: Double = 0.15, cancellation: NativeCancellation) throws -> NativeVideoSnapshot.Frame? {
         guard let snapshots else { return nil }
         // Exclude datagrams already waiting in the socket as well as packets in
         // the decoder queue. A host receive time is not a device capture clock.
         let barrier = queue.sync { drain(); return now() }
-        return try snapshots.frame(after: max(requestedAt, barrier), cancellation: cancellation)
+        return try snapshots.frame(after: max(requestedAt, barrier), timeout: timeout, cancellation: cancellation)
     }
     func recordingConfiguration() -> [String: Any] {
         queue.sync {

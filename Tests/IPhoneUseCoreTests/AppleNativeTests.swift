@@ -882,17 +882,19 @@ final class AppleNativeTests: XCTestCase {
         })
         try binding.ensureDisplay(boundDisplay("rot90"), mayReplace: true)
         let old = binding.health()["mediaSessionID"] as? String
-        try binding.resynchronizeOrientation(mayReplace: true) {
+        let geometryChanged = try binding.resynchronizeOrientation(mayReplace: true) {
             XCTAssertEqual(receivers.map(\.closes), [1])
             let features = transport.requests.compactMap { $0["CoreDevice.featureIdentifier"] as? String }
             XCTAssertTrue(features.contains { $0.hasSuffix("stopmediastream") })
             XCTAssertEqual(features.filter { $0.hasSuffix("startmediastream") }.count, 1)
             return try self.boundDisplay("rot270")
         }
+        XCTAssertTrue(geometryChanged)
         XCTAssertEqual(rotations, ["rot90", "rot270"])
         XCTAssertNotEqual(binding.health()["mediaSessionID"] as? String, old)
         XCTAssertEqual(binding.health()["orientationRefreshCount"] as? Int, 1)
         XCTAssertEqual(binding.health()["boundDisplayRotation"] as? String, "rot270")
+        XCTAssertFalse(try binding.resynchronizeOrientation(mayReplace: true) { try self.boundDisplay("rot270") })
         XCTAssertEqual(binding.close()["mediaStopAcknowledged"] as? Bool, true)
     }
 

@@ -286,7 +286,10 @@ final class NativeSnapshotDecoder {
 enum NativeSnapshotImage {
     private static let context = CIContext(options: [.cacheIntermediates: false])
 
-    static func validateGeometry(_ frame: NativeVideoSnapshot.Frame, display: NativeDisplay) throws -> (width: Int, height: Int) {
+    static func validateGeometry(_ frame: NativeVideoSnapshot.Frame?, display: NativeDisplay) throws -> (width: Int, height: Int) {
+        guard let frame else {
+            throw IPhoneUseError("native_snapshot_freshness_unavailable", "No fresh complete media frame to verify display geometry")
+        }
         guard display.nativeRotation == "rot0", NativeVideoOrientation(rawValue: display.rotation) != nil else {
             throw IPhoneUseError("native_snapshot_geometry_unavailable", "Unverified media orientation")
         }
