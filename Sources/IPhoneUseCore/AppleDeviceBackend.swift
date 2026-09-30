@@ -43,10 +43,8 @@ final class AppleDeviceCLI {
     let device: String
     let cancellation: NativeCancellation
     private let reader: (([String]) throws -> [String: Any])?
-    // Media produced corrupt pixels with no decoder error during Notes validation.
-    // Keep every observation on Apple PNG until media correctness is established.
     var captureSourcePolicy: [String: Any] {
-        ["strategy": "coredevice_only", "fallbackReason": "media_snapshot_validation_pending"]
+        ["strategy": "media_first", "fallback": "coredevice_screenshot"]
     }
     init(device: String, cancellation: NativeCancellation, reader: (([String]) throws -> [String: Any])? = nil) {
         self.device = device; self.cancellation = cancellation; self.reader = reader
@@ -76,31 +74,48 @@ final class AppleDeviceCLI {
         defer { try? FileManager.default.removeItem(at: directory) }
         let destination = directory.appendingPathComponent("screen.png")
         let requestedAt = ProcessInfo.processInfo.systemUptime
-        // Retain media geometry checks and orientation resynchronization. Neither
-        // fresh media nor a caller's preferred source may bypass this quarantine.
+        // The media callback must verify orientation even when preflight pins
+        // Apple pixels. Geometry/freshness failures must propagate, not fallback.
         let media = try timed("mediaSnapshot") { try mediaCapture?(before, requestedAt) }
-        _ = try timed("screenshot") { try read(["device", "capture", "screenshot", "--destination", destination.path]) }
-        let png = try Data(contentsOf: destination)
+        func validate(_ png: Data, media: Bool = false) throws -> FrameFingerprint {
+            let fingerprint = try FrameFingerprint(png: png)
+            guard fingerprint.width == Int(before.pixelWidth), fingerprint.height == Int(before.pixelHeight) else {
+                throw IPhoneUseError(media ? "native_snapshot_geometry_unavailable" : "invalid_image", "Screenshot dimensions disagree with the current display")
+            }
+            let image = try ScreenImage(png: png)
+            let samples = try image.rgb(rect: before.screen, screen: before.screen, columns: 32, rows: 64)
+            guard samples.contains(where: { $0 > 8 }) else { throw IPhoneUseError("capture_unavailable", "Screenshot is black or unavailable") }
+            return fingerprint
+        }
+        var mediaFacts = media?.1 ?? ["fallbackReason": "owned_media_unavailable"]
+        var selected: (png: Data, fingerprint: FrameFingerprint)?
+        if preferredSource == "coredevice_screenshot" {
+            mediaFacts["fallbackReason"] = "source_pinned"
+        } else if let png = media?.0 {
+            do { selected = (png, try timed("mediaImageValidation") { try validate(png, media: true) }) }
+            catch let error as IPhoneUseError where error.code == "native_snapshot_geometry_unavailable" { throw error }
+            catch { mediaFacts["fallbackReason"] = "media_image_invalid" }
+        }
+        let source: String
+        if selected != nil { source = "native_media" }
+        else {
+            source = "coredevice_screenshot"
+            if mediaFacts["fallbackReason"] == nil { mediaFacts["fallbackReason"] = "media_image_unavailable" }
+            _ = try timed("screenshot") { try read(["device", "capture", "screenshot", "--destination", destination.path]) }
+            let png = try Data(contentsOf: destination)
+            selected = (png, try timed("appleImageValidation") { try validate(png) })
+        }
         let final = try timed("checksAfter") { try NativeCaptureChecks.read { try self.read($0) } }
         let after = final.display
         for (key, value) in final.timings { timings[key + "After"] = value }
         try cancellation.check()
         guard before == after, after.backlightOn else { throw IPhoneUseError("capture_context_changed", "Display changed during screenshot acquisition") }
-        let imageStarted = ProcessInfo.processInfo.systemUptime
-        let fingerprint = try FrameFingerprint(png: png)
-        guard fingerprint.width == Int(after.pixelWidth), fingerprint.height == Int(after.pixelHeight) else {
-            throw IPhoneUseError("invalid_image", "Screenshot dimensions disagree with the current display")
-        }
-        let image = try ScreenImage(png: png)
-        let samples = try image.rgb(rect: after.screen, screen: after.screen, columns: 32, rows: 64)
-        guard samples.contains(where: { $0 > 8 }) else { throw IPhoneUseError("capture_unavailable", "Screenshot is black or unavailable") }
-        timings["imageValidation"] = (ProcessInfo.processInfo.systemUptime - imageStarted) * 1000
+        let (png, fingerprint) = selected!
         timings["total"] = (ProcessInfo.processInfo.systemUptime - monotonic) * 1000
         return CapturedObservation(nodes: [], metadata: [
-            "captureSource": "coredevice_screenshot",
+            "captureSource": source,
             "captureSourcePolicy": captureSourcePolicy,
-            "captureTimingsMs": timings, "mediaSnapshot": ["fallbackReason": "media_snapshot_validation_pending",
-                "geometryCheck": media?.1 ?? [:]],
+            "captureTimingsMs": timings, "mediaSnapshot": mediaFacts,
             "backend": "apple-native", "deviceID": device, "sessionGeneration": generation,
             "captureID": UUID().uuidString, "captureStartedAt": started, "captureCompletedAt": Date().timeIntervalSince1970,
             "captureStartedUptime": monotonic, "screenshotCapturedAt": Date().timeIntervalSince1970,
@@ -313,7 +328,17 @@ final class AppleDeviceBackend: SessionBackend {
                 try receiver.snapshots?.rejectConflictingGeometry(display)
             }
             _ = try NativeSnapshotImage.validateGeometry(frame, display: display)
-            return (nil, ["geometryValidated": true, "displayRotation": display.rotation])
+            var facts: [String: Any] = ["geometryValidated": true, "displayRotation": display.rotation]
+            if preferredSource == "coredevice_screenshot" { return (nil, facts) }
+            do {
+                let (png, imageFacts) = try NativeSnapshotImage.png(frame!, display: display)
+                facts.merge(imageFacts) { _, value in value }
+                return (png, facts)
+            } catch let error as IPhoneUseError where NativeCaptureChecks.needsOrientationRecovery(error) { throw error }
+            catch {
+                facts["fallbackReason"] = "media_image_unavailable"
+                return (nil, facts)
+            }
         })
         var metadata = captured.metadata
         if controlError == nil, let health = media?.health() {

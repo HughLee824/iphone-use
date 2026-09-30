@@ -1,5 +1,7 @@
 # Apple VRA 解码与录屏修复
 
+**后续更新（2026-10-01）：** 已在 VRA 解码与缺帧方向同步修复基础上恢复标准模式媒体截图优先，见[当前实现与验收](native-media-first-acceptance.md)。本文各轮记录保留当时状态。
+
 2026-09-30，本地实现，未发布或推送。接续[残影根因调查](native-media-residual-investigation.md)。适用证据仍限定在 macOS 27.0（26A428）、Xcode 27.0（27A266a）及已保存的 iOS 27 DisplayService 故障流。
 
 ## 行为变化
