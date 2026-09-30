@@ -81,4 +81,25 @@ final class NativeSnapshotContinuityTests: XCTestCase {
         XCTAssertEqual(stream.status()["timestampRejections"] as? Int, 0)
         XCTAssertEqual(resets, 0)
     }
+    func testWithheldPictureClearsOldPixelsAndStillAdvancesTimestamp() throws {
+        let pixel = try pixels()
+        var video: [UInt32] = []
+        let stream = NativeVideoSnapshot(decode: { unit in
+            video.append(unit.timestamp)
+            return unit.timestamp == 2 ? nil : pixel
+        }, resetDecoder: {})
+        defer { stream.close() }
+        let start = ProcessInfo.processInfo.systemUptime
+        stream.receive(packet(1, timestamp: 1), at: start)
+        XCTAssertNotNil(try stream.frame(after: start, timeout: 0.4, cancellation: NativeCancellation()))
+        idle(stream)
+        stream.receive(packet(2, timestamp: 2, type: 1), at: ProcessInfo.processInfo.systemUptime)
+        idle(stream)
+        XCTAssertNil(try stream.frame(after: start, timeout: 0, cancellation: NativeCancellation()))
+        stream.receive(packet(3, timestamp: 2, type: 1), at: ProcessInfo.processInfo.systemUptime)
+        idle(stream)
+        XCTAssertEqual(video, [1, 2], "A withheld picture is still part of the reference timeline")
+        XCTAssertEqual(stream.status()["timestampRejections"] as? Int, 1)
+    }
+
 }

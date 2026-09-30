@@ -89,9 +89,9 @@ final class NativeRTPReceiver: NativeMediaReceiver {
     let snapshots: NativeVideoSnapshot?
     private var snapshotFormatSupported = false
 
-    init(deviceAddress: String, captureSnapshots: Bool = false, now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) throws {
+    init(deviceAddress: String, captureSnapshots: Bool = false, makeSnapshots: () -> NativeVideoSnapshot = { NativeVideoSnapshot() }, now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) throws {
         self.now = now
-        snapshots = captureSnapshots ? NativeVideoSnapshot() : nil
+        snapshots = captureSnapshots ? makeSnapshots() : nil
         var destination = sockaddr_in6()
         destination.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
         destination.sin6_family = sa_family_t(AF_INET6)

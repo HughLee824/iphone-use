@@ -30,12 +30,13 @@ final class NativeStreamRecording {
         var firstFrameAt: Double?
         var startupDroppedUnits = 0
         var failure: Error?
-        init(root: URL, duration: Double, receiver: NativeRecordingSource, mediaID: String, orientation: NativeVideoOrientation, configuration: [String: Any], clock: Int32, started: Double) {
+        init(root: URL, duration: Double, receiver: NativeRecordingSource, mediaID: String, orientation: NativeVideoOrientation, configuration: [String: Any], clock: Int32, started: Double,
+             makeWriter: (URL, Int32, NativeVideoOrientation) -> NativeVideoWriter) {
             self.duration = duration; self.receiver = receiver; self.mediaID = mediaID
             self.started = started
             self.configuration = configuration; self.rotation = orientation.rawValue
             directory = root.appendingPathComponent(id)
-            writer = NativeVideoWriter(url: directory.appendingPathComponent("screen.mp4"), timescale: clock, orientation: orientation)
+            writer = makeWriter(directory.appendingPathComponent("screen.mp4"), clock, orientation)
         }
     }
     private let queue = DispatchQueue(label: "iphone-use.native.recording.stream")
@@ -48,7 +49,11 @@ final class NativeStreamRecording {
     private var current: Job?
     private var jobs: [String: Job] = [:]
     private var closed = false
-    init(root: URL, now: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime }) { self.root = root; self.now = now }
+    private let makeWriter: (URL, Int32, NativeVideoOrientation) -> NativeVideoWriter
+    init(root: URL, now: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime },
+         makeWriter: @escaping (URL, Int32, NativeVideoOrientation) -> NativeVideoWriter = { NativeVideoWriter(url: $0, timescale: $1, orientation: $2) }) {
+        self.root = root; self.now = now; self.makeWriter = makeWriter
+    }
 
     static func supports(_ config: [String: Any]) -> Bool {
         config["RxPayloadType"] as? Int == 100 && config["TilesPerFrame"] as? Int == 1
@@ -69,7 +74,7 @@ final class NativeStreamRecording {
             guard Self.supports(config), let clock = config["RTPClockRate"] as? Int32 else {
                 throw IPhoneUseError("native_recording_format_unavailable", "Need the observed single-layer HEVC payload and a clock confirmed by sender reports")
             }
-            let job = Job(root: root, duration: duration, receiver: receiver, mediaID: mediaID, orientation: orientation, configuration: config, clock: clock, started: now())
+            let job = Job(root: root, duration: duration, receiver: receiver, mediaID: mediaID, orientation: orientation, configuration: config, clock: clock, started: now(), makeWriter: makeWriter)
             try SessionPaths.secureDirectory(root); try SessionPaths.secureDirectory(job.directory)
             jobs[job.id] = job; current = job
             pendingLock.lock(); overflow = false; pendingLock.unlock()
@@ -156,7 +161,11 @@ final class NativeStreamRecording {
                 "method": "native_rtp", "codec": "hevc", "path": job.directory.appendingPathComponent("screen.mp4").path,
                 "requestedDurationSeconds": job.duration, "startedAt": job.startedAt, "mediaSessionID": job.mediaID,
                 "displayRotation": job.rotation, "rtpClockRate": job.writer.timescale, "clockSource": "rtcp_sender_reports",
-                "rtpPackets": job.packets, "writtenFrames": job.writer.frames, "droppedAccessUnits": job.parser.droppedUnits,
+                "rtpPackets": job.packets, "writtenFrames": job.writer.frames,
+                "encoding": "apple_vra_decode_then_hevc_encode",
+                "withheldResolutionFrames": job.writer.withheldResolutionFrames,
+                "reducedResolutionPolicy": "decode_references_hold_previous_presented_frame",
+                "droppedAccessUnits": job.parser.droppedUnits,
                 "discontinuities": job.parser.discontinuities, "malformedPackets": job.parser.malformedPackets,
                 "startupDroppedAccessUnits": job.startupDroppedUnits,
                 "fileValidated": false, "processStarted": false]
@@ -204,12 +213,18 @@ final class NativeStreamRecording {
             result["writtenFrames"] = job.writer.frames
             let video = try NativeRecordingValidation.inspect(job.directory.appendingPathComponent("screen.mp4"))
             result["video"] = video
+            guard video["decodedFrames"] as? Int == job.writer.frames else {
+                throw IPhoneUseError("recording_incomplete", "Encoded frame count differs from admitted images")
+            }
             if let failure = job.failure { throw failure }
             guard intact else {
                 throw IPhoneUseError("recording_incomplete", "Video contains a recovered RTP interruption; preserved segment is not a complete recording")
             }
             result["state"] = "completed"; result["fileValidated"] = true
             result["verification"] = "Inspect the video to verify the intended app and action; file completion is not action confirmation."
+            if job.writer.withheldResolutionFrames > 0 {
+                result["verification"] = "Reduced-resolution pictures were decoded for reference continuity but omitted from presentation; inspect withheldResolutionFrames and the video. File completion is not action confirmation."
+            }
         } catch {
             let error = job.failure ?? error
             job.writer.cancel(); result["state"] = "failed"; result["fileValidated"] = false

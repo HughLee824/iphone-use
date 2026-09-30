@@ -27,6 +27,17 @@ private final class RecordingTestClock {
 }
 
 final class NativeRecordingTests: XCTestCase {
+    // Generic HEVC fixtures test recording timing/ownership and transport. They
+    // do not pretend to exercise Apple's private VRA codec profile. The actual
+    // VRA decoder is separately verified using the private recorded fault stream.
+    private func fixtureWriter(url: URL, timescale: Int32, orientation: NativeVideoOrientation = .portrait) -> NativeVideoWriter {
+        let decoder = FixtureHEVCDecoder()
+        return NativeVideoWriter(url: url, timescale: timescale, orientation: orientation, decode: { try decoder.decode($0) })
+    }
+    private func fixtureRecorder(root: URL, now: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime }) -> NativeStreamRecording {
+        NativeStreamRecording(root: root, now: now, makeWriter: { self.fixtureWriter(url: $0, timescale: $1, orientation: $2) })
+    }
+
     func testReceiverFeedsSnapshotAndRecordingIndependently() throws {
         let units = try fixture(root()), sender = socket(AF_INET6, SOCK_DGRAM, 0)
         XCTAssertGreaterThanOrEqual(sender, 0)
@@ -42,7 +53,10 @@ final class NativeRecordingTests: XCTestCase {
         XCTAssertEqual(withUnsafeMutablePointer(to: &endpoint) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
             getsockname(sender, $0, &length)
         } }, 0)
-        let receiver = try NativeRTPReceiver(deviceAddress: "::1", captureSnapshots: true)
+        let receiverDecoder = FixtureHEVCDecoder()
+        let receiver = try NativeRTPReceiver(deviceAddress: "::1", captureSnapshots: true, makeSnapshots: {
+            NativeVideoSnapshot(decode: { try receiverDecoder.decode($0) }, resetDecoder: { receiverDecoder.resetReferences() })
+        })
         defer { receiver.close() }
         try receiver.configure(["SourcePort": UInt16(bigEndian: endpoint.sin6_port), "LocalSSRC": 123, "RemoteSSRC": 456,
             "RTCPEnabled": true, "RTCPSendInterval": 1.0, "SRTPCipherSuite": 0, "RxPayloadType": 100, "TilesPerFrame": 1])
@@ -83,10 +97,10 @@ final class NativeRecordingTests: XCTestCase {
         XCTAssertEqual(snapshots.status()["closed"] as? Bool, true)
         receiver.setVideoHandler(nil)
     }
-    func testSnapshotDecoderReadsRealHEVCWithoutChangingRecordingOutput() throws {
+    func testGenericHEVCFixtureAndPortableRecording() throws {
         let dir = try root(), units = try fixture(dir)
-        let writer = NativeVideoWriter(url: dir.appendingPathComponent("with-snapshots.mp4"), timescale: 24000)
-        let decoder = NativeSnapshotDecoder()
+        let writer = fixtureWriter(url: dir.appendingPathComponent("with-snapshots.mp4"), timescale: 24000)
+        let decoder = FixtureHEVCDecoder()
         for unit in units {
             let pixels = try XCTUnwrap(decoder.decode(unit))
             XCTAssertEqual(CVPixelBufferGetWidth(pixels), 64)
@@ -97,9 +111,40 @@ final class NativeRecordingTests: XCTestCase {
         let result = try NativeRecordingValidation.inspect(dir.appendingPathComponent("with-snapshots.mp4"))
         XCTAssertEqual(result["decodedFrames"] as? Int, units.count)
         XCTAssertEqual(result["durationSeconds"] as! Double, 1.916666, accuracy: 0.001)
-        let cold = NativeSnapshotDecoder()
+        let cold = FixtureHEVCDecoder()
         XCTAssertNil(try cold.decode(units[1]))
     }
+    func testWithheldPresentationKeepsTimelineAndRejectsDuplicateDecodedTimestamp() throws {
+        let dir = try root(), units = try fixture(dir), decoder = FixtureHEVCDecoder()
+        let url = dir.appendingPathComponent("withheld.mp4")
+        let writer = NativeVideoWriter(url: url, timescale: 24000, decode: { unit in
+            let pixels = try decoder.decode(unit)
+            return unit.timestamp == 24000 ? nil : pixels
+        })
+        for unit in units { try writer.append(unit) }
+        try writer.finish()
+        let facts = try NativeRecordingValidation.inspect(url)
+        XCTAssertEqual(facts["decodedFrames"] as? Int, 19)
+        XCTAssertEqual(facts["durationSeconds"] as! Double, 1.916666, accuracy: 0.001)
+        let asset = AVURLAsset(url: url)
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: asset.tracks(withMediaType: .video)[0], outputSettings: nil)
+        reader.add(output); XCTAssertTrue(reader.startReading())
+        var times: [Double] = []
+        while let sample = output.copyNextSampleBuffer() {
+            if CMSampleBufferGetNumSamples(sample) == 0 { continue }
+            times.append(CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sample)))
+            if abs(times.last! - 0.9) < 0.001 {
+                XCTAssertEqual(CMTimeGetSeconds(CMSampleBufferGetDuration(sample)), 0.2, accuracy: 0.001)
+            }
+        }
+        XCTAssertEqual(times.count, 19); XCTAssertFalse(times.contains { abs($0 - 1) < 0.001 })
+        XCTAssertTrue(times.contains { abs($0 - 1.1) < 0.001 })
+        let withheld = NativeVideoWriter(url: dir.appendingPathComponent("not-created.mp4"), timescale: 24000, decode: { _ in nil })
+        try withheld.append(units[0])
+        XCTAssertThrowsError(try withheld.append(units[0]))
+    }
+
     func testCapabilityAndDurationFailClosed() throws {
         XCTAssertFalse(NativeRecordingOptions.supported(by: [:]))
         XCTAssertTrue(NativeRecordingOptions.supported(by: ["capabilities": [["featureIdentifier": "com.apple.coredevice.feature.screenrecording"]]]))
@@ -188,7 +233,7 @@ final class NativeRecordingTests: XCTestCase {
     }
     func testFinalHoldPreservesRTPGapsWrapAndAllOriginalSamples() throws {
         let dir = try root(), units = try fixture(dir), url = dir.appendingPathComponent("held.mp4")
-        let writer = NativeVideoWriter(url: url, timescale: 24000, orientation: .right)
+        let writer = fixtureWriter(url: url, timescale: 24000, orientation: .right)
         var expected: [Double] = []
         for (index, unit) in units.enumerated() {
             let ticks = unit.timestamp + (index >= 10 ? 120000 : 0)
@@ -230,9 +275,11 @@ final class NativeRecordingTests: XCTestCase {
         let dir = try root(), units = try fixture(dir)
         for automatic in [false, true] {
             let source = RecordingSource(), clock = RecordingTestClock()
-            let recorder = NativeStreamRecording(root: dir.appendingPathComponent("normal-\(automatic)"), now: clock.now)
+            let recorder = fixtureRecorder(root: dir.appendingPathComponent("normal-\(automatic)"), now: clock.now)
             defer { _ = recorder.close() }
-            let start = try recorder.start(duration: 6, receiver: source, mediaID: "owned", rotation: "rot0")
+            // Manual stop must precede the deadline; at exactly 6 seconds the
+            // timer is legitimately allowed to win the race with stop().
+            let start = try recorder.start(duration: automatic ? 6 : 30, receiver: source, mediaID: "owned", rotation: "rot0")
             packets(units, to: source) { clock.set(101 + Double($0.timestamp) / 24000) }
             _ = recorder.status() // Drain all admitted packets before stopping the test clock.
             clock.set(106)
@@ -261,7 +308,7 @@ final class NativeRecordingTests: XCTestCase {
         let dir = try root(), units = try fixture(dir)
         for cause in ["media_lost", "packet_loss", "queue_overflow", "display_changed", "session_closed"] {
             let source = RecordingSource(), clock = RecordingTestClock()
-            let recorder = NativeStreamRecording(root: dir.appendingPathComponent(cause), now: clock.now)
+            let recorder = fixtureRecorder(root: dir.appendingPathComponent(cause), now: clock.now)
             defer { _ = recorder.close() }
             let start = try recorder.start(duration: 30, receiver: source, mediaID: "owned", rotation: "rot0")
             packets(units, to: source, omitMarkerAt: cause == "packet_loss" ? units[1].timestamp : nil) {
@@ -283,9 +330,9 @@ final class NativeRecordingTests: XCTestCase {
             XCTAssertFalse(source.attached)
         }
     }
-    func testHEVCMuxKeepsSyncIndexAndSupportsRandomSeek() throws {
+    func testReencodedHEVCHasSyncIndexAndSupportsRandomSeek() throws {
         let dir = try root(), units = try fixture(dir), url = dir.appendingPathComponent("remux.mp4")
-        let writer = NativeVideoWriter(url: url, timescale: 24000)
+        let writer = fixtureWriter(url: url, timescale: 24000)
         for unit in units { try writer.append(unit) }
         try writer.finish()
         let result = try NativeRecordingValidation.inspect(url)
@@ -300,7 +347,7 @@ final class NativeRecordingTests: XCTestCase {
             if CMSampleBufferGetNumSamples(sample) == 0 { continue }
             let attachments = try XCTUnwrap(CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false) as? [[String: Any]])
             let notSync = attachments.first?[kCMSampleAttachmentKey_NotSync as String] as? Bool ?? false
-            XCTAssertEqual(notSync, !units[index].keyframe, "sample \(index)")
+            if index == 0 { XCTAssertFalse(notSync, "First encoded frame must be independently decodable") }
             index += 1
         }
         let generator = AVAssetImageGenerator(asset: asset)
@@ -315,7 +362,7 @@ final class NativeRecordingTests: XCTestCase {
         let dir = try root(), units = try fixture(dir)
         for orientation in [NativeVideoOrientation.left, .right] {
             let url = dir.appendingPathComponent("\(orientation.rawValue).mp4")
-            let writer = NativeVideoWriter(url: url, timescale: 24000, orientation: orientation)
+            let writer = fixtureWriter(url: url, timescale: 24000, orientation: orientation)
             for unit in units { try writer.append(unit) }
             try writer.finish()
             let facts = try NativeRecordingValidation.inspect(url)
@@ -336,7 +383,7 @@ final class NativeRecordingTests: XCTestCase {
             let image = try generator.copyCGImage(at: CMTime(value: 1, timescale: 1), actualTime: nil)
             XCTAssertEqual(image.width, 96); XCTAssertEqual(image.height, 64)
         }
-        let source = RecordingSource(), recorder = NativeStreamRecording(root: dir.appendingPathComponent("unsupported"))
+        let source = RecordingSource(), recorder = fixtureRecorder(root: dir.appendingPathComponent("unsupported"))
         defer { _ = recorder.close() }
         XCTAssertThrowsError(try recorder.start(duration: 3, receiver: source, mediaID: "owned", rotation: "rot180"))
         XCTAssertFalse(source.attached)
@@ -344,7 +391,7 @@ final class NativeRecordingTests: XCTestCase {
 
     func testOwnedStopCannotStopNewRecordingAndCloseDetachesSink() throws {
         let dir = try root(), units = try fixture(dir), source = RecordingSource()
-        let recorder = NativeStreamRecording(root: dir.appendingPathComponent("owned"))
+        let recorder = fixtureRecorder(root: dir.appendingPathComponent("owned"))
         defer { _ = recorder.close() }
         let first = try recorder.start(duration: 30, receiver: source, mediaID: "owned", rotation: "rot0")
         XCTAssertTrue(source.attached); XCTAssertGreaterThan(source.keyframeRequests, 0)
@@ -373,7 +420,7 @@ final class NativeRecordingTests: XCTestCase {
     }
     func testMissingEndOfFramePreservesPartialFileButCannotClaimCompletion() throws {
         let dir = try root(), units = try fixture(dir), source = RecordingSource()
-        let recorder = NativeStreamRecording(root: dir.appendingPathComponent("loss"))
+        let recorder = fixtureRecorder(root: dir.appendingPathComponent("loss"))
         defer { _ = recorder.close() }
         let start = try recorder.start(duration: 30, receiver: source, mediaID: "owned", rotation: "rot0")
         packets(units, to: source, omitMarkerAt: units[1].timestamp)
@@ -384,7 +431,7 @@ final class NativeRecordingTests: XCTestCase {
         XCTAssertFalse(source.attached)
     }
     func testNoKeyframeNeverClaimsCompletedMovieAndClockIsRequired() throws {
-        let source = RecordingSource(), recorder = NativeStreamRecording(root: try root())
+        let source = RecordingSource(), recorder = fixtureRecorder(root: try root())
         defer { _ = recorder.close() }
         source.configuration["RTPClockRate"] = nil
         XCTAssertThrowsError(try recorder.start(duration: 1, receiver: source, mediaID: "owned", rotation: "rot0"))

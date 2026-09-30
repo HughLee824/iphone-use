@@ -5,7 +5,7 @@ import ImageIO
 import UniformTypeIdentifiers
 
 // Decoder work never runs on the media socket queue. Recording retains its own
-// handler and compressed passthrough; snapshots do not start or stop a stream.
+// handler and decoder; snapshots do not start or stop a stream.
 final class NativeVideoSnapshot {
     struct Frame {
         let pixels: CVPixelBuffer
@@ -89,8 +89,15 @@ final class NativeVideoSnapshot {
                     // can silently corrupt later output even when VT returns noErr.
                     throw IPhoneUseError("native_snapshot_timestamp_invalid", "Non-increasing video timestamp; require a fresh keyframe")
                 }
-                guard let pixels = try decode(unit) else { return }
-                lastTimestamp = unit.timestamp
+                let video = unit.nals.contains(where: { ($0[0] >> 1) & 63 <= 31 })
+                let pixels = try decode(unit)
+                if video { lastTimestamp = unit.timestamp }
+                guard let pixels else {
+                    // A decoded reduced-resolution picture updates references,
+                    // but must also invalidate a previously cached observation.
+                    if video { condition.lock(); latest = nil; condition.broadcast(); condition.unlock() }
+                    return
+                }
                 let frame = Frame(pixels: pixels, firstPacketAt: unitStarted,
                                   completedAt: ProcessInfo.processInfo.systemUptime, timestamp: unit.timestamp)
                 condition.lock()
@@ -151,8 +158,19 @@ final class NativeSnapshotDecoder {
     private var parameterSets: [Int: Data] = [:]
     private var format: CMVideoFormatDescription?
     private var session: VTDecompressionSession?
+    private var nativeDimensions: (Int, Int)?
+    private(set) var withheldResolutionFrames = 0
+    private static let context = CIContext(options: [.cacheIntermediates: false])
 
     func decode(_ unit: NativeVideoAccessUnit) throws -> CVPixelBuffer? {
+        // No reference chain survives a failed metadata/configuration/decode step.
+        do { return try decodeFrame(unit) }
+        catch { invalidate(); throw error }
+    }
+
+    private func decodeFrame(_ unit: NativeVideoAccessUnit) throws -> CVPixelBuffer? {
+        guard #available(macOS 15.0, *) else { throw invalid("VRA decoding requires macOS 15 or later", -1) }
+        guard unit.nals.allSatisfy({ $0.count >= 2 }) else { throw invalid("Truncated NAL", -1) }
         var changed = false
         for nal in unit.nals {
             let type = Int((nal[0] >> 1) & 63)
@@ -164,6 +182,7 @@ final class NativeSnapshotDecoder {
         if changed { invalidate() }
         let nals = unit.nals.filter { ![32, 33, 34].contains(Int(($0[0] >> 1) & 63)) }
         guard nals.contains(where: { ($0[0] >> 1) & 63 <= 31 }) else { return nil }
+        let metadata = try NativeVideoFrameMetadata(nals: nals)
         if session == nil {
             guard unit.keyframe, let vps = parameterSets[32], let sps = parameterSets[33], let pps = parameterSets[34] else { return nil }
             let status = vps.withUnsafeBytes { v in sps.withUnsafeBytes { s in pps.withUnsafeBytes { p in
@@ -178,12 +197,32 @@ final class NativeSnapshotDecoder {
                 throw invalid("Unsupported decoded dimensions", -1)
             }
             let statusCreate = VTDecompressionSessionCreate(allocator: kCFAllocatorDefault, formatDescription: format,
-                decoderSpecification: nil,
-                imageBufferAttributes: [kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA] as CFDictionary,
+                decoderSpecification: [kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder: true] as CFDictionary,
+                imageBufferAttributes: [kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange] as CFDictionary,
                 outputCallback: nil, decompressionSessionOut: &session)
-            guard statusCreate == noErr else { throw invalid("HEVC decoder", statusCreate) }
+            guard statusCreate == noErr, let session else { throw invalid("HEVC decoder", statusCreate) }
+            // Private Apple values verified by same-stream positive/negative
+            // controls. Never fall back to ordinary HEVC on unsupported hosts.
+            for (key, value): (String, CFTypeRef) in [
+                ("DecoderUsage", NSNumber(value: 1)),
+                ("VideoResolutionAdaptationType", NSNumber(value: 3)),
+                ("NegotiationDetails", "RVRA1:0" as CFString)
+            ] {
+                let status = VTSessionSetProperty(session, key: key as CFString, value: value)
+                guard status == noErr else { throw invalid(key, status) }
+            }
+            var hardware: CFTypeRef?
+            let statusHardware = VTSessionCopyProperty(session, key: kVTDecompressionPropertyKey_UsingHardwareAcceleratedVideoDecoder,
+                allocator: nil, valueOut: &hardware)
+            guard statusHardware == noErr, hardware as? Bool == true else { throw invalid("Hardware decoder unavailable", statusHardware) }
         }
         guard let session, let format else { return nil }
+        let canvas = CMVideoFormatDescriptionGetDimensions(format)
+        try metadata.validate(canvas: canvas)
+        if let nativeDimensions, nativeDimensions != (metadata.nativeWidth, metadata.nativeHeight) {
+            throw invalid("Native rectangle changed within a reference chain", -1)
+        }
+        nativeDimensions = (metadata.nativeWidth, metadata.nativeHeight)
         var bytes = Data()
         for nal in nals {
             var length = UInt32(nal.count).bigEndian
@@ -201,7 +240,9 @@ final class NativeSnapshotDecoder {
             sampleTimingEntryCount: 1, sampleTimingArray: &timing, sampleSizeEntryCount: 1, sampleSizeArray: &size, sampleBufferOut: &sample)
         guard status == noErr, let sample else { throw invalid("Video sample", status) }
         let result = Output()
-        status = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample, flags: [], infoFlagsOut: nil) { code, flags, image, _, _ in
+        status = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample, flags: [],
+            frameOptions: ["ActiveVideoResolution": ["Width": metadata.activeWidth, "Height": metadata.activeHeight]] as CFDictionary,
+            infoFlagsOut: nil) { code, flags, image, _, _ in
             result.lock.lock(); result.status = code; result.flags = flags; result.pixels = image; result.lock.unlock()
         }
         guard status == noErr else { throw invalid("Frame decode", status) }
@@ -211,7 +252,22 @@ final class NativeSnapshotDecoder {
         guard result.status == noErr, !result.flags.contains(.frameDropped), let pixels = result.pixels else {
             throw invalid("Decoded frame unavailable (flags \(result.flags.rawValue))", result.status)
         }
-        return pixels
+        guard CVPixelBufferGetWidth(pixels) == Int(canvas.width), CVPixelBufferGetHeight(pixels) == Int(canvas.height) else {
+            throw invalid("Unexpected decoder output geometry", -1)
+        }
+        // Reduced pictures must still be decoded, otherwise later references
+        // corrupt. Until their output scaling contract is verified, withhold
+        // them instead of guessing a coordinate transform or recording gray fill.
+        guard metadata.hasFullResolution(canvas: canvas) else { withheldResolutionFrames += 1; return nil }
+        var bgra: CVPixelBuffer?
+        let created = CVPixelBufferCreate(kCFAllocatorDefault, Int(canvas.width), Int(canvas.height), kCVPixelFormatType_32BGRA,
+            [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &bgra)
+        guard created == kCVReturnSuccess, let bgra else { throw invalid("BGRA allocation", created) }
+        Self.context.render(CIImage(cvPixelBuffer: pixels), to: bgra)
+        // Validate the excluded region before any crop. Metadata alone cannot
+        // turn arbitrary image content into trusted padding.
+        try NativeSnapshotImage.validatePadding(bgra, width: metadata.nativeWidth, height: metadata.nativeHeight)
+        return bgra
     }
     private final class Output {
         let lock = NSLock()
@@ -223,7 +279,7 @@ final class NativeSnapshotDecoder {
     private func invalid(_ operation: String, _ status: OSStatus) -> IPhoneUseError {
         IPhoneUseError("native_snapshot_decode_failed", "\(operation) failed (\(status))")
     }
-    private func invalidate() { if let session { VTDecompressionSessionInvalidate(session) }; session = nil; format = nil }
+    private func invalidate() { if let session { VTDecompressionSessionInvalidate(session) }; session = nil; format = nil; nativeDimensions = nil }
     deinit { invalidate() }
 }
 
@@ -237,8 +293,13 @@ enum NativeSnapshotImage {
         let width = Int(display.rotation == "rot0" ? display.pixelWidth : display.pixelHeight)
         let height = Int(display.rotation == "rot0" ? display.pixelHeight : display.pixelWidth)
         let pixels = frame.pixels
+        try validatePadding(pixels, width: width, height: height)
+        return (width, height)
+    }
+
+    static func validatePadding(_ pixels: CVPixelBuffer, width: Int, height: Int) throws {
         let encodedWidth = CVPixelBufferGetWidth(pixels), encodedHeight = CVPixelBufferGetHeight(pixels)
-        guard encodedWidth >= width, encodedHeight >= height, encodedWidth - width < 64, encodedHeight - height < 64,
+        guard width > 0, height > 0, encodedWidth >= width, encodedHeight >= height, encodedWidth - width < 64, encodedHeight - height < 64,
               CVPixelBufferGetPixelFormatType(pixels) == kCVPixelFormatType_32BGRA else {
             throw IPhoneUseError("native_snapshot_geometry_unavailable", "Media dimensions do not match native screen axes")
         }
@@ -257,7 +318,6 @@ enum NativeSnapshotImage {
                 }
             }
         }
-        return (width, height)
     }
 
     static func png(_ frame: NativeVideoSnapshot.Frame, display: NativeDisplay) throws -> (Data, [String: Any]) {

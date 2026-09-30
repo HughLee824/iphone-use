@@ -13,30 +13,36 @@ enum NativeVideoOrientation: String {
     }
 }
 
-// Compressed HEVC passthrough. No encoder, pixel rotation or synthetic frames.
+// Decode Apple VRA before encoding portable HEVC. No pixel rotation or synthetic frames.
 // Used on the recording queue, never the socket's RTP/RTCP queue.
 final class NativeVideoWriter {
     private let url: URL
     let timescale: Int32
     private let orientation: NativeVideoOrientation
     private var parameterSets: [Int: Data] = [:]
+    private let decoder = NativeSnapshotDecoder()
+    private let injectedDecode: ((NativeVideoAccessUnit) throws -> CVPixelBuffer?)?
     private var format: CMVideoFormatDescription?
+    var withheldResolutionFrames: Int { decoder.withheldResolutionFrames }
     private var writer: AVAssetWriter?
     private var input: AVAssetWriterInput?
+    private var lastDecodedTimestamp: UInt32?
     private var lastTimestamp: UInt32?
     private var ticks: Int64 = 0
-    private var pending: (nals: [Data], time: CMTime, keyframe: Bool)?
+    private var pending: (pixels: CVPixelBuffer, time: CMTime)?
     private(set) var frames = 0
     private(set) var firstFrameReceivedAt: Double?
     private(set) var lastFrameReceivedAt: Double?
     var mediaSpanSeconds: Double { Double(ticks) / Double(timescale) }
     var hasFrame: Bool { pending != nil }
 
-    init(url: URL, timescale: Int32, orientation: NativeVideoOrientation = .portrait) {
-        self.url = url; self.timescale = timescale; self.orientation = orientation
+    init(url: URL, timescale: Int32, orientation: NativeVideoOrientation = .portrait,
+         decode: ((NativeVideoAccessUnit) throws -> CVPixelBuffer?)? = nil) {
+        self.url = url; self.timescale = timescale; self.orientation = orientation; injectedDecode = decode
     }
 
     func append(_ unit: NativeVideoAccessUnit) throws {
+        guard unit.nals.allSatisfy({ $0.count >= 2 }) else { throw IPhoneUseError("recording_format_invalid", "Truncated video NAL") }
         for nal in unit.nals {
             let type = Int((nal[0] >> 1) & 63)
             if (32...34).contains(type) {
@@ -46,24 +52,30 @@ final class NativeVideoWriter {
                 parameterSets[type] = nal
             }
         }
-        let nals = unit.nals.filter { ![32,33,34].contains(Int(($0[0] >> 1) & 63)) }
-        guard nals.contains(where: { ($0[0] >> 1) & 63 <= 31 }) else { return }
+        let video = unit.nals.contains(where: { ($0[0] >> 1) & 63 <= 31 })
+        if video, let lastDecodedTimestamp {
+            let delta = Int32(bitPattern: unit.timestamp &- lastDecodedTimestamp)
+            guard delta > 0, delta < timescale * 30 else {
+                throw IPhoneUseError("recording_timestamp_invalid", "Non-monotonic or discontinuous decoder timestamp")
+            }
+        }
+        let pixels = try (injectedDecode ?? decoder.decode)(unit)
+        if video { lastDecodedTimestamp = unit.timestamp }
+        guard let pixels else { return }
         if writer == nil {
-            guard unit.keyframe, let vps = parameterSets[32], let sps = parameterSets[33], let pps = parameterSets[34] else { return }
             var description: CMVideoFormatDescription?
-            let status = vps.withUnsafeBytes { v in sps.withUnsafeBytes { s in pps.withUnsafeBytes { p in
-                let pointers = [v.baseAddress!.assumingMemoryBound(to: UInt8.self), s.baseAddress!.assumingMemoryBound(to: UInt8.self), p.baseAddress!.assumingMemoryBound(to: UInt8.self)]
-                let sizes = [vps.count, sps.count, pps.count]
-                return CMVideoFormatDescriptionCreateFromHEVCParameterSets(allocator: kCFAllocatorDefault, parameterSetCount: 3,
-                    parameterSetPointers: pointers, parameterSetSizes: sizes, nalUnitHeaderLength: 4, extensions: nil, formatDescriptionOut: &description)
-            } } }
-            guard status == noErr, let description else { throw IPhoneUseError("recording_format_invalid", "Cannot create HEVC format (\(status))") }
+            let status = CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: pixels,
+                formatDescriptionOut: &description)
+            guard status == noErr, let description else { throw IPhoneUseError("recording_format_invalid", "Cannot describe decoded video (\(status))") }
             let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
-            let input = AVAssetWriterInput(mediaType: .video, outputSettings: nil, sourceFormatHint: description)
-            let dimensions = CMVideoFormatDescriptionGetDimensions(description)
-            input.transform = orientation.transform(width: CGFloat(dimensions.width), height: CGFloat(dimensions.height))
+            let width = CVPixelBufferGetWidth(pixels), height = CVPixelBufferGetHeight(pixels)
+            let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+                AVVideoCodecKey: AVVideoCodecType.hevc, AVVideoWidthKey: width, AVVideoHeightKey: height,
+                AVVideoCompressionPropertiesKey: [AVVideoAllowFrameReorderingKey: false, AVVideoMaxKeyFrameIntervalKey: 60]
+            ], sourceFormatHint: description)
+            input.transform = orientation.transform(width: CGFloat(width), height: CGFloat(height))
             input.expectsMediaDataInRealTime = true
-            guard writer.canAdd(input) else { throw IPhoneUseError("recording_writer_failed", "Cannot add HEVC track") }
+            guard writer.canAdd(input) else { throw IPhoneUseError("recording_writer_failed", "Cannot add encoded video track") }
             writer.add(input)
             guard writer.startWriting() else { throw writer.error ?? IPhoneUseError("recording_writer_failed", "Cannot start MP4") }
             writer.startSession(atSourceTime: .zero)
@@ -76,40 +88,25 @@ final class NativeVideoWriter {
         }
         let time = CMTime(value: ticks, timescale: timescale)
         if let pending { try write(pending, duration: CMTimeSubtract(time, pending.time)) }
-        pending = (nals, time, unit.keyframe); lastTimestamp = unit.timestamp
+        pending = (pixels, time); lastTimestamp = unit.timestamp
         if firstFrameReceivedAt == nil { firstFrameReceivedAt = unit.firstPacketAt }
         lastFrameReceivedAt = unit.firstPacketAt
     }
 
-    private func write(_ frame: (nals: [Data], time: CMTime, keyframe: Bool), duration: CMTime) throws {
+    private func write(_ frame: (pixels: CVPixelBuffer, time: CMTime), duration: CMTime) throws {
         guard let input, let writer, let format else { return }
-        guard input.isReadyForMoreMediaData else { throw IPhoneUseError("recording_backpressure", "MP4 writer cannot keep up; no RTP queue was blocked") }
-        var avcc = Data()
-        for nal in frame.nals {
-            var size = UInt32(nal.count).bigEndian
-            withUnsafeBytes(of: &size) { avcc.append(contentsOf: $0) }; avcc.append(nal)
-        }
-        var block: CMBlockBuffer?
-        var status = CMBlockBufferCreateWithMemoryBlock(allocator: kCFAllocatorDefault, memoryBlock: nil, blockLength: avcc.count,
-            blockAllocator: kCFAllocatorDefault, customBlockSource: nil, offsetToData: 0, dataLength: avcc.count, flags: 0, blockBufferOut: &block)
-        guard status == noErr, let block else { throw IPhoneUseError("recording_sample_failed", "Cannot allocate video sample") }
-        status = avcc.withUnsafeBytes { CMBlockBufferReplaceDataBytes(with: $0.baseAddress!, blockBuffer: block, offsetIntoDestination: 0, dataLength: avcc.count) }
-        guard status == noErr else { throw IPhoneUseError("recording_sample_failed", "Cannot copy video sample") }
-        var timing = CMSampleTimingInfo(duration: duration, presentationTimeStamp: frame.time, decodeTimeStamp: frame.time)
-        var size = avcc.count, sample: CMSampleBuffer?
-        status = CMSampleBufferCreateReady(allocator: kCFAllocatorDefault, dataBuffer: block, formatDescription: format,
-            sampleCount: 1, sampleTimingEntryCount: 1, sampleTimingArray: &timing, sampleSizeEntryCount: 1, sampleSizeArray: &size, sampleBufferOut: &sample)
-        guard status == noErr, let sample else { throw IPhoneUseError("recording_sample_failed", "Cannot create video sample") }
-        // Keep dictionary identity explicit when attaching dependency flags to
-        // the sample; ordinary frames must never become random-access entries.
-        guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: true),
-              CFArrayGetCount(attachments) == 1 else { throw IPhoneUseError("recording_sample_failed", "Missing sample attachments") }
-        let attachment = unsafeBitCast(CFArrayGetValueAtIndex(attachments, 0), to: CFMutableDictionary.self)
-        for key in [kCMSampleAttachmentKey_NotSync, kCMSampleAttachmentKey_DependsOnOthers] {
-            CFDictionarySetValue(attachment, Unmanaged.passUnretained(key).toOpaque(),
-                Unmanaged.passUnretained(frame.keyframe ? kCFBooleanFalse : kCFBooleanTrue).toOpaque())
-        }
-        guard input.append(sample) else { throw writer.error ?? IPhoneUseError("recording_writer_failed", "Cannot append compressed video") }
+        // Encoder readiness is bounded on the recording queue, never the RTP
+        // socket queue. Overload fails explicitly instead of silently losing frames.
+        let deadline = ProcessInfo.processInfo.systemUptime + 0.5
+        while !input.isReadyForMoreMediaData, writer.status == .writing,
+              ProcessInfo.processInfo.systemUptime < deadline { Thread.sleep(forTimeInterval: 0.002) }
+        guard input.isReadyForMoreMediaData else { throw IPhoneUseError("recording_backpressure", "Video encoder cannot keep up") }
+        var timing = CMSampleTimingInfo(duration: duration, presentationTimeStamp: frame.time, decodeTimeStamp: .invalid)
+        var sample: CMSampleBuffer?
+        let status = CMSampleBufferCreateReadyWithImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: frame.pixels,
+            formatDescription: format, sampleTiming: &timing, sampleBufferOut: &sample)
+        guard status == noErr, let sample else { throw IPhoneUseError("recording_sample_failed", "Cannot create decoded video sample") }
+        guard input.append(sample) else { throw writer.error ?? IPhoneUseError("recording_writer_failed", "Cannot encode video frame") }
         frames += 1
     }
 
@@ -118,14 +115,16 @@ final class NativeVideoWriter {
         guard lastFrameDurationSeconds.isFinite, lastFrameDurationSeconds > 0, lastFrameDurationSeconds <= 330 else {
             throw IPhoneUseError("recording_timestamp_invalid", "Invalid final video sample duration")
         }
-        // Variable frame rate: keep every RTP presentation time intact and hold
-        // only the final received image. This adds no samples or encoded pixels.
+        // Variable frame rate: keep admitted RTP presentation times intact and hold
+        // only the final admitted image. Reduced-resolution pictures are decoded
+        // for reference continuity but omitted from presentation, with explicit facts.
         try write(pending, duration: CMTime(seconds: lastFrameDurationSeconds, preferredTimescale: timescale)); self.pending = nil
         input.markAsFinished()
         let done = DispatchSemaphore(value: 0)
         writer.finishWriting { done.signal() }
         guard done.wait(timeout: .now() + 10) == .success else { writer.cancelWriting(); throw IPhoneUseError("recording_finalize_timeout", "MP4 finalization timed out") }
         guard writer.status == .completed else { throw writer.error ?? IPhoneUseError("recording_writer_failed", "MP4 finalization failed") }
+        decoder.resetReferences()
     }
-    func cancel() { writer?.cancelWriting() }
+    func cancel() { writer?.cancelWriting(); decoder.resetReferences(); pending = nil }
 }
