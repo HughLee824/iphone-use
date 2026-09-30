@@ -54,8 +54,31 @@
 
 私有证据目录：`.local/research/media-root-cause-20260930/`。主要文件为 `product-replay.swift`、`product-v1/`、`product-release/`、`product-comparison.json`、`product-build-comparison.json` 及 `product-tests-final.log`。所有截图、视频、原始流和设备标识仍不提交仓库。
 
-### 真机阻塞与后续
+### 首次真机阻塞（已解除）
 
 本轮只读发现真实有线 iPhone，Apple 返回 `passcodeRequired=false`。但 Release 候选 `connect --mode standard` 返回 `device_busy`：现有另一个 iPhone-use Runner 会话持有设备锁。没有关闭该会话，没有绕过锁，没有建立新原生媒体会话，没有发送触控。这是会话互斥，不是自动审批或 Apple 权限拒绝。
 
-下一次设备可用时，优先在 Probe 验证短录屏与标准模式操作共存、实时队列与解码错误计数、通用播放器画面和自有会话清理；再检查两种横屏。动态小尺寸画面的完整几何恢复、跨系统/设备兼容、持续高运动吞吐及重新启用媒体 observation 仍未验收。
+### 释放设备后的真机验收
+
+用户释放设备后，同日使用 `9461b7b` 的 Release 候选成功建立标准模式会话，`runnerStarted=false`。重新检查宿主为 macOS 27.0（26A428）、Xcode 27.0（27A266a），动态发现唯一有线 iPhone 12 Pro / iOS 27.0。Apple CLI 打开已安装的普通 Probe，先查看 Apple PNG 确认受控页面；只执行了一次文本框滚动，没有输入文字、访问剪贴板、进入其他应用操作或修改设置。
+
+| 自有录屏段 | 完整解码帧数 | 文件时长 | 实际覆盖 |
+| --- | ---: | ---: | --- |
+| `baseline-stop` | 2933 | 59.9717 s | Probe 与键盘静态/光标画面 |
+| `scroll-stop` | 2823 | 57.8017 s | 观察过期，滚动被拒绝，未发送 HID |
+| `motion-ended` | 5878 | 119.9733 s | 再次观察过期，未发送 HID |
+| `fast-stop` | 2457 | 70.3683 s | 录屏中一次真实滚动及其后画面 |
+
+四段均 `fileValidated=true`，导出视频解码帧数等于接纳帧数，采样状态中的快照解码错误、队列溢出、RTP 不连续及畸形包均为 0。每段录屏接入时记录了 1 个启动丢弃单元，`droppedAccessUnits == startupDroppedAccessUnits`，不能简写成“从首包起没有任何丢弃”。四段 `withheldResolutionFrames` 均为 0，**没有在本次真机现场触发动态小尺寸分支**；该分支的修复依据仍是前面的相同故障流回放。
+
+两次动作过期均明确为 `not_dispatched`。原始截图查看与工具调用之间超过了已有 30 秒上限；未放宽时效或画面阈值。后续仅将用于目视的预览等比例缩到 390×844，原始 PNG、原生 screen_points 与动作前校验保持原样，从新观察选择了 (200,170)→(200,275) 的文本框内滚动。动作前屏幕变化约 0.000488、两处区域变化为 0，守卫接受。
+
+唯一发出的动作回执为 `unknown`，触点释放报告已排队，没有重放。动作后 Apple PNG 明确显示输入框从第 16–24 行/正文结束移到第 11 行附近，UTF-8 字节数及 Edits 计数不变。使用普通 Apple AVAssetImageGenerator 抽取视频约 19.445 s 和 40.442 s 的实际帧，分别看到对应的滚动前后画面，中文清晰，抽查未见原有旧字碎块残影。不是以命令退出码或视频可解码代替动作成功，也不是逐帧视觉检查。最后一段静态尾部约 15.43 秒沿用原有末帧保持策略，不能说每一秒都收到新画面。
+
+证据脚本最初把 `observe` 的文本输出当作 JSON，解析失败；这是私有脚本错误，不是 CLI 无截图。已保留原输出并修正脚本。首次受限宿主中的设备发现发生 CoreDevice 初始化超时，一次授权宿主权限对照即成功；没有反复重启服务。
+
+断开客户端返回 `session_unavailable` / `Network is down`，没有收到正常响应。随后只读核查本次宿主退出文件，`reason=disconnect`，其中自有媒体 UUID 停止、接收器关闭、连接关闭、隧道释放、观察缓存清理和 shutdown 均确认。独立 PID 检查确认宿主不存在，socket 与观察目录已移除。因此清理依据是服务端退出事实与独立进程检查，不能把客户端断开调用本身写成成功。没有重复断开或创建替代会话，也未使用 stopAll。
+
+私有证据位于 `.local/research/media-vra-device-20260930/`，包括四段 MP4、原始及预览截图、动作与状态 JSON、抽帧及其实际时间、`host-exit.json`、`cleanup-check.json`、`result.json` 和哈希清单。有效滚动视频为 `fast-stop.mp4`，对照帧为 `frame-200.png` 与 `frame-400.png`。本轮未改产品代码、未重跑无关宿主测试、未发布或推送。
+
+这补齐了竖屏 Probe 下的实际录屏/操作共存、通用视频抽帧及自有会话清理。左右横屏的新版实时回归、动态小尺寸画面的完整几何恢复、跨系统/设备兼容、持续高运动吞吐及重新启用媒体 observation 仍未验收。
