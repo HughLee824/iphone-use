@@ -1,5 +1,7 @@
 # Runner 原生媒体录屏
 
+2026-10-01 最新候选的 [Runner 共存验收](runner-candidate-acceptance.md)已补充当前 VRA 解码路径的真机证据：双击计数经截图及视频确认，22.183 秒 / 689 帧，停止录屏后同一 Runner 单击仍可用。下文保留实现契约与此前版本的历史验证。
+
 本次实现将控制模式与录屏传输分开：Runner 的截图、元素、点击和输入仍由 XCTest 执行；显式 `record-start` 创建自有 CoreDevice displayservice 媒体连接，使用与标准模式相同的 HEVC/RTP 接收、MP4 写入和完整解码验证。不会建立 HID 或剪贴板服务。真机共存验收结果见下方，不能把旧的 XCTest 附件探针结果当成本实现的验收。
 
 ```sh
