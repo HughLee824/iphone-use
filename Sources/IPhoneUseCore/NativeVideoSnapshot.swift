@@ -306,8 +306,16 @@ enum NativeSnapshotImage {
               CVPixelBufferGetPixelFormatType(pixels) == kCVPixelFormatType_32BGRA else {
             throw IPhoneUseError("native_snapshot_geometry_unavailable", "Media dimensions do not match native screen axes")
         }
-        // macOS/iOS 27 media retains native axes and pads right/bottom. Check
-        // every excluded pixel; never scale or infer a crop from visible text.
+        // The verified VRA stream has sparse low-level noise across the native
+        // edge, already present in decoded YUV (not introduced by PNG export).
+        // Bound amplitude, distance AND density; retain a strict outer black band.
+        // These are native pixels, independent of orientation and point scale.
+        let edgeWidth = 4, edgeLimit = 32
+        // Separate 2% budgets; the other half of each padding band stays strict.
+        let rightBudget = encodedWidth - width >= 2 * edgeWidth ? height * edgeWidth / 50 : 0
+        let bottomBudget = encodedHeight - height >= 2 * edgeWidth ? width * edgeWidth / 50 : 0
+        var rightNoise = 0, bottomNoise = 0
+        // Check every excluded pixel; never scale, repair pixels or infer a crop.
         CVPixelBufferLockBaseAddress(pixels, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(pixels, .readOnly) }
         guard let base = CVPixelBufferGetBaseAddress(pixels) else { throw IPhoneUseError("invalid_image", "No decoded pixels") }
@@ -316,9 +324,18 @@ enum NativeSnapshotImage {
             let start = y < height ? width : 0
             for x in start..<encodedWidth {
                 let pixel = base.advanced(by: y * stride + x * 4).assumingMemoryBound(to: UInt8.self)
-                guard pixel[0] <= 8, pixel[1] <= 8, pixel[2] <= 8 else {
-                    throw IPhoneUseError("native_snapshot_geometry_unavailable", "Media padding contains image content")
+                let value = max(Int(pixel[0]), Int(pixel[1]), Int(pixel[2]))
+                if value <= 8 { continue }
+                if value <= edgeLimit, y < height, x < width + edgeWidth {
+                    rightNoise += 1
+                    if rightNoise <= rightBudget { continue }
+                } else if value <= edgeLimit, x < width, y < height + edgeWidth {
+                    bottomNoise += 1
+                    if bottomNoise <= bottomBudget { continue }
                 }
+                // The corner outside both native axes has no adjacent content
+                // and gets no exception. Dense/distant/bright content still fails.
+                throw IPhoneUseError("native_snapshot_geometry_unavailable", "Media padding contains image content")
             }
         }
     }
