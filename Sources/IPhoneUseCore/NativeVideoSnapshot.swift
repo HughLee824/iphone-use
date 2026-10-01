@@ -4,11 +4,20 @@ import CoreImage
 import ImageIO
 import UniformTypeIdentifiers
 
+// Keep the validated DisplayService rectangle bound to the decoded pixels.
+// Lossy decoded padding is not a reliable source of crop geometry.
+struct NativeDecodedVideoFrame {
+    let pixels: CVPixelBuffer
+    let nativeWidth: Int
+    let nativeHeight: Int
+}
+
 // Decoder work never runs on the media socket queue. Recording retains its own
 // handler and decoder; snapshots do not start or stop a stream.
 final class NativeVideoSnapshot {
     struct Frame {
-        let pixels: CVPixelBuffer
+        let image: NativeDecodedVideoFrame
+        var pixels: CVPixelBuffer { image.pixels }
         let firstPacketAt: Double
         let completedAt: Double
         let timestamp: UInt32
@@ -24,7 +33,7 @@ final class NativeVideoSnapshot {
     private var queueOverflows = 0
     private var lastError: String?
     private var parser = NativeHEVCDepacketizer()
-    private let decode: (NativeVideoAccessUnit) throws -> CVPixelBuffer?
+    private let decode: (NativeVideoAccessUnit) throws -> NativeDecodedVideoFrame?
     private let resetDecoder: () -> Void
     private var droppedUnits = 0
     private var discontinuities = 0
@@ -41,7 +50,7 @@ final class NativeVideoSnapshot {
     }
 
     // Also used by deterministic transport/decoder-boundary regression tests.
-    init(decode: @escaping (NativeVideoAccessUnit) throws -> CVPixelBuffer?, resetDecoder: @escaping () -> Void) {
+    init(decode: @escaping (NativeVideoAccessUnit) throws -> NativeDecodedVideoFrame?, resetDecoder: @escaping () -> Void) {
         self.decode = decode; self.resetDecoder = resetDecoder
     }
 
@@ -90,15 +99,15 @@ final class NativeVideoSnapshot {
                     throw IPhoneUseError("native_snapshot_timestamp_invalid", "Non-increasing video timestamp; require a fresh keyframe")
                 }
                 let video = unit.nals.contains(where: { ($0[0] >> 1) & 63 <= 31 })
-                let pixels = try decode(unit)
+                let image = try decode(unit)
                 if video { lastTimestamp = unit.timestamp }
-                guard let pixels else {
+                guard let image else {
                     // A decoded reduced-resolution picture updates references,
                     // but must also invalidate a previously cached observation.
                     if video { condition.lock(); latest = nil; condition.broadcast(); condition.unlock() }
                     return
                 }
-                let frame = Frame(pixels: pixels, firstPacketAt: unitStarted,
+                let frame = Frame(image: image, firstPacketAt: unitStarted,
                                   completedAt: ProcessInfo.processInfo.systemUptime, timestamp: unit.timestamp)
                 condition.lock()
                 if !closed, generation == admittedGeneration { latest = frame; decodedFrames += 1; lastError = nil; condition.broadcast() }
@@ -162,13 +171,13 @@ final class NativeSnapshotDecoder {
     private(set) var withheldResolutionFrames = 0
     private static let context = CIContext(options: [.cacheIntermediates: false])
 
-    func decode(_ unit: NativeVideoAccessUnit) throws -> CVPixelBuffer? {
+    func decode(_ unit: NativeVideoAccessUnit) throws -> NativeDecodedVideoFrame? {
         // No reference chain survives a failed metadata/configuration/decode step.
         do { return try decodeFrame(unit) }
         catch { invalidate(); throw error }
     }
 
-    private func decodeFrame(_ unit: NativeVideoAccessUnit) throws -> CVPixelBuffer? {
+    private func decodeFrame(_ unit: NativeVideoAccessUnit) throws -> NativeDecodedVideoFrame? {
         guard #available(macOS 15.0, *) else { throw invalid("VRA decoding requires macOS 15 or later", -1) }
         guard unit.nals.allSatisfy({ $0.count >= 2 }) else { throw invalid("Truncated NAL", -1) }
         var changed = false
@@ -264,10 +273,11 @@ final class NativeSnapshotDecoder {
             [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &bgra)
         guard created == kCVReturnSuccess, let bgra else { throw invalid("BGRA allocation", created) }
         Self.context.render(CIImage(cvPixelBuffer: pixels), to: bgra)
-        // Validate the excluded region before any crop. Metadata alone cannot
-        // turn arbitrary image content into trusted padding.
-        try NativeSnapshotImage.validatePadding(bgra, width: metadata.nativeWidth, height: metadata.nativeHeight)
-        return bgra
+        // Metadata syntax, canvas bounds and reference-chain consistency were
+        // validated above. Decoded padding may contain lossy edge data; it must
+        // not invalidate otherwise complete reference pictures. Observation
+        // additionally checks this exact rectangle against Apple display facts.
+        return NativeDecodedVideoFrame(pixels: bgra, nativeWidth: metadata.nativeWidth, nativeHeight: metadata.nativeHeight)
     }
     private final class Output {
         let lock = NSLock()
@@ -295,48 +305,17 @@ enum NativeSnapshotImage {
         }
         let width = Int(display.rotation == "rot0" ? display.pixelWidth : display.pixelHeight)
         let height = Int(display.rotation == "rot0" ? display.pixelHeight : display.pixelWidth)
-        let pixels = frame.pixels
-        try validatePadding(pixels, width: width, height: height)
+        try validateNativeRectangle(frame.image, width: width, height: height)
         return (width, height)
     }
 
-    static func validatePadding(_ pixels: CVPixelBuffer, width: Int, height: Int) throws {
+    static func validateNativeRectangle(_ image: NativeDecodedVideoFrame, width: Int, height: Int) throws {
+        let pixels = image.pixels
         let encodedWidth = CVPixelBufferGetWidth(pixels), encodedHeight = CVPixelBufferGetHeight(pixels)
-        guard width > 0, height > 0, encodedWidth >= width, encodedHeight >= height, encodedWidth - width < 64, encodedHeight - height < 64,
+        guard image.nativeWidth == width, image.nativeHeight == height,
+              width > 0, height > 0, encodedWidth >= width, encodedHeight >= height, encodedWidth - width < 64, encodedHeight - height < 64,
               CVPixelBufferGetPixelFormatType(pixels) == kCVPixelFormatType_32BGRA else {
             throw IPhoneUseError("native_snapshot_geometry_unavailable", "Media dimensions do not match native screen axes")
-        }
-        // The verified VRA stream has sparse low-level noise across the native
-        // edge, already present in decoded YUV (not introduced by PNG export).
-        // Bound amplitude, distance AND density; retain a strict outer black band.
-        // These are native pixels, independent of orientation and point scale.
-        let edgeWidth = 4, edgeLimit = 32
-        // Separate 2% budgets; the other half of each padding band stays strict.
-        let rightBudget = encodedWidth - width >= 2 * edgeWidth ? height * edgeWidth / 50 : 0
-        let bottomBudget = encodedHeight - height >= 2 * edgeWidth ? width * edgeWidth / 50 : 0
-        var rightNoise = 0, bottomNoise = 0
-        // Check every excluded pixel; never scale, repair pixels or infer a crop.
-        CVPixelBufferLockBaseAddress(pixels, .readOnly)
-        defer { CVPixelBufferUnlockBaseAddress(pixels, .readOnly) }
-        guard let base = CVPixelBufferGetBaseAddress(pixels) else { throw IPhoneUseError("invalid_image", "No decoded pixels") }
-        let stride = CVPixelBufferGetBytesPerRow(pixels)
-        for y in 0..<encodedHeight {
-            let start = y < height ? width : 0
-            for x in start..<encodedWidth {
-                let pixel = base.advanced(by: y * stride + x * 4).assumingMemoryBound(to: UInt8.self)
-                let value = max(Int(pixel[0]), Int(pixel[1]), Int(pixel[2]))
-                if value <= 8 { continue }
-                if value <= edgeLimit, y < height, x < width + edgeWidth {
-                    rightNoise += 1
-                    if rightNoise <= rightBudget { continue }
-                } else if value <= edgeLimit, x < width, y < height + edgeWidth {
-                    bottomNoise += 1
-                    if bottomNoise <= bottomBudget { continue }
-                }
-                // The corner outside both native axes has no adjacent content
-                // and gets no exception. Dense/distant/bright content still fails.
-                throw IPhoneUseError("native_snapshot_geometry_unavailable", "Media padding contains image content")
-            }
         }
     }
 
@@ -359,6 +338,7 @@ enum NativeSnapshotImage {
         CGImageDestinationAddImage(destination, rendered, nil)
         guard CGImageDestinationFinalize(destination) else { throw IPhoneUseError("invalid_image", "Cannot encode snapshot PNG") }
         return (data as Data, ["encodedWidth": encodedWidth, "encodedHeight": encodedHeight,
+            "geometryValidation": "frame_native_rectangle_matches_display",
             "cropNativePixels": ["x": 0, "y": 0, "width": width, "height": height],
             "displayRotation": display.rotation, "firstPacketUptime": frame.firstPacketAt,
             "decodeCompletedUptime": frame.completedAt, "rtpTimestamp": frame.timestamp,

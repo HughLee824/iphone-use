@@ -16,10 +16,10 @@ final class NativeSnapshotContinuityTests: XCTestCase {
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [done], timeout: 2), .completed)
     }
-    private func pixels() throws -> CVPixelBuffer {
+    private func pixels() throws -> NativeDecodedVideoFrame {
         var buffer: CVPixelBuffer?
         XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 12, 18, kCVPixelFormatType_32BGRA, nil, &buffer), kCVReturnSuccess)
-        return try XCTUnwrap(buffer)
+        return NativeDecodedVideoFrame(pixels: try XCTUnwrap(buffer), nativeWidth: 12, nativeHeight: 18)
     }
     func testTimestampRejectionInvalidatesLatestAndRequiresKeyframeBeforeDecodingAgain() throws {
         let pixel = try pixels()

@@ -316,7 +316,7 @@ final class NativeCaptureTests: XCTestCase {
     func testFreshnessRejectsCacheQueueDelayAndFutureTimestamps() throws {
         let pixels = try pixels()
         func fresh(_ start: Double, _ end: Double, now: Double = 10.2) -> Bool {
-            NativeVideoSnapshot.isFresh(.init(pixels: pixels, firstPacketAt: start, completedAt: end, timestamp: 1), after: 10, now: now)
+            NativeVideoSnapshot.isFresh(.init(image: NativeDecodedVideoFrame(pixels: pixels, nativeWidth: 12, nativeHeight: 18), firstPacketAt: start, completedAt: end, timestamp: 1), after: 10, now: now)
         }
         XCTAssertTrue(fresh(10.01, 10.1))
         XCTAssertFalse(fresh(9.99, 10.1)) // old partial unit, newly completed
@@ -344,7 +344,7 @@ final class NativeCaptureTests: XCTestCase {
             base[i + 3] = 255
         } }
         CVPixelBufferUnlockBaseAddress(pixels, [])
-        let frame = NativeVideoSnapshot.Frame(pixels: pixels, firstPacketAt: 1, completedAt: 1.1, timestamp: 1)
+        let frame = NativeVideoSnapshot.Frame(image: NativeDecodedVideoFrame(pixels: pixels, nativeWidth: 12, nativeHeight: 18), firstPacketAt: 1, completedAt: 1.1, timestamp: 1)
         for (rotation, expected): (String, [[UInt8]]) in [
             ("rot0", [[255,0,0], [0,255,0], [0,0,255], [255,255,255]]),
             ("rot90", [[0,0,255], [255,0,0], [255,255,255], [0,255,0]]),
@@ -362,8 +362,8 @@ final class NativeCaptureTests: XCTestCase {
             }
         }
         CVPixelBufferLockBaseAddress(pixels, [])
-        base[12 * 4] = 255 // content in the excluded right edge
+        base[12 * 4] = 255 // Excluded pixels cannot change the metadata-defined crop.
         CVPixelBufferUnlockBaseAddress(pixels, [])
-        XCTAssertThrowsError(try NativeSnapshotImage.png(frame, display: NativeDisplay(display())))
+        XCTAssertNoThrow(try NativeSnapshotImage.png(frame, display: NativeDisplay(display())))
     }
 }

@@ -55,7 +55,11 @@ final class NativeRecordingTests: XCTestCase {
         } }, 0)
         let receiverDecoder = FixtureHEVCDecoder()
         let receiver = try NativeRTPReceiver(deviceAddress: "::1", captureSnapshots: true, makeSnapshots: {
-            NativeVideoSnapshot(decode: { try receiverDecoder.decode($0) }, resetDecoder: { receiverDecoder.resetReferences() })
+            NativeVideoSnapshot(decode: { unit in
+                try receiverDecoder.decode(unit).map {
+                    NativeDecodedVideoFrame(pixels: $0, nativeWidth: CVPixelBufferGetWidth($0), nativeHeight: CVPixelBufferGetHeight($0))
+                }
+            }, resetDecoder: { receiverDecoder.resetReferences() })
         })
         defer { receiver.close() }
         try receiver.configure(["SourcePort": UInt16(bigEndian: endpoint.sin6_port), "LocalSSRC": 123, "RemoteSSRC": 456,

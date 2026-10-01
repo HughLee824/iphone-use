@@ -3,7 +3,7 @@ import CoreVideo
 @testable import IPhoneUseCore
 
 final class NativePaddingTests: XCTestCase {
-    private func pixels(width: Int = 208, height: Int = 312) throws -> CVPixelBuffer {
+    private func pixels(width: Int = 1184, height: Int = 2576) throws -> CVPixelBuffer {
         var result: CVPixelBuffer?
         XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, width, height,
             kCVPixelFormatType_32BGRA, nil, &result), kCVReturnSuccess)
@@ -14,76 +14,55 @@ final class NativePaddingTests: XCTestCase {
         return buffer
     }
 
-    private func paint(_ buffer: CVPixelBuffer, _ x: Int, _ y: Int, _ value: UInt8) {
-        CVPixelBufferLockBaseAddress(buffer, [])
-        let pixel = CVPixelBufferGetBaseAddress(buffer)!.advanced(by:
-            y * CVPixelBufferGetBytesPerRow(buffer) + x * 4).assumingMemoryBound(to: UInt8.self)
-        pixel[0] = value; pixel[1] = value; pixel[2] = value; pixel[3] = 255
-        CVPixelBufferUnlockBaseAddress(buffer, [])
-    }
-
-    private func rejected(_ buffer: CVPixelBuffer, width: Int = 200, height: Int = 300,
+    private func rejected(_ image: NativeDecodedVideoFrame, width: Int, height: Int,
                           file: StaticString = #filePath, line: UInt = #line) {
-        XCTAssertThrowsError(try NativeSnapshotImage.validatePadding(buffer, width: width, height: height),
+        XCTAssertThrowsError(try NativeSnapshotImage.validateNativeRectangle(image, width: width, height: height),
                              file: file, line: line) {
             XCTAssertEqual(($0 as? IPhoneUseError)?.code, "native_snapshot_geometry_unavailable", file: file, line: line)
         }
     }
 
-    func testSparseRingingAtBothNativeEdgesIsAllowedWithoutChangingPixels() throws {
+    func testRecordedDenseEdgeShapeDoesNotInvalidateMatchingNativeRectangle() throws {
+        // Synthetic analogue of the WeChat rejection: >202 right-edge pixels,
+        // six pixels of extent and bottom amplitude >32. No private image data.
         let buffer = try pixels()
-        for depth in 0..<4 {
-            paint(buffer, 200 + depth, 100, 32)
-            paint(buffer, 100, 300 + depth, 32)
-        }
-        XCTAssertNoThrow(try NativeSnapshotImage.validatePadding(buffer, width: 200, height: 300))
+        CVPixelBufferLockBaseAddress(buffer, [])
+        let stride = CVPixelBufferGetBytesPerRow(buffer)
+        let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
+        for y in 0..<753 { base[y * stride + 1170 * 4] = 22 }
+        base[100 * stride + 1175 * 4] = 10
+        base[2532 * stride + 217 * 4] = 42
+        let before = Data(bytes: base, count: stride * 2576)
+        CVPixelBufferUnlockBaseAddress(buffer, [])
+        let image = NativeDecodedVideoFrame(pixels: buffer, nativeWidth: 1170, nativeHeight: 2532)
+        XCTAssertNoThrow(try NativeSnapshotImage.validateNativeRectangle(image, width: 1170, height: 2532))
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
-        let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
-        XCTAssertEqual(base[303 * CVPixelBufferGetBytesPerRow(buffer) + 100 * 4], 32)
+        XCTAssertEqual(Data(bytes: base, count: stride * 2576), before, "Validation must not repair pixels")
     }
 
-    func testRecordedFailureShapeAtNativeScaleFitsBoundedException() throws {
-        // Synthetic analogue of 70 sparse pixels in the first four bottom rows.
-        // No device screenshot or private text is embedded in the fixture.
-        let buffer = try pixels(width: 1184, height: 2576)
-        for i in 0..<70 { paint(buffer, 84 + i * 7, 2532 + i % 4, UInt8(9 + i % 22)) }
-        XCTAssertNoThrow(try NativeSnapshotImage.validatePadding(buffer, width: 1170, height: 2532))
-    }
-
-    func testBrightDistantAndCornerPixelsRemainRejected() throws {
-        for (x, y, value): (Int, Int, UInt8) in [
-            (200, 100, 33), (100, 300, 33), (204, 100, 9), (100, 304, 9),
-            (200, 300, 9), (207, 311, 9)] {
-            let buffer = try pixels(); paint(buffer, x, y, value); rejected(buffer)
+    func testAllBlackPixelsCannotAuthorizeAWrongCropOrRotation() throws {
+        let image = NativeDecodedVideoFrame(pixels: try pixels(), nativeWidth: 1170, nativeHeight: 2532)
+        for (width, height) in [(1169, 2532), (1171, 2532), (1170, 2531), (1170, 2533), (2532, 1170)] {
+            rejected(image, width: width, height: height)
         }
     }
 
-    func testEachEdgeHasItsOwnTwoPercentBudget() throws {
-        // A large quiet edge must not subsidize content in the other edge.
-        for right in [false, true] {
-            let buffer = try pixels(), budget = (right ? 300 : 200) * 4 / 50
-            for i in 0..<budget { paint(buffer, right ? 200 : i, right ? i : 300, 9) }
-            XCTAssertNoThrow(try NativeSnapshotImage.validatePadding(buffer, width: 200, height: 300))
-            paint(buffer, right ? 200 : budget, right ? budget : 300, 9)
-            rejected(buffer)
-        }
-    }
-
-    func testThinPaddingCannotUseAnExceptionWithoutOuterBlackBand() throws {
-        for right in [false, true] {
-            let buffer = try pixels(width: right ? 207 : 208, height: right ? 312 : 307)
-            paint(buffer, right ? 200 : 100, right ? 100 : 300, 9)
-            rejected(buffer)
-        }
-    }
-
-    func testWrongCropAndInvalidDimensionsRemainRejected() throws {
+    func testMetadataCannotAuthorizeInvalidOrExcessiveCanvasPadding() throws {
         let buffer = try pixels()
-        paint(buffer, 199, 100, 255); paint(buffer, 100, 299, 255)
-        XCTAssertNoThrow(try NativeSnapshotImage.validatePadding(buffer, width: 200, height: 300))
-        for (width, height) in [(199, 300), (200, 299), (300, 200), (0, 300), (209, 300), (100, 300)] {
-            rejected(buffer, width: width, height: height)
+        for (width, height) in [(0, 2532), (1185, 2532), (1170, 2577), (1120, 2532), (1170, 2512)] {
+            rejected(NativeDecodedVideoFrame(pixels: buffer, nativeWidth: width, nativeHeight: height),
+                     width: width, height: height)
         }
+    }
+
+    func testPaddingColorDoesNotSupplyGeometryEvenForThinPadding() throws {
+        let buffer = try pixels(width: 1172, height: 2534)
+        CVPixelBufferLockBaseAddress(buffer, [])
+        memset(CVPixelBufferGetBaseAddress(buffer)!, 255, CVPixelBufferGetBytesPerRow(buffer) * 2534)
+        CVPixelBufferUnlockBaseAddress(buffer, [])
+        let image = NativeDecodedVideoFrame(pixels: buffer, nativeWidth: 1170, nativeHeight: 2532)
+        XCTAssertNoThrow(try NativeSnapshotImage.validateNativeRectangle(image, width: 1170, height: 2532))
+        rejected(image, width: 1171, height: 2532)
     }
 }

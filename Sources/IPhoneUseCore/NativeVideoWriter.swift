@@ -59,7 +59,9 @@ final class NativeVideoWriter {
                 throw IPhoneUseError("recording_timestamp_invalid", "Non-monotonic or discontinuous decoder timestamp")
             }
         }
-        let pixels = try (injectedDecode ?? decoder.decode)(unit)
+        let pixels: CVPixelBuffer?
+        if let injectedDecode { pixels = try injectedDecode(unit) }
+        else { pixels = try decoder.decode(unit)?.pixels }
         if video { lastDecodedTimestamp = unit.timestamp }
         guard let pixels else { return }
         if writer == nil {
