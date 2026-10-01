@@ -57,3 +57,16 @@ HID 已排队的操作仍如实返回 `unknown` / `native_input_unacknowledged`�
 首次使用控件逻辑边界 `(20,142,220,140)` 时被拒绝：局部变化 0，但区域外变化为 2.86741%。对这组保存的源图和拒绝前图，用生产 ScreenImage/ScreenGuard 做只读逐像素及比较回放，发现框外有 2,825 个变化像素，集中在动画边缘。显式向外包含 1 点，使用 `(19,141,222,142)` 后，同一组图的区域外变化降为 0；随后真机点击也通过。没有修改算法或调高容差，也没有将此样本解释为通用自动扩框的依据。另一次早期请求因观察过期被拒绝，已重新观察，未将其计作画面比较结果。
 
 结束前点击 Reset fixture，截图确认 Ready、Taps 1。仅停止自有媒体 UUID，退出记录确认媒体 stop、隧道释放、shutdown；独立检查宿主进程已退出、socket 和观察缓存已删除。证据及自写诊断程序保存在 `.local/research/dynamic-guard-acceptance-20261002/`。本节不构成 Runner 真机动作或任意视频场景的验证。
+
+## `.4` 本地候选包
+
+版本 `0.1.0-dev.firstuse.20261002.4`，从干净提交 `424cbb9b65f50048efd161ec0331cfca00625e9a` 构建，`sourceDirty=false`。归档位于 `.local/research/dynamic-guard-acceptance-20261002/package/iphone-use-0.1.0-dev.firstuse.20261002.4-macos-arm64.tar.gz`。
+
+- SHA-256：`9bc625f93ae2d8cc71bbf11e0a80dfded162ea61e2e932e6bc1b40b146177e27`。
+- Runner 内容版本：`ddebe4674160d54d255fd05bbd2ff3edec153c1df71935d93b2406b652f11ad4`。
+- Release CLI 和无签名 iOS Runner 构建通过；`verify-release.py --require-clean` 完成归档、校验和、ad-hoc 签名、依赖、带空格的搬移路径/符号链接、独立配置与模式读写检查。尚未 Developer ID 签名、公证、发布或推送。
+- 从归档另行解压 CLI，使用独立配置进行标准模式真机 connect→observe→带排除区域的 tap→observe→disconnect。截图确认 Probe 计数 1→2；原整屏变化 9.86328%，排除后 0.15746%，局部 0，均沿用默认阈值。协议结果仍是 `unknown`，没有重放。
+- 包内会话 `runnerStarted=false`；仅停止自己的媒体，独立检查进程、socket、观察缓存已清理。证据在上述目录的 `packaged-smoke/`。
+- 原 `.3` 归档 SHA-256 仍为 `53c6312497358f502bdc3dc51b14d9b56383aa0451c5e5fce5fd0a950a9232e0`，未覆盖。
+
+此轮没有签名安装新版 Runner 或执行其真机手势，不能将构建和独立配置检查视作 Runner 真机验收。`.4` 已包含匹配的新 Runner 内容；开发者使用新排除参数时须准备配套 Runner。
