@@ -35,3 +35,16 @@
 真机执行使用当前 Debug 构建；Release 构建单独通过，未另行打包 `.5` 或覆盖 `.4`。自有会话确认未启动 Runner，退出记录确认自有媒体 stop、隧道释放、shutdown；独立检查宿主进程已退出、socket 与观察缓存已删除。此次不重测 Device Hub 抢占或 Runner 真机行为。
 
 本地原始记录与截图位于 `.local/research/input-revalidation-20261002/`，不提交私人试用日志及图像。
+
+## `.5` 候选包及包内验收
+
+2026-10-02 后续从干净提交 `c1ef7e0535b1db7b634b39b52c2a988b3b3b8cab` 构建 `0.1.0-dev.firstuse.20261002.5`，`sourceDirty=false`。归档为 `.local/research/revalidation-candidate-20261002/package/iphone-use-0.1.0-dev.firstuse.20261002.5-macos-arm64.tar.gz`。
+
+- SHA-256：`37a1f041be51019c81033054c1976c189d054eefd52d2cf7a732004bafd6804f`。
+- Runner 内容版本：`ddebe4674160d54d255fd05bbd2ff3edec153c1df71935d93b2406b652f11ad4`，与 `.4` 相同；本次改动仅影响原生后端。
+- Release CLI、无签名 Runner 构建通过。`verify-release.py --require-clean` 检查归档、校验和、ad-hoc 签名、系统依赖、带空格搬移目录/符号链接、独立配置和模式读写，全部通过。未 Developer ID 签名、公证、发布或推送。
+- 从归档另行解压 CLI，使用独立配置进行 standard connect→observe→延迟 tap→observe→disconnect。受理时图龄 109.644 秒，`inputTiming.policy=current_observation_revalidation`；新捕获/比较约 0.826 秒，局部变化 0，视频排除后的整屏变化约 0.1575%，默认阈值通过。查看结果截图确认 Taps 0→1；协议仍为 unknown，没有重放。
+- 会话 `runnerStarted=false`，只停止自有媒体；独立检查宿主已退出、socket 与观察缓存已清理。本次没有 Runner 真机动作，也未执行真实 App 连续浏览。
+- 原 `.4` 归档校验和仍为 `9bc625f93ae2d8cc71bbf11e0a80dfded162ea61e2e932e6bc1b40b146177e27`，未覆盖。
+
+构建、校验和包内设备证据保存在 `.local/research/revalidation-candidate-20261002/`；其中 `continue-trial.md` 是给原试用会话的继续提示，要求保持默认容差、区分拒绝原因，并单独记录超过 30 秒后通过复核的样本。真实 App 连续浏览仍待该会话验收，不能用本节 Probe 结果替代。
