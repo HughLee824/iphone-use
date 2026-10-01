@@ -5,7 +5,7 @@
 
 iPhone-use 为外部 agent 提供真实 iPhone 的观察和操作能力。本包同时提供标准模式（截图 + 原生 HID）与 Runner 模式（XCTest）。普通用户先用标准模式，无需 Runner 签名或 setup；配套预编译 iOS Runner 供选择 Runner 模式的开发者在本机重签，不编译源码。
 
-安装 CLI 后继续[首个真机任务](first-task.md)。[外部 Agent 插件](plugins.md)为可选接入；首次 CLI 操作不依赖插件。
+本文也作为候选包内的独立 README；下方包含首次连接与观察步骤。延伸文档位于源码仓库的 `docs/`，未随安装包提供。外部 Agent 插件为可选接入，首次 CLI 操作不依赖插件；接入方法见源码仓库的 `docs/first-task.md` 和 `docs/plugins.md`。
 
 ## 前置条件
 
@@ -50,9 +50,9 @@ iphone-use --version
 
 把 `export PATH="$HOME/.local/bin:$PATH"` 加到 shell 配置（zsh 通常为 `~/.zshrc`），以便新终端使用。切换 Homebrew 与手动安装时，用 `command -v iphone-use` 核对实际入口。必须保留整个包的 `bin` 与 `libexec` 相对位置，不能只复制一个可执行文件。
 
-包内包含项目 MIT 许可证、Swift ArgumentParser 许可证及版本/源码提交信息。当前 Mac CLI 使用 ad-hoc 签名，未做 Developer ID 签名或公证。当前候选的搬移及设备验收见[标准模式报告](media-candidate-acceptance.md)和 [Runner 报告](runner-candidate-acceptance.md)。旧 AgentSoma `0.1.0` 的终端下载和 Homebrew 验收不能作为新名称渠道已发布的证据。浏览器下载的系统隔离/首次运行仍未验收，不建议通过删除隔离标记或关闭系统保护绕过它。
+包内包含项目 MIT 许可证、Swift ArgumentParser 许可证及版本/源码提交信息。当前 Mac CLI 使用 ad-hoc 签名，未做 Developer ID 签名或公证。此前候选的搬移及设备验收见源码仓库的 `docs/media-candidate-acceptance.md` 和 `docs/runner-candidate-acceptance.md`；以报告中的版本和摘要为准。旧 AgentSoma `0.1.0` 的终端下载和 Homebrew 验收不能作为新名称渠道已发布的证据。浏览器下载的系统隔离/首次运行仍未验收，不建议通过删除隔离标记或关闭系统保护绕过它。
 
-源码开发者可在 checkout 中运行 `swift build`，使用 `.build/debug/iphone-use`。标准模式不需要构建 Runner；源码 Runner 流程见[签名文档](onboarding.md#源码开发入口)。
+源码开发者可在 checkout 中运行 `swift build`，使用 `.build/debug/iphone-use`。标准模式不需要构建 Runner；源码 Runner 流程见源码仓库的 `docs/onboarding.md`“源码开发入口”。
 
 ## 连接前检查
 
@@ -87,7 +87,16 @@ iphone-use --session "$SESSION" disconnect
 
 标准模式会拥有自己的设备媒体会话。若提示 `native_media_busy`，自行结束 Device Hub 等其他客户端的控制连接，再显式重连；不要关闭他人的全部媒体会话。解锁、信任和系统授权仍需用户在设备上完成。
 
-连接返回 `ok:true` 仍需检查 `result.controlAvailable=true`；若为 false，读取 `controlErrorCode`、`controlError` 和 `recovery`，关闭本次会话后解决原因，再显式连接。不要通过运行 Runner setup 修复标准模式的媒体占用或设备授权问题。具体错误处理见[接入排错表](onboarding.md#常见接入错误)。
+连接返回 `ok:true` 仍需检查 `result.controlAvailable=true`；若为 false，读取 `controlErrorCode`、`controlError` 和 `recovery`，关闭本次会话后解决原因，再显式连接。不要通过运行 Runner setup 修复标准模式的媒体占用或设备授权问题。常见情况按下表处理；完整排错说明见源码仓库的 `docs/onboarding.md`。
+
+| 返回结果 | 下一步 |
+| --- | --- |
+| `xcode_unavailable` / `xcode_license_required` | 选择完整 Xcode、检查 `DEVELOPER_DIR`，自行完成首次安装或许可提示，再查询 `devices`。 |
+| `device_not_paired` / `developer_mode_disabled` / `device_locked` | 在 iPhone 完成对应信任、Developer Mode 或解锁步骤，再连接。 |
+| `native_device_unavailable` | 检查设备 ID、USB 和授权提示；缺失设备信息不等于权限拒绝。 |
+| `native_media_busy` | 自行结束其他客户端对该设备的媒体连接，断开自己的会话后再显式重连。 |
+| `runner_start_failed` | 查看返回的日志及手机上的实际 XCTest 授权提示，不能仅凭超时判断原因。 |
+| 动作结果 `unknown` | 先观察并检查实际效果，不自动重复输入。 |
 
 ## 可选：Runner 签名与连接
 
@@ -126,4 +135,4 @@ iphone-use --version
 
 新 `iphone-use` formula 发布后，目标命令为 `brew install HughLee824/tap/iphone-use`。目前不要将其作为已可用的安装步骤。旧 formula 用户届时先断开会话，并按迁移说明处理 `agentsoma` 兼容命令冲突。Homebrew 安装不编译源码、不执行 setup、不接触 iPhone。
 
-手动下载渠道届时需先在 GitHub Releases 确认实际发布版本，再取得对应的包和校验和；不要预设 `0.1.0` 已存在。首批二进制编译下限为 Apple Silicon / macOS 15，标准模式当前仍要求上述 27 环境。发布流程见[发布说明](release-setup.md)。
+手动下载渠道届时需先在 GitHub Releases 确认实际发布版本，再取得对应的包和校验和；不要预设 `0.1.0` 已存在。首批二进制编译下限为 Apple Silicon / macOS 15，标准模式当前仍要求上述 27 环境。发布流程见源码仓库的 `docs/release-setup.md`。
