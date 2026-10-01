@@ -46,13 +46,17 @@ Standard mode currently targets macOS 27 / iOS 27, tested on Apple Silicon with 
 For source development, run `swift build` and use `.build/debug/iphone-use`. For a local candidate package, retain the complete directory and add its `bin` to PATH; it runs outside the source checkout.
 
 ```sh
+command -v iphone-use
 iphone-use --version
+xcrun --find devicectl
 iphone-use devices
 export IOS_UDID="DEVICE_ID_FROM_DEVICES"
 iphone-use connect --device "$IOS_UDID" --mode standard
 ```
 
 `--mode standard` selects this connection only. Fresh users also default to standard without it; saved preferences or valid legacy Runner preparation can retain runner mode. Use `iphone-use config set mode standard` to save an intentional default.
+
+Before input, require `result.controlAvailable=true`; `ok:true` alone can describe an observation-only session. If unavailable, read `controlErrorCode`, `controlError` and `recovery`, disconnect this session and resolve the reported cause before reconnecting. See [first-use checks](docs/install.md) for full Xcode selection, device authorization and media ownership errors. Standard-mode errors do not require Runner setup.
 
 ### 2. Observe, act and verify
 

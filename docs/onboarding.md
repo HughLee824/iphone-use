@@ -109,11 +109,16 @@ swift build
 
 | 返回结果 | 下一步 |
 | --- | --- |
+| `xcode_unavailable` | 安装完整 Xcode、完成首次安装并在 Settings → Locations 中选定；检查当前进程的 `DEVELOPER_DIR` 覆盖。先用只读 `devices` 复查，标准模式无需 Runner setup。 |
+| `xcode_license_required` | 自行打开 Xcode 审阅许可和首次启动提示，完成后再执行 `devices`。CLI 不代为同意许可。 |
+| `device_not_paired` | Apple 明确报告未配对；通过 USB 连接、解锁并在 iPhone 完成“信任此电脑”，再查询 `devices` 和连接。 |
+| `developer_mode_disabled` | Apple 明确报告 Developer Mode 关闭；在 iPhone 的“设置 → 隐私与安全 → 开发者模式”启用并完成系统提示，解锁后重连。 |
+| `native_device_unavailable` | Apple 未返回全部设备、配对、Developer Mode 或隧道信息；检查设备 ID、USB 和授权提示，不把缺失信息自动判为权限拒绝。 |
 | `native_protocol_unsupported` | 标准模式当前仅适配 macOS/iOS 27；检查完整 Xcode 与系统版本，不隐式切换模式。 |
 | `native_media_busy` | 自行结束其他客户端的媒体控制连接后显式重连；不使用 stopAll。 |
 | `runner_package_missing` / `runner_package_mismatch` / `runner_package_invalid` | 安装完整、同一版本的 CLI 与 Runner 发布包，保留目录结构。不要搜索 `.build` 选择旧产物。 |
 | `setup_required` / `setup_update_required` / `setup_state_invalid` | 对该设备重新 setup；如旧会话仍活跃先断开。 |
-| `xcode_unavailable` / `ios_version_unsupported` | 选择完整 Xcode；设备需达到当前 Runner 包的最低版本。最低版本只用于排除已知不兼容，不代表所有组合都经过验收。 |
+| `ios_version_unsupported` | 设备需达到当前 Runner 包的最低版本。最低版本只用于排除已知不兼容，不代表所有组合都经过验收。 |
 | `profile_not_found` / `profile_invalid` | 准备匹配的 iOS development profile，必要时传 `--profile`。发布用户不需要 build-runner。 |
 | `profile_expired` / `profile_device_mismatch` / `profile_bundle_mismatch` / `profile_identity_mismatch` / `profile_team_mismatch` | 按错误修正 profile 或选择参数，然后重新 setup。 |
 | `signing_identity_unavailable` / `signing_identity_ambiguous` | 检查当前执行上下文是否能访问 Keychain 中的开发私钥；明确选择匹配证书。沙盒内看不到证书不等于本机不存在证书。 |
@@ -128,7 +133,7 @@ swift build
 | `coredevice_failed` | 读取错误中的失败阶段、退出码和原始信息；未知错误不自动归因于权限。 |
 | `inspect_query_unsupported` | 当前会话宿主未确认查询参数。用新 CLI 重新 connect、observe 后查询；不需要因此重建兼容的 Runner。 |
 | `device_locked` | 解锁手机后重新 connect。 |
-| `runner_start_failed` / `coredevice_unavailable` | 查看返回的会话日志，核对设备信任、Developer Mode、USB 和开发服务状态。构建成功不等于设备侧安装或启动已成功。 |
+| `runner_start_failed` / `coredevice_unavailable` | 查看返回的会话日志，核对设备信任、Developer Mode、USB 和开发服务状态。检查手机是否显示 XCTest UI 自动化授权提示，如有则自行完成；超时本身不能证明原因，构建成功不等于设备侧安装或启动成功。 |
 
 ## 工程边界
 

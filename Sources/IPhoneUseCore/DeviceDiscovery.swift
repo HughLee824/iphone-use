@@ -53,7 +53,18 @@ enum CoreDevice {
         let detail = output.lowercased()
         let code: String
         let guidance: String
-        if detail.contains("operation not permitted") || detail.contains("permission denied") {
+        if detail.contains("invalid active developer path") || detail.contains("invalid developer directory")
+            || detail.contains("missing developer_dir path") || detail.contains("invalid developer_dir path")
+            || detail.contains("unable to find utility \"devicectl\"")
+            || detail.contains("requires xcode, but active developer directory") {
+            code = "xcode_unavailable"
+            guidance = "Install full Xcode with devicectl, finish its first-launch installation, and select it in Xcode Settings > Locations. "
+                + "Command Line Tools alone are insufficient. Check xcode-select -p and any DEVELOPER_DIR override in this process. "
+                + "Then retry read-only 'iphone-use devices'; standard mode does not require Runner setup or signing. "
+        } else if detail.contains("license") && (detail.contains("have not agreed") || detail.contains("has not been accepted")) {
+            code = "xcode_license_required"
+            guidance = "Open Xcode and review its license and first-launch prompts yourself, then retry 'iphone-use devices'. "
+        } else if detail.contains("operation not permitted") || detail.contains("permission denied") {
             code = "coredevice_access_denied"
             guidance = "Access was denied; check host execution permissions. If running in a restricted context, "
                 + "retry read-only 'iphone-use devices' once with approved host permissions before retrying this operation. "
@@ -67,6 +78,20 @@ enum CoreDevice {
             guidance = ""
         }
         return IPhoneUseError(code, "CoreDevice failed during '\(operation)' (exit \(exitCode)). \(guidance)Original error: \(output.suffix(4000))")
+    }
+
+    // Explain a failed native startup guard using reported facts only. Missing fields
+    // must not be presented as proof that trust or Developer Mode is disabled.
+    static func nativeDeviceUnavailable(_ details: [String: Any]) -> IPhoneUseError {
+        let connection = details["connectionProperties"] as? [String: Any] ?? [:]
+        let properties = details["deviceProperties"] as? [String: Any] ?? [:]
+        if connection["pairingState"] as? String == "unpaired" {
+            return IPhoneUseError("device_not_paired", "The selected device is unpaired. Connect it by USB, unlock it and complete the Trust This Computer prompt on the iPhone; then run 'iphone-use devices' and connect again. Standard mode does not need Runner setup.")
+        }
+        if properties["developerModeStatus"] as? String == "disabled" {
+            return IPhoneUseError("developer_mode_disabled", "Apple reports Developer Mode disabled. Enable it on the iPhone in Settings > Privacy & Security > Developer Mode, complete the system prompts, unlock and connect again. Standard mode does not need Runner signing.")
+        }
+        return IPhoneUseError("native_device_unavailable", "Apple did not report all required physical-device, pairing, Developer Mode and CoreDevice tunnel facts. Check 'iphone-use devices', the selected device ID, USB connection and device authorization prompts, then connect again. Missing facts do not prove a permission denial; no Runner setup is required for standard mode.")
     }
 }
 

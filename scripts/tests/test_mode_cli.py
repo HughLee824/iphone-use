@@ -66,6 +66,25 @@ class ModeCLITests(unittest.TestCase):
                 self.assertEqual(reply["result"]["backend"], backend)
                 self.assertEqual(reply["result"]["modeSource"], "configuration")
 
+    def test_missing_xcode_reports_fix_without_creating_configuration_or_session(self):
+        with tempfile.TemporaryDirectory(prefix="ip-first-use-", dir="/private/tmp") as temporary:
+            root = Path(temporary)
+            config = root / "preferences"
+            state = root / "sessions"
+            environment = {**os.environ, "IPHONE_USE_CONFIG_DIR": str(config),
+                           "IPHONE_USE_STATE_DIR": str(state),
+                           "DEVELOPER_DIR": str(root / "missing Xcode")}
+            result = subprocess.run([str(CLI), "devices"], env=environment,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(result.returncode, 0)
+            error = json.loads(result.stdout)["error"]
+            self.assertEqual(error["code"], "xcode_unavailable")
+            self.assertIn("DEVELOPER_DIR", error["message"])
+            self.assertIn("Original error: xcrun:", error["message"])
+            self.assertIn("does not require Runner setup", error["message"])
+            self.assertFalse(config.exists())
+            self.assertFalse(state.exists())
+
     def test_invalid_options_fail_before_host_or_device_access(self):
         cases = [
             (["--mode", "standard", "--backend", "xctest"], "mode_conflict"),

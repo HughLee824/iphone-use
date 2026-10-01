@@ -173,7 +173,7 @@ final class AppleDeviceBackend: SessionBackend {
               let connection = details["connectionProperties"] as? [String: Any], connection["pairingState"] as? String == "paired",
               let address = connection["tunnelIPAddress"] as? String,
               let identifier = details["identifier"] as? String else {
-            throw IPhoneUseError("native_device_unavailable", "Need a paired physical iPhone with Developer Mode and a CoreDevice tunnel")
+            throw CoreDevice.nativeDeviceUnavailable(details)
         }
         deviceLock = try SessionDeviceLock(root: paths.directory.deletingLastPathComponent(), device: udid)
         cli = AppleDeviceCLI(device: udid, cancellation: cancellation)

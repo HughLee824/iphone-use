@@ -119,7 +119,7 @@ final class XCTestBackend: SessionBackend {
             }
             Thread.sleep(forTimeInterval: 0.2)
         }
-        throw IPhoneUseError("runner_start_failed", "XCTest did not become ready; see \(logURL.path)")
+        throw IPhoneUseError("runner_start_failed", "XCTest did not become ready. Check the unlocked iPhone for an XCTest UI automation authorization prompt and complete it yourself if present. Inspect \(logURL.path) for the actual installation, signing or startup failure before reconnecting; a timeout alone does not establish its cause.")
     }
 
     private func deviceInfo(_ kind: String) throws -> [String: Any] {

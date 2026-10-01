@@ -21,10 +21,13 @@ Use the complete locally supplied candidate package, or build this checkout with
 command -v iphone-use
 iphone-use --version
 iphone-use connect --help
+xcode-select -p
+xcrun --find devicectl
+iphone-use config get mode
 iphone-use devices
 ```
 
-Confirm that the executable supports `--mode standard|runner`. A successful version/help command does not prove device connectivity. The future renamed Homebrew channel is documented in the installation guide; this change does not publish it.
+Confirm that the executable supports `--mode standard|runner`. Check any `DEVELOPER_DIR` override if the effective tools differ from `xcode-select -p`. These checks do not start a Runner or media session; `config get mode` does not create preferences. A successful version/help command does not prove device connectivity. The future renamed Homebrew channel is documented in the installation guide; this change does not publish it.
 
 ## Connect in standard mode
 
@@ -86,9 +89,15 @@ Tell the agent which device and mode to use, and the intended task. It must view
 | Result | Next step |
 | --- | --- |
 | CLI not found, or `--mode` unknown | Check `command -v iphone-use`, PATH and the actual package version. Restart an already-running client if needed. |
+| `xcode_unavailable` | Select full Xcode in Settings → Locations, finish first-launch installation, and check any `DEVELOPER_DIR` override; retry read-only `devices`. No Runner setup is needed for standard. |
+| `xcode_license_required` | Open Xcode and review the license/system prompts yourself, then retry `devices`. |
+| `device_not_paired` | Connect by USB, unlock and complete Trust This Computer on the iPhone; run `devices` again. |
+| `developer_mode_disabled` | Apple explicitly reported it disabled; enable Developer Mode on the phone and complete its system prompts before reconnecting. |
+| `native_device_unavailable` | Some required device/tunnel facts were unavailable; inspect device discovery and authorization without assuming that permissions were denied. |
 | `native_protocol_unsupported` | Check the supported macOS/iOS 27 toolchain. Do not silently switch to Runner. |
 | `device_locked` or trust/authorization prompt | Complete the system prompt locally, then reconnect or refresh as directed. |
-| `native_media_busy` | End the other client's device-control session; reconnect explicitly after it is released. |
+| `native_media_busy` | End the other client's device-control session, disconnect your own observation-only session if returned, then reconnect explicitly. |
+| `runner_start_failed` | Inspect the returned log and the phone for an XCTest authorization prompt; timeout alone does not identify the cause. Complete any actual prompt yourself. |
 | `setup_required` / signing error | These concern Runner mode. Check your selected mode; use Runner setup only when Runner is intended. |
 | `coredevice_initialization_timeout` | Follow [discovery diagnostics](discovery.md#接入失败诊断). A restricted execution-context timeout does not prove the phone is disconnected. |
 | `not_dispatched` | Correct the stated request/readiness problem and refresh observations when required. |

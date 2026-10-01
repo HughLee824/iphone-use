@@ -57,7 +57,8 @@ struct BuildRunner: ParsableCommand {
 }
 
 struct Connect: ParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Start a device session using the selected backend.")
+    static let configuration = CommandConfiguration(abstract: "Start a device session; standard needs no Runner setup or signing.",
+        discussion: "Use devices to select a paired, unlocked iPhone with Developer Mode enabled. Both modes require full Xcode. Standard currently targets macOS/iOS 27. Check result.controlAvailable before standard-mode input; ok:true may describe an observation-only session. Use --mode runner explicitly for XCTest; modes never switch automatically.")
     @Option(help: "Connected iPhone UDID or CoreDevice identifier.") var device: String
     @Option(help: "Runner source workflow: explicit signed .xctestrun. Packaged Runner users run setup once, then omit this option.") var xctestrun: String?
     @Option(help: "Idle duration, such as 30m, 60m or 10s.") var idleTimeout = "30m"

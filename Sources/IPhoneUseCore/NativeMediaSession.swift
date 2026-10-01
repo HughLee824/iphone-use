@@ -298,7 +298,7 @@ final class NativeMediaSession {
             throw IPhoneUseError("native_media_unsupported", "Media ownership inventory is unavailable")
         }
         // Coexistence has not been verified. Do not disturb another client's media session.
-        guard sessions.isEmpty else { throw IPhoneUseError("native_media_busy", "Another media session exists; concurrent media clients are not yet supported") }
+        guard sessions.isEmpty else { throw IPhoneUseError("native_media_busy", "Another media session exists. End the other client's control or recording session (for example, Device Hub), disconnect this iPhone-use session if one was returned, then explicitly reconnect. iPhone-use will not stop another client's media session.") }
         mayOwnStream = true // Even a lost start reply may have created our session.
         do {
             let output = try client.invoke("startmediastream", action: "mediastreamstart", input: [

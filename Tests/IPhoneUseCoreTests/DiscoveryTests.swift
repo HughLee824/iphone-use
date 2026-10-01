@@ -2,6 +2,44 @@ import XCTest
 @testable import IPhoneUseCore
 
 final class DiscoveryTests: XCTestCase {
+    func testToolchainFailuresProvideActionableGuidanceWithoutDiscardingAppleError() {
+        let cases = [
+            "xcrun: error: invalid active developer path (/Library/Developer/CommandLineTools)",
+            "xcrun: error: invalid DEVELOPER_DIR path: invalid developer directory '/missing'",
+            "xcrun: error: missing DEVELOPER_DIR path: /tmp/missing Xcode",
+            "xcrun: error: unable to find utility \"devicectl\", not a developer tool or in PATH",
+            "xcode-select: error: tool 'devicectl' requires Xcode, but active developer directory is a command line tools instance"
+        ]
+        for raw in cases {
+            let error = CoreDevice.commandFailure(["list", "devices"], exitCode: 72, output: raw)
+            XCTAssertEqual(error.code, "xcode_unavailable")
+            XCTAssertTrue(error.description.contains(raw))
+            XCTAssertTrue(error.description.contains("DEVELOPER_DIR"))
+            XCTAssertTrue(error.description.contains("does not require Runner setup"))
+        }
+        let raw = "You have not agreed to the Xcode license agreements."
+        let license = CoreDevice.commandFailure(["list", "devices"], exitCode: 69, output: raw)
+        XCTAssertEqual(license.code, "xcode_license_required")
+        XCTAssertTrue(license.description.contains(raw))
+        XCTAssertEqual(CoreDevice.commandFailure(["list", "devices"], exitCode: 1,
+            output: "Unknown license transport error").code, "coredevice_failed")
+    }
+
+    func testNativePrerequisiteErrorsDistinguishKnownFailuresFromMissingFacts() {
+        let unpaired = CoreDevice.nativeDeviceUnavailable(["connectionProperties": ["pairingState": "unpaired"]])
+        XCTAssertEqual(unpaired.code, "device_not_paired")
+        XCTAssertTrue(unpaired.description.contains("Trust This Computer"))
+        let disabled = CoreDevice.nativeDeviceUnavailable(["deviceProperties": ["developerModeStatus": "disabled"]])
+        XCTAssertEqual(disabled.code, "developer_mode_disabled")
+        XCTAssertTrue(disabled.description.contains("Privacy & Security"))
+        let unknownCases: [[String: Any]] = [[:], ["connectionProperties": ["pairingState": "unknown"]],
+            ["deviceProperties": ["developerModeStatus": "unknown"]],
+            ["connectionProperties": ["pairingState": "paired"], "deviceProperties": ["developerModeStatus": "enabled"]]]
+        for details in unknownCases {
+            XCTAssertEqual(CoreDevice.nativeDeviceUnavailable(details).code, "native_device_unavailable")
+        }
+    }
+
     func testInitializationTimeoutPreservesEvidenceAndSuggestsPermissionComparison() {
         let raw = "ERROR: Timed out waiting for CoreDeviceService to fully initialize. This is likely a bug in CoreDevice. (com.apple.coredevice.devicectl error 1 (0x01))"
         let error = CoreDevice.commandFailure(["list", "devices"], exitCode: 1, output: raw)

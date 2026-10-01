@@ -46,13 +46,17 @@ iPhone-use 是一个 macOS CLI，让外部 agent 能够发现 App、读取截图
 源码开发运行 `swift build` 后使用 `.build/debug/iphone-use`；本地候选包保留完整目录，将 `bin` 加入 PATH，可在源码目录外使用。
 
 ```sh
+command -v iphone-use
 iphone-use --version
+xcrun --find devicectl
 iphone-use devices
 export IOS_UDID="DEVICE_ID_FROM_DEVICES"
 iphone-use connect --device "$IOS_UDID" --mode standard
 ```
 
 `--mode standard` 只选择这次连接。新用户省略它时也默认 standard；已有偏好或有效旧 Runner 准备状态可能保留 runner。使用 `iphone-use config set mode standard` 保存默认值，后续可省略 `--mode`。
+
+发送输入前必须确认 `result.controlAvailable=true`；只有 `ok:true` 可能只是观察会话。不可控时读取 `controlErrorCode`、`controlError` 和 `recovery`，关闭本次会话，解决原因后再显式连接。完整 Xcode 选择、设备授权和媒体占用的处理见[首次检查](docs/install.md)。标准模式的这些问题不需要 Runner setup。
 
 ### 2. 观察、操作、验证
 

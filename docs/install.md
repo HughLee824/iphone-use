@@ -5,7 +5,7 @@
 
 iPhone-use 为外部 agent 提供真实 iPhone 的观察和操作能力。本包同时提供标准模式（截图 + 原生 HID）与 Runner 模式（XCTest）。普通用户先用标准模式，无需 Runner 签名或 setup；配套预编译 iOS Runner 供选择 Runner 模式的开发者在本机重签，不编译源码。
 
-从[公开网站](https://agentsoma.dev)进入的新用户，安装 CLI 后继续[客户端插件](https://github.com/HughLee824/iphone-use/blob/main/docs/plugins.md)和[首个真机任务](https://github.com/HughLee824/iphone-use/blob/main/docs/first-task.md)。外部 Agent 插件为可选接入；首次 CLI 操作不依赖插件。
+安装 CLI 后继续[首个真机任务](first-task.md)。[外部 Agent 插件](plugins.md)为可选接入；首次 CLI 操作不依赖插件。
 
 ## 前置条件
 
@@ -16,39 +16,22 @@ iPhone-use 为外部 agent 提供真实 iPhone 的观察和操作能力。本包
 
 旧名称 AgentSoma 的 `0.1.0` 正式包实测组合为 Apple Silicon / macOS 15.0.1 / Xcode 16.0 / iPhone 12 Pro / iOS 26.6.1，使用已有付费开发团队的签名。免费 Personal Team 的首次配置与续签尚未验收。
 
-## Homebrew 安装
+## 当前入口：本地候选包
 
-旧名称 AgentSoma 的 Homebrew `0.1.0` 曾完成公开安装及真机连接验收。新的 `iphone-use` formula 尚未发布；以下是切换后的目标命令。已有旧 formula 的用户应先断开会话并卸载旧 formula，避免兼容命令 `agentsoma` 冲突。
-
-```sh
-brew install HughLee824/tap/iphone-use
-iphone-use --version
-```
-
-首批提供 Apple Silicon / macOS 15 及以上的预编译包。Homebrew 安装 CLI 与配套资源，安装阶段不编译源码、不执行 setup、不接触 iPhone。完整 Xcode 用于设备接入；开发签名仅用于 Runner。包的编译下限不代表标准模式支持 macOS 15，标准模式仍要求上述 27 环境。
-
-## 手动下载安装
-
-当前推荐使用终端下载。先在 [GitHub Releases](https://github.com/HughLee824/iphone-use/releases) 确认版本，再在一个新的空目录中执行以下命令。预发布版本也使用此方式安装。
-
-下载、校验和解压任一步失败都会停止；版本号不含 `v`：
+从候选包提供者取得同一版本的 `.tar.gz` 和 `.tar.gz.sha256`，将两者放在一个新的空目录，在该目录运行下面的校验及解压。版本号必须来自实际收到的文件名，不能使用旧 AgentSoma `0.1.0` 推断新包版本：
 
 ```sh
-IPHONE_USE_VERSION=0.1.0 # 先确认此版本已发布，或替换为要安装的已发布版本
+IPHONE_USE_VERSION='VERSION_FROM_SUPPLIED_FILENAME'
 IPHONE_USE_PACKAGE="iphone-use-${IPHONE_USE_VERSION}-macos-arm64"
-IPHONE_USE_RELEASE_URL="https://github.com/HughLee824/iphone-use/releases/download/v${IPHONE_USE_VERSION}"
 (
   set -e
-  curl --fail --location --show-error --output "${IPHONE_USE_PACKAGE}.tar.gz" \
-    "${IPHONE_USE_RELEASE_URL}/${IPHONE_USE_PACKAGE}.tar.gz"
-  curl --fail --location --show-error --output "${IPHONE_USE_PACKAGE}.tar.gz.sha256" \
-    "${IPHONE_USE_RELEASE_URL}/${IPHONE_USE_PACKAGE}.tar.gz.sha256"
+  test ! -e "$IPHONE_USE_PACKAGE"
   shasum -a 256 -c "${IPHONE_USE_PACKAGE}.tar.gz.sha256"
   tar -xzf "${IPHONE_USE_PACKAGE}.tar.gz"
 )
 ```
 
-仅在校验显示 `OK` 且解压成功后继续。校验失败时重新下载，不运行包中的文件。GitHub 自动生成的 Source code 压缩包是源码，不是这里的预编译安装包。
+仅在校验显示 `OK` 且解压成功后继续。校验失败时向提供者重新取得文件，不运行包中的文件。GitHub 自动生成的 Source code 压缩包是源码，不是这里的预编译安装包。
 
 可以将解压后的完整目录放在任意位置，把其中的 `bin` 加入 PATH。下面使用用户目录，安装前确保目标版本目录尚不存在：
 
@@ -67,7 +50,23 @@ iphone-use --version
 
 把 `export PATH="$HOME/.local/bin:$PATH"` 加到 shell 配置（zsh 通常为 `~/.zshrc`），以便新终端使用。切换 Homebrew 与手动安装时，用 `command -v iphone-use` 核对实际入口。必须保留整个包的 `bin` 与 `libexec` 相对位置，不能只复制一个可执行文件。
 
-包内包含项目 MIT 许可证、Swift ArgumentParser 许可证及版本/源码提交信息。当前 Mac CLI 使用 ad-hoc 签名，未做 Developer ID 签名或公证。`0.1.0` 已验证上述命令行下载安装路径和公共 Homebrew 安装；浏览器下载可能附带系统隔离标记，RC 的 Safari 下载测试未通过首次运行，暂不作为已验收的安装方式。渠道发布状态与设备兼容性记录见[发布说明](https://github.com/HughLee824/iphone-use/blob/main/docs/release-setup.md)。
+包内包含项目 MIT 许可证、Swift ArgumentParser 许可证及版本/源码提交信息。当前 Mac CLI 使用 ad-hoc 签名，未做 Developer ID 签名或公证。当前候选的搬移及设备验收见[标准模式报告](media-candidate-acceptance.md)和 [Runner 报告](runner-candidate-acceptance.md)。旧 AgentSoma `0.1.0` 的终端下载和 Homebrew 验收不能作为新名称渠道已发布的证据。浏览器下载的系统隔离/首次运行仍未验收，不建议通过删除隔离标记或关闭系统保护绕过它。
+
+源码开发者可在 checkout 中运行 `swift build`，使用 `.build/debug/iphone-use`。标准模式不需要构建 Runner；源码 Runner 流程见[签名文档](onboarding.md#源码开发入口)。
+
+## 连接前检查
+
+```sh
+command -v iphone-use
+iphone-use --version
+iphone-use connect --help
+xcode-select -p
+xcrun --find devicectl
+iphone-use config get mode
+iphone-use devices
+```
+
+确认当前 CLI 支持 `--mode standard|runner`。完整 Xcode 需完成首次安装并在 Settings → Locations 中选定；独立 Command Line Tools 不够。若当前 shell 设置了 `DEVELOPER_DIR`，它会覆盖默认工具链，需核对是否指向预期 Xcode。上面的查询不启动会话、Runner 或媒体流，`config get mode` 不创建配置。工具和设备列表查询成功也不等于设备已解锁、媒体空闲或控制就绪。
 
 ## 首次连接：标准模式
 
@@ -88,6 +87,8 @@ iphone-use --session "$SESSION" disconnect
 
 标准模式会拥有自己的设备媒体会话。若提示 `native_media_busy`，自行结束 Device Hub 等其他客户端的控制连接，再显式重连；不要关闭他人的全部媒体会话。解锁、信任和系统授权仍需用户在设备上完成。
 
+连接返回 `ok:true` 仍需检查 `result.controlAvailable=true`；若为 false，读取 `controlErrorCode`、`controlError` 和 `recovery`，关闭本次会话后解决原因，再显式连接。不要通过运行 Runner setup 修复标准模式的媒体占用或设备授权问题。具体错误处理见[接入排错表](onboarding.md#常见接入错误)。
+
 ## 可选：Runner 签名与连接
 
 ```sh
@@ -105,6 +106,8 @@ profile 可按 Apple 的[开发 profile 流程](https://developer.apple.com/help
 
 ## 升级和卸载
 
+下面的 Homebrew 命令仅适用于未来已发布的新 formula；当前本地候选按手动版本目录方式升级。
+
 升级前先断开活跃会话。Homebrew 用户执行：
 
 ```sh
@@ -118,3 +121,9 @@ iphone-use --version
 仅 Runner 模式：若 Runner 内容改变、profile 到期或文件被改动，connect 会明确要求重新 setup。在 Xcode 更新签名资料后重跑 setup；无需寻找 `.xctestrun`。不要将包含个人 provisioning profile 的本机准备目录上传到公开 issue。
 
 卸载前断开会话。Homebrew 用户运行 `brew uninstall iphone-use`；手动安装用户删除自己创建的入口软链接及版本目录。卸载 CLI 会保留 `~/Library/Application Support/iphone-use` 中的设备准备状态和手机上的 Runner；需要完全移除时，再删除该状态目录并在 iPhone 上卸载 iPhone-use Runner。模式偏好单独位于 `~/.iphone-use/config.json`，卸载不会自动删除。标准模式没有 Runner 准备产物。不会删除 Keychain 证书或 Xcode 的签名资料。
+
+## 后续公开渠道（尚未发布）
+
+新 `iphone-use` formula 发布后，目标命令为 `brew install HughLee824/tap/iphone-use`。目前不要将其作为已可用的安装步骤。旧 formula 用户届时先断开会话，并按迁移说明处理 `agentsoma` 兼容命令冲突。Homebrew 安装不编译源码、不执行 setup、不接触 iPhone。
+
+手动下载渠道届时需先在 GitHub Releases 确认实际发布版本，再取得对应的包和校验和；不要预设 `0.1.0` 已存在。首批二进制编译下限为 Apple Silicon / macOS 15，标准模式当前仍要求上述 27 环境。发布流程见[发布说明](release-setup.md)。
