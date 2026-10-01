@@ -37,6 +37,6 @@
 
 ## 交付与证据
 
-修复在源码及 `.build/release/iphone-use`，旧 `.2` 候选包未替换，仍含已复现的误拒绝。重新打包前不能让另一个会话继续用旧包宣称修复验证。
+修复在源码及 `.build/release/iphone-use`，旧 `.2` 候选包未替换，仍含已复现的误拒绝。随后已完成[`.3` 候选包构建及朋友圈归档复测](wechat-candidate-acceptance.md)，后续试用应固定新包，不能继续用旧包宣称修复验证。
 
 私有证据位于 `.local/research/wechat-padding-20261001/`：`diagnostic/` 为原拒绝与保存媒体，`offline/` 为诊断解码，`fixed-replay/` 为修复后回放，`live/` 为两张媒体观察、独立 Apple PNG、状态和清理事实。`summary.json` 与 `evidence.sha256` 保存摘要和散列。私人页面、设备标识及原始帧均不进入 Git。
