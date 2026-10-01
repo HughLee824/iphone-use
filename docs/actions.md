@@ -115,6 +115,8 @@ iphone-use --session "$SESSION" observe
 
 默认保留画面守卫阈值。`--max-screen-change` 比较的是输入前画面相对观察时的变化，不是动作预计造成的滚动或动画幅度；只有理解具体的守卫拒绝原因后才调整策略。
 
+自动播放视频位于动作保护区域外时，可对当前坐标手势使用 `--ignore-rect x,y,width,height` 精确排除视频的全局比较，保留默认阈值；不适用于元素动作、Home、type 或 press。范围、路径重叠限制及旧 Runner 兼容性见[动态页面保护](screen-guard.md#页面中的自动播放视频)。
+
 宿主和 Runner 均校验参数及动作预算。以 `起始停留 + 路径屏幕点距离 × 截图倍率 / 速度 + 结束停留` 保守估算，超过 10 秒的请求在派发前返回 `swipe_duration_exceeded`，不消耗当前引用；应缩短路径/停留或加快速度。这个预算用于限制请求的运动过程，不是整个命令的硬超时；XCTest 前后等待及帧检测仍使用现有策略。
 
 成功回执增加 `result.motion`，例如 `{"velocity":100,"pressDuration":0.5,"holdDuration":0.2}`。它表示 Runner 调用 XCTest 时采用的参数，不是从触摸硬件采样出的实测速度。宿主核对它与请求一致；缺失或不一致时保留输入事实及可用结果帧，返回 `unknown` / `missing_swipe_motion_facts`，不重放。`completed` 仍只表示输入结束且画面稳定，目标值必须由调用 agent 核验。

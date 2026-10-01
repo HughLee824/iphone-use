@@ -26,6 +26,29 @@ iphone-use --session "$SESSION" tap o6:e10 --max-screen-change 0.01 --max-region
 
 ## 算法及责任边界
 
+### 页面中的自动播放视频
+
+对当前截图中明确可见、与动作无关的视频或动画，可在**一次坐标动作**上指定 `--ignore-rect x,y,width,height`，单位是截图的屏幕点。例如：
+
+```sh
+iphone-use --session "$SESSION" swipe o7 --from-x 315 --from-y 685 --to-x 315 --to-y 280 \
+  --ignore-rect 70,385,228,171 --observe
+```
+
+此处坐标只演示语法，必须根据当前观察重新选择。Agent 负责视觉识别视频，后端不会自动将画面变化分类为视频，也不把该区域存入会话偏好。每次动作都绑定原 observationID，换页、滚动或获得新观察后不能沿用旧位置。
+
+仅支持截图坐标的 tap、double-tap、long-press、pinch、swipe。只允许一个矩形，必须完全位于屏幕内、面积不超过屏幕的 25%，并与全部保护区域不相交：触点周围、滑动走廊、双指路径及额外 `--protect` 都不能被排除。25% 是首版范围限制，不是正确率保证。如果视频挡住了滑动走廊，应基于新图选择视频外路径，不能让后端移除路径保护。
+
+未指定时仍使用原 `srgb-grid-v1`。指定时使用 `srgb-grid-excluded-rect-v1`：将矩形外画面分成最多四个互不重叠的矩形，各自先裁剪再降采样，按原 32×64 全局网格密度向上取整分配行列；以剩余画面面积加权计算变化比例，分母不含排除区域。完整整屏比较仍记录为 `rawScreenChange`，实际接纳使用排除后的 `screenChange`。保护区域仍使用原始图及 48×48 网格，默认整屏 0.01、局部 0、颜色容差 8 不变。
+
+结果同时记录 `ignoredRect`、`rawScreenChange` 和 `exclusionScope=global_comparison_only`。标准与新版 Runner 共用此实现；宿主核对 Runner 的算法、矩形及排除范围回执。旧 Runner 不认识新的算法名，会在输入前拒绝，使用此参数前需构建配套 Runner，不能把旧 Runner 的拒绝当作动作执行。未使用参数的旧路径保持兼容。额外指纹仍受原报文预算约束，过大请求明确拒绝。
+
+此选项只排除动画内容，不保证区域内发生的变化无业务意义，也不能识别视觉上相同的页面替换。不要圈住身份、价格、确认对象等决定动作含义的信息；对这些信息应继续保护。局部压缩噪声造成的拒绝属于另一问题，本次没有据视频样本放宽局部阈值。动作后的 Runner 判稳不因该选项改变，不能据动作前通过保证视频页面在动作后会被判稳。
+
+本轮实现及实际视频帧对照见[动态页面保护验证](dynamic-screen-guard-validation.md)。
+
+### 默认比较
+
 共享的 `ScreenGuard.swift` 是宿主与 Runner 编译使用的无状态比较模块，不拥有 AX 查询、短 ID、缓存或任务策略。
 
 1. 宿主从观察中读取截图、screen/scope frame、设备 orientation、键盘数量，将元素引用解析为坐标，并生成基准指纹。

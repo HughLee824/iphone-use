@@ -64,6 +64,17 @@ class ActionObservationCLITests(unittest.TestCase):
             self.assertTrue(result.stdout, f"CLI returned no JSON: exit={result.returncode}, stderr={result.stderr!r}, requests={requests!r}")
             return result.returncode, json.loads(result.stdout), requests
 
+    def test_coordinate_video_exclusion_is_per_action_and_preserves_observation_flow(self):
+        args = ["swipe", "o1", "--from-x", "315", "--from-y", "685", "--to-x", "315", "--to-y", "280",
+                "--ignore-rect", "60,150,180,200", "--observe"]
+        code, response, requests = self.run_cli(args, outcome="unknown", refresh=True)
+        self.assertNotEqual(code, 0)
+        self.assertEqual([r["op"] for r in requests], ["swipe", "observe"])
+        self.assertEqual(requests[0]["ignoreRect"], "60,150,180,200")
+        self.assertEqual(requests[0]["maxScreenChange"], 0.01)
+        self.assertEqual(requests[0]["maxRegionChange"], 0)
+        self.assertNotIn("ignoreRect", requests[1])
+
     def test_app_lifecycle_commands_preserve_unknown_without_replay(self):
         for command in ["terminate", "relaunch"]:
             args = [command, "com.example.fixture", "--observe"]

@@ -37,6 +37,7 @@ struct ScreenContext: Codable {
 
 struct ScreenGuard: Codable {
     static let algorithm = "srgb-grid-v1"
+    static let maskedAlgorithm = "srgb-grid-excluded-rect-v1"
     static let maximumRegions = 5
     static let pixelTolerance = 8
     static let globalColumns = 32
@@ -69,11 +70,18 @@ struct ScreenGuard: Codable {
         let regionChanges: [Double]
         let policy: Policy
         var ignoredCaretBlink: ScreenRect? = nil
+        var ignoredRect: ScreenRect? = nil
+        var rawScreenChange: Double? = nil
         var accepted: Bool { screenChange <= policy.maxScreenChange && (regionChanges.allSatisfy { $0 <= policy.maxRegionChange } || ignoredCaretBlink != nil) }
         var result: [String: Any] {
-            var result: [String: Any] = ["algorithm": ScreenGuard.algorithm, "accepted": accepted, "screenChange": screenChange,
+            var result: [String: Any] = ["algorithm": ignoredRect == nil ? ScreenGuard.algorithm : ScreenGuard.maskedAlgorithm, "accepted": accepted, "screenChange": screenChange,
              "regionChanges": regionChanges, "maxScreenChange": policy.maxScreenChange,
              "maxRegionChange": policy.maxRegionChange, "pixelTolerance": ScreenGuard.pixelTolerance]
+            if let rect = ignoredRect {
+                result["ignoredRect"] = ["x": rect.x, "y": rect.y, "width": rect.width, "height": rect.height]
+                result["rawScreenChange"] = rawScreenChange
+                result["exclusionScope"] = "global_comparison_only"
+            }
             if let caret = ignoredCaretBlink {
                 result["caretBlinkException"] = ["algorithm": "source-blue-yellow-caret-fade-v2", "ignored": true,
                     "rect": ["x": caret.x, "y": caret.y, "width": caret.width, "height": caret.height]]
@@ -89,27 +97,63 @@ struct ScreenGuard: Codable {
     let policy: Policy
     let globalRGB: Data
     let regions: [Region]
+    let ignoredRect: ScreenRect?
+    let unmaskedRGB: [Data]?
 
-    init(png: Data, context: ScreenContext, rects: [ScreenRect], policy: Policy) throws {
+    init(png: Data, context: ScreenContext, rects: [ScreenRect], policy: Policy, ignoring ignoredRect: ScreenRect? = nil) throws {
         guard context.valid, policy.valid, (1...Self.maximumRegions).contains(rects.count),
               rects.allSatisfy({ $0.valid && context.screen.cgRect.contains($0.cgRect) }) else { throw Failure.invalidGuard }
         let image = try ScreenImage(png: png)
         try image.validateMapping(to: context.screen)
-        algorithm = Self.algorithm
+        algorithm = ignoredRect == nil ? Self.algorithm : Self.maskedAlgorithm
+        self.ignoredRect = ignoredRect
         self.context = context
         self.policy = policy
         pixelWidth = image.image.width
         pixelHeight = image.image.height
         globalRGB = try image.rgb(rect: context.screen, screen: context.screen, columns: Self.globalColumns, rows: Self.globalRows)
+        unmaskedRGB = try ignoredRect.map { rect in
+            try Self.unmaskedRects(screen: context.screen, ignored: rect, protected: rects).map {
+                let size = Self.bandGrid($0, screen: context.screen)
+                return try image.rgb(rect: $0, screen: context.screen, columns: size.columns, rows: size.rows)
+            }
+        }
         regions = try rects.map { Region(rect: $0, rgb: try image.rgb(rect: $0, screen: context.screen, columns: Self.regionSide, rows: Self.regionSide)) }
     }
 
     func validate() throws {
-        guard algorithm == Self.algorithm, context.valid, policy.valid, pixelWidth > 0, pixelHeight > 0,
+        guard algorithm == (ignoredRect == nil ? Self.algorithm : Self.maskedAlgorithm), context.valid, policy.valid, pixelWidth > 0, pixelHeight > 0,
               globalRGB.count == Self.globalColumns * Self.globalRows * 3,
               (1...Self.maximumRegions).contains(regions.count),
               regions.allSatisfy({ $0.rect.valid && context.screen.cgRect.contains($0.rect.cgRect)
                   && $0.rgb.count == Self.regionSide * Self.regionSide * 3 }) else { throw Failure.invalidGuard }
+        if let ignoredRect {
+            let rects = try Self.unmaskedRects(screen: context.screen, ignored: ignoredRect, protected: regions.map(\.rect))
+            guard let unmaskedRGB, unmaskedRGB.count == rects.count,
+                  zip(rects, unmaskedRGB).allSatisfy({ rect, rgb in
+                      let size = Self.bandGrid(rect, screen: context.screen)
+                      return rgb.count == size.columns * size.rows * 3
+                  }) else { throw Failure.invalidGuard }
+        } else if unmaskedRGB != nil { throw Failure.invalidGuard }
+    }
+
+    // One explicitly selected animation rectangle, never inferred from differences.
+    // Its geometry is observation-bound and cannot consume an action/context region.
+    private static func unmaskedRects(screen: ScreenRect, ignored: ScreenRect, protected: [ScreenRect]) throws -> [ScreenRect] {
+        guard ignored.valid, screen.cgRect.contains(ignored.cgRect),
+              ignored.width * ignored.height <= screen.width * screen.height * 0.25,
+              protected.allSatisfy({ !$0.cgRect.intersects(ignored.cgRect) }) else { throw Failure.invalidGuard }
+        let s = screen.cgRect, r = ignored.cgRect
+        return [CGRect(x: s.minX, y: s.minY, width: s.width, height: r.minY - s.minY),
+                CGRect(x: s.minX, y: r.maxY, width: s.width, height: s.maxY - r.maxY),
+                CGRect(x: s.minX, y: r.minY, width: r.minX - s.minX, height: r.height),
+                CGRect(x: r.maxX, y: r.minY, width: s.maxX - r.maxX, height: r.height)]
+            .filter { $0.width > 0 && $0.height > 0 }.map(ScreenRect.init)
+    }
+
+    private static func bandGrid(_ rect: ScreenRect, screen: ScreenRect) -> (columns: Int, rows: Int) {
+        (max(1, Int(ceil(Double(globalColumns) * rect.width / screen.width))),
+         max(1, Int(ceil(Double(globalRows) * rect.height / screen.height))))
     }
 
     func check(png: Data, context current: ScreenContext) throws -> Check {
@@ -122,7 +166,23 @@ struct ScreenGuard: Codable {
         let changes = try regions.map { region in
             Self.changedFraction(region.rgb, try image.rgb(rect: region.rect, screen: context.screen, columns: Self.regionSide, rows: Self.regionSide))
         }
-        return Check(screenChange: Self.changedFraction(globalRGB, global), regionChanges: changes, policy: policy)
+        let raw = Self.changedFraction(globalRGB, global)
+        guard let ignoredRect, let unmaskedRGB else {
+            return Check(screenChange: raw, regionChanges: changes, policy: policy)
+        }
+        let rects = try Self.unmaskedRects(screen: context.screen, ignored: ignoredRect, protected: regions.map(\.rect))
+        // Crop each static band BEFORE resampling, so video pixels cannot bleed
+        // into the comparison through the global grid's interpolation filter.
+        var changedArea = 0.0, area = 0.0
+        for (rect, rgb) in zip(rects, unmaskedRGB) {
+            let grid = Self.bandGrid(rect, screen: context.screen)
+            let current = try image.rgb(rect: rect, screen: context.screen, columns: grid.columns, rows: grid.rows)
+            let size = rect.width * rect.height
+            changedArea += Self.changedFraction(rgb, current) * size
+            area += size
+        }
+        return Check(screenChange: changedArea / area, regionChanges: changes, policy: policy,
+                     ignoredRect: ignoredRect, rawScreenChange: raw)
     }
 
     // Fraction of grid cells with at least one RGB channel differing by more than the noise floor.

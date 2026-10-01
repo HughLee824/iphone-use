@@ -12,6 +12,7 @@ struct DeviceAction {
     let swipeMotion: SwipeMotion?
     let textRegion: ScreenRect?
     let pinchMotion: PinchMotion?
+    let ignoredScreenRect: ScreenRect?
 
     init(operation: String, request: [String: Any], allowScreenText: Bool = false) throws {
         guard Self.operations.contains(operation) else { throw IPhoneUseError("invalid_action", "Unknown device action") }
@@ -149,6 +150,18 @@ struct DeviceAction {
             }
             textRegion = rect
         } else { textRegion = nil }
+        if let raw = request["ignoreRect"] {
+            guard coordinate, ["tap", "double-tap", "long-press", "pinch", "swipe"].contains(operation),
+                  let value = raw as? String else {
+                throw IPhoneUseError("invalid_ignored_region", "--ignore-rect applies only to screenshot coordinate gestures")
+            }
+            let parts = value.split(separator: ",", omittingEmptySubsequences: false)
+            let values = parts.compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            guard parts.count == 4, values.count == 4, values.allSatisfy(\.isFinite), values[2] > 0, values[3] > 0 else {
+                throw IPhoneUseError("invalid_ignored_region", "Use --ignore-rect x,y,width,height in screenshot screen points")
+            }
+            ignoredScreenRect = ScreenRect(CGRect(x: values[0], y: values[1], width: values[2], height: values[3]))
+        } else { ignoredScreenRect = nil }
         var policy = ScreenGuard.Policy()
         var protected: [ObservationReference] = []
         if ["tap", "double-tap", "long-press", "pinch", "swipe"].contains(operation) {

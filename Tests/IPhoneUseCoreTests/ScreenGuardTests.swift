@@ -302,6 +302,17 @@ final class ScreenGuardTests: XCTestCase {
                 XCTAssertNotNil(($0 as? ActionFailure)?.result?["frame"])
             }
         }
+        let video = ScreenRect(CGRect(x: 30, y: 100, width: 120, height: 160))
+        let masked = try ScreenGuard(png: png, context: screenTestContext(), rects: expected.regions.map(\.rect), policy: .init(), ignoring: video)
+        let maskedProof = try masked.check(png: png, context: screenTestContext()).result
+        response["screenGuard"] = maskedProof
+        XCTAssertNoThrow(try XCTestCapture.actionResponse(response, directory: directory, expectedGuard: masked))
+        for key in ["ignoredRect", "rawScreenChange", "exclusionScope"] {
+            var evidence = maskedProof; evidence.removeValue(forKey: key); response["screenGuard"] = evidence
+            XCTAssertThrowsError(try XCTestCapture.actionResponse(response, directory: directory, expectedGuard: masked))
+        }
+        response["screenGuard"] = maskedProof
+        XCTAssertThrowsError(try XCTestCapture.actionResponse(response, directory: directory, expectedGuard: expected))
         response.removeValue(forKey: "screenGuard")
         XCTAssertThrowsError(try XCTestCapture.actionResponse(response, directory: directory, expectedGuard: expected))
     }

@@ -61,13 +61,23 @@ enum XCTestCapture {
             }
             if response["ok"] as? Bool == true, let expectedGuard {
                 guard let evidence = response["screenGuard"] as? [String: Any],
-                      evidence["accepted"] as? Bool == true, evidence["algorithm"] as? String == ScreenGuard.algorithm,
+                      evidence["accepted"] as? Bool == true, evidence["algorithm"] as? String == expectedGuard.algorithm,
                       evidence["maxScreenChange"] as? Double == expectedGuard.policy.maxScreenChange,
                       evidence["maxRegionChange"] as? Double == expectedGuard.policy.maxRegionChange,
                       let global = evidence["screenChange"] as? Double, global.isFinite, (0...expectedGuard.policy.maxScreenChange).contains(global),
                       let regions = evidence["regionChanges"] as? [Double], regions.count == expectedGuard.regions.count,
                       regions.allSatisfy({ $0.isFinite && (0...expectedGuard.policy.maxRegionChange).contains($0) }) else {
                     throw IPhoneUseError("missing_screen_guard_facts", "Runner did not confirm the requested screen guard; observe before deciding what to do next")
+                }
+                if let rect = expectedGuard.ignoredRect {
+                    guard let raw = evidence["ignoredRect"] as? [String: Any],
+                          let actual = try? JSONDecoder().decode(ScreenRect.self, from: jsonData(raw)), actual == rect,
+                          evidence["exclusionScope"] as? String == "global_comparison_only",
+                          let rawChange = evidence["rawScreenChange"] as? Double, rawChange.isFinite, (0...1).contains(rawChange) else {
+                        throw IPhoneUseError("missing_screen_guard_facts", "Runner did not confirm the requested animation rectangle")
+                    }
+                } else if evidence["ignoredRect"] != nil {
+                    throw IPhoneUseError("missing_screen_guard_facts", "Runner unexpectedly excluded an animation rectangle")
                 }
             }
             if response["ok"] as? Bool == true {

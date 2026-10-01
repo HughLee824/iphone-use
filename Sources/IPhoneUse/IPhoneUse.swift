@@ -244,7 +244,13 @@ struct ScreenGuardOptions: ParsableArguments {
     @Option(help: "Maximum changed protected-region fraction (0...max-screen-change); default 0.") var maxRegionChange = 0.0
     @Option(help: "Additional element reference to protect, repeat up to three times; same observation as the action.") var protect: [String] = []
 
-    var fields: [String: Any] { ["maxScreenChange": maxScreenChange, "maxRegionChange": maxRegionChange, "protect": protect] }
+    @Option(help: "Exclude one visually identified video/animation rectangle from the pre-input global comparison: x,y,width,height in screen points. Coordinate gestures only; at most 25% of screen; cannot overlap protected regions. Applies to this action only.") var ignoreRect: String?
+
+    var fields: [String: Any] {
+        var value: [String: Any] = ["maxScreenChange": maxScreenChange, "maxRegionChange": maxRegionChange, "protect": protect]
+        value["ignoreRect"] = ignoreRect
+        return value
+    }
 }
 
 struct Tap: ParsableCommand {
