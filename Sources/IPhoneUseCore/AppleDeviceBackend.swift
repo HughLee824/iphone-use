@@ -365,10 +365,11 @@ final class AppleDeviceBackend: SessionBackend {
         guard target.context["deviceID"] as? String == cli?.device,
               target.context["sessionGeneration"] as? String == generation,
               let captured = target.context["captureStartedUptime"] as? Double,
-              ProcessInfo.processInfo.systemUptime - captured <= 30,
               let screenGuard = (keyboardAction || homeAction) ? target.textGuard : target.gesture?.screenGuard else {
             throw ActionFailure(code: "stale_observation", description: "Observe this device/session again before input", possiblyExecuted: false, requiresObservation: true)
         }
+        let timing = try NativeInputTiming(captured: captured, now: ProcessInfo.processInfo.systemUptime,
+                                           coordinateGesture: !keyboardAction && !homeAction)
         guard let rotation = target.context["displayRotation"] as? String,
               ["rot0", "rot90", "rot270"].contains(rotation), target.context["nativeRotation"] as? String == "rot0" else {
             throw IPhoneUseError("native_orientation_unsupported", "Native HID requires portrait or landscape on a native-portrait display")
@@ -402,7 +403,7 @@ final class AppleDeviceBackend: SessionBackend {
             let (value, count) = try NativeInputPreflight.check(guard: screenGuard,
                 displayID: target.context["displayID"] as? UInt64, displayRotation: rotation,
                 captureSource: target.context["captureSource"] as? String,
-                deadline: min(captured + 30, ProcessInfo.processInfo.systemUptime + 8),
+                deadline: timing.preflightDeadline(now: ProcessInfo.processInfo.systemUptime),
                 // Editing keys can encounter the same blinking caret as paste.
                 // Retry only captures against the original guard, never input.
                 maximumCaptures: pressing || textInput?.usesPasteboard == true ? 3 : 1,
@@ -447,6 +448,7 @@ final class AppleDeviceBackend: SessionBackend {
             }
         } catch let failure as ActionFailure {
             var result = failure.result ?? [:]
+            result["inputTiming"] = timing.result
             result["preInputChecks"] = preInputChecks
             result["preInputCaptures"] = captures + (result["preInputCaptures"] as? Int ?? 0)
             if let pasteboard { result["pasteboard"] = pasteboard.status }
@@ -454,12 +456,10 @@ final class AppleDeviceBackend: SessionBackend {
                 requiresObservation: failure.requiresObservation, result: result, rejectedCapture: failure.rejectedCapture)
         } catch {
             throw ActionFailure(code: "stale_observation", description: "Pre-input capture/guard/clipboard check failed: \(error)",
-                possiblyExecuted: false, requiresObservation: true, result: ["pasteboard": pasteboard?.status ?? [:], "preInputChecks": preInputChecks])
+                possiblyExecuted: false, requiresObservation: true, result: ["pasteboard": pasteboard?.status ?? [:], "preInputChecks": preInputChecks, "inputTiming": timing.result])
         }
         try cancellation.check()
-        guard ProcessInfo.processInfo.systemUptime - captured <= 30 else {
-            throw ActionFailure(code: "stale_observation", description: "Observation expired during pre-input capture", possiblyExecuted: false, requiresObservation: true)
-        }
+        try timing.checkBeforeDispatch(now: ProcessInfo.processInfo.systemUptime)
         guard media.health()["healthy"] as? Bool == true else { throw IPhoneUseError("native_media_unhealthy", "Media stopped before input") }
         var result: [String: Any]
         if let textInput {
@@ -512,6 +512,7 @@ final class AppleDeviceBackend: SessionBackend {
             }
         }
         result["sourceObservationID"] = action.reference.observation
+        result["inputTiming"] = timing.result
         result["displayRotation"] = rotation
         result["nativeRotation"] = target.context["nativeRotation"]
         result["screenGuard"] = check.result

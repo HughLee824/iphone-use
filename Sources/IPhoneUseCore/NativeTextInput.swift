@@ -22,6 +22,41 @@ enum NativeTextInput {
     var usesPasteboard: Bool { if case .pasteboard = self { return true }; return false }
 }
 
+// A current coordinate observation is a comparison baseline, not a lease on the
+// device. Spend a bounded interval revalidating it immediately before input.
+// Focus-dependent and system actions retain their original observation expiry.
+struct NativeInputTiming {
+    let observationAgeSeconds: TimeInterval
+    let dispatchDeadline: TimeInterval
+    let coordinateGesture: Bool
+
+    init(captured: TimeInterval, now: TimeInterval, coordinateGesture: Bool) throws {
+        guard captured.isFinite, now.isFinite, captured >= 0, captured <= now,
+              coordinateGesture || now - captured <= 30 else {
+            throw ActionFailure(code: "stale_observation", description: "Observation time is invalid or expired; observe again before input",
+                                possiblyExecuted: false, requiresObservation: true)
+        }
+        self.coordinateGesture = coordinateGesture
+        observationAgeSeconds = now - captured
+        dispatchDeadline = coordinateGesture ? now + 8 : captured + 30
+    }
+
+    func preflightDeadline(now: TimeInterval) -> TimeInterval { min(dispatchDeadline, now + 8) }
+
+    func checkBeforeDispatch(now: TimeInterval) throws {
+        guard now.isFinite, now < dispatchDeadline else {
+            throw ActionFailure(code: "stale_observation", description: "Input validation deadline expired; observe again before input",
+                                possiblyExecuted: false, requiresObservation: true, result: ["inputTiming": result])
+        }
+    }
+
+    var result: [String: Any] {
+        ["policy": coordinateGesture ? "current_observation_revalidation" : "observation_expiry",
+         "observationAgeAtAdmissionSeconds": observationAgeSeconds,
+         "preflightBudgetSeconds": 8]
+    }
+}
+
 // Retry observations only, never input. Every frame compares with the original
 // guard, with unchanged thresholds and one shared deadline for this preflight.
 enum NativeInputPreflight {
