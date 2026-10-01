@@ -89,6 +89,38 @@ final class ScreenGuardExclusionTests: XCTestCase {
         XCTAssertNotEqual(baseline.algorithm, ScreenGuard.algorithm)
     }
 
+    func testNativeTextExclusionProtectsEntireFieldAndCurrentReference() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = ObservationCache(directory: directory), context = screenTestContext()
+        let field = CGRect(x: 18, y: 139, width: 354, height: 160)
+        let video = CGRect(x: 20, y: 400, width: 180, height: 80)
+        let capture = CapturedObservation(nodes: [], metadata: ["backend": "apple-native",
+            "screenContext": try jsonObject(JSONEncoder().encode(context))], screenshot: try screenPNG())
+        _ = try cache.store(capture)
+        for kind in ["type", "press"] {
+            let request: [String: Any] = ["reference": "o1", "text": "中文", "mode": "insert", "key": "backspace",
+                "fieldRect": "18,139,354,160", "ignoreRect": "20,400,180,80"]
+            let action = try DeviceAction(operation: kind, request: request, allowScreenText: true)
+            let guardValue = try XCTUnwrap(cache.resolveTarget(for: action).textGuard)
+            XCTAssertEqual(guardValue.regions.map(\.rect), [ScreenRect(field)])
+            XCTAssertTrue(try guardValue.check(png: screenPNG(patches: [(video, [0,0,0])]), context: context).accepted)
+            XCTAssertFalse(try guardValue.check(png: screenPNG(patches: [(video, [0,0,0]),
+                (CGRect(x: 50, y: 155, width: 10, height: 15), [0,0,0])]), context: context).accepted)
+            for value in ["20,150,100,20", "0,0,390,400", "-1,400,180,80"] {
+                var invalid = request; invalid["ignoreRect"] = value
+                XCTAssertThrowsError(try cache.resolveTarget(for: DeviceAction(operation: kind, request: invalid, allowScreenText: true)))
+            }
+            var noField = request; noField.removeValue(forKey: "fieldRect")
+            XCTAssertThrowsError(try DeviceAction(operation: kind, request: noField, allowScreenText: true))
+            XCTAssertThrowsError(try DeviceAction(operation: kind, request: request, allowScreenText: false))
+        }
+        let old = try DeviceAction(operation: "type", request: ["reference": "o1", "text": "中文", "mode": "insert",
+            "fieldRect": "18,139,354,160", "ignoreRect": "20,400,180,80"], allowScreenText: true)
+        _ = try cache.store(capture)
+        XCTAssertThrowsError(try cache.resolveTarget(for: old))
+    }
+
     func testActionParsingAndObservationBinding() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("excluded-guard-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }

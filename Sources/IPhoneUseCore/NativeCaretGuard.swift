@@ -1,7 +1,7 @@
 import Foundation
 import CoreGraphics
 
-// An optional, source-anchored exception for a single blue or yellow UIKit-style caret.
+// An optional, source-anchored exception for a single blue, yellow or green UIKit-style caret.
 // Never infer a caret from a difference alone: a hidden source has no anchor.
 // This is pixel evidence, not independent confirmation of editor focus.
 struct NativeCaretGuard {
@@ -17,7 +17,7 @@ struct NativeCaretGuard {
     private let allowsAdjacentText: Bool
     let caret: ScreenRect
 
-    init?(png: Data, context: ScreenContext, field: ScreenRect, allowsAdjacentText: Bool = false, allowsYellowCaret: Bool = true) throws {
+    init?(png: Data, context: ScreenContext, field: ScreenRect, allowsAdjacentText: Bool = false, allowsColoredCarets: Bool = true) throws {
         guard context.valid, field.valid, context.screen.cgRect.contains(field.cgRect) else { return nil }
         let image = try ScreenImage(png: png)
         try image.validateMapping(to: context.screen)
@@ -35,14 +35,15 @@ struct NativeCaretGuard {
             let i = (y * width + x) * 3
             let r = Int(source[i]), g = Int(source[i + 1]), b = Int(source[i + 2])
             let blue = b >= 70 && b - r >= 30 && b - g >= 15
-            let yellow = allowsYellowCaret && r >= 120 && g >= 100 && r - b >= 60 && g - b >= 45 && abs(r - g) <= 100
-            if blue || yellow {
+            let yellow = allowsColoredCarets && r >= 120 && g >= 100 && r - b >= 60 && g - b >= 45 && abs(r - g) <= 100
+            let green = allowsColoredCarets && g >= 70 && g - r >= 30 && g - b >= 15
+            if blue || yellow || green {
                 mask[y * width + x] = 1
                 left = min(left, x); right = max(right, x); top = min(top, y); bottom = max(bottom, y); count += 1
             }
         } }
         // Runner's post-input stability keeps its existing global blue rule.
-        if allowsYellowCaret {
+        if allowsColoredCarets {
             var candidate: (left: Int, right: Int, top: Int, bottom: Int, count: Int)?
             var pending = [Int]()
             for seed in mask.indices where mask[seed] == 1 {

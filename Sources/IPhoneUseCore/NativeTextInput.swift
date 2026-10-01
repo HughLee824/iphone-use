@@ -22,38 +22,51 @@ enum NativeTextInput {
     var usesPasteboard: Bool { if case .pasteboard = self { return true }; return false }
 }
 
-// A current coordinate observation is a comparison baseline, not a lease on the
-// device. Spend a bounded interval revalidating it immediately before input.
-// Focus-dependent and system actions retain their original observation expiry.
+// Current observations are comparison baselines. Agent thinking time is not an
+// input lease: validate the same baseline again within bounded host-side phases.
 struct NativeInputTiming {
+    enum Policy { case coordinateGesture, keyboard, system }
     let observationAgeSeconds: TimeInterval
     let dispatchDeadline: TimeInterval
-    let coordinateGesture: Bool
+    let policy: Policy
+    private var finalPreflightDeadline: TimeInterval?
 
-    init(captured: TimeInterval, now: TimeInterval, coordinateGesture: Bool) throws {
+    init(captured: TimeInterval, now: TimeInterval, policy: Policy) throws {
         guard captured.isFinite, now.isFinite, captured >= 0, captured <= now,
-              coordinateGesture || now - captured <= 30 else {
+              policy != .system || now - captured <= 30 else {
             throw ActionFailure(code: "stale_observation", description: "Observation time is invalid or expired; observe again before input",
                                 possiblyExecuted: false, requiresObservation: true)
         }
-        self.coordinateGesture = coordinateGesture
+        self.policy = policy
         observationAgeSeconds = now - captured
-        dispatchDeadline = coordinateGesture ? now + 8 : captured + 30
+        switch policy {
+        case .coordinateGesture: dispatchDeadline = now + 8
+        case .keyboard: dispatchDeadline = now + 30
+        case .system: dispatchDeadline = captured + 30
+        }
     }
 
-    func preflightDeadline(now: TimeInterval) -> TimeInterval { min(dispatchDeadline, now + 8) }
+    mutating func preflightDeadline(now: TimeInterval) -> TimeInterval {
+        let deadline = min(dispatchDeadline, now + 8)
+        finalPreflightDeadline = deadline
+        return deadline
+    }
 
     func checkBeforeDispatch(now: TimeInterval) throws {
-        guard now.isFinite, now < dispatchDeadline else {
+        // Clipboard ownership checks after the last capture share that capture's
+        // budget. They cannot leave a matching but now-old frame fit for dispatch.
+        guard let finalPreflightDeadline, now.isFinite,
+              now < min(dispatchDeadline, finalPreflightDeadline) else {
             throw ActionFailure(code: "stale_observation", description: "Input validation deadline expired; observe again before input",
                                 possiblyExecuted: false, requiresObservation: true, result: ["inputTiming": result])
         }
     }
 
     var result: [String: Any] {
-        ["policy": coordinateGesture ? "current_observation_revalidation" : "observation_expiry",
+        ["policy": policy == .system ? "observation_expiry" : "current_observation_revalidation",
          "observationAgeAtAdmissionSeconds": observationAgeSeconds,
-         "preflightBudgetSeconds": 8]
+         "preflightBudgetSeconds": 8,
+         "requestBudgetSeconds": policy == .keyboard ? 30 : (policy == .coordinateGesture ? 8 : 30)]
     }
 }
 

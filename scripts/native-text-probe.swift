@@ -17,6 +17,8 @@ private struct TextProbe: UIViewControllerRepresentable {
 
 private final class TextProbeController: UIViewController, UITextViewDelegate {
     private let input = UITextView()
+    private var animationTimer: Timer?
+    deinit { animationTimer?.invalidate() }
     private let received = UILabel()
     private let facts = UILabel()
     private var expected = ""
@@ -46,6 +48,29 @@ private final class TextProbeController: UIViewController, UITextViewDelegate {
         ])
         let title = UILabel(); title.text = "iPhone-use Text Probe"; title.font = .boldSystemFont(ofSize: 20)
         stack.addArrangedSubview(title)
+        if ProcessInfo.processInfo.arguments.contains("--dynamic-text-probe") {
+            // A visible, bounded animation beside a separately protected editor.
+            // The delayed mutation proves excluding animation never masks text.
+            input.tintColor = UIColor(red: 7/255, green: 193/255, blue: 96/255, alpha: 1)
+            let row = UIStackView(); row.distribution = .fillEqually
+            let animation = UILabel(); animation.textAlignment = .center
+            animation.font = .monospacedSystemFont(ofSize: 14, weight: .bold)
+            row.addArrangedSubview(animation)
+            let change = UIButton(type: .system); change.setTitle("Change field in 8s", for: .normal)
+            change.addAction(UIAction { [weak self] _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+                    self?.input.text = "字段已经变化"; self?.refresh()
+                }
+            }, for: .touchUpInside)
+            row.addArrangedSubview(change)
+            row.heightAnchor.constraint(equalToConstant: 60).isActive = true
+            stack.addArrangedSubview(row)
+            var frame = 0
+            animationTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak animation] _ in
+                frame += 1; animation?.text = "VIDEO \(frame)"
+                animation?.backgroundColor = frame.isMultiple(of: 2) ? .systemCyan : .systemOrange
+            }
+        }
         let buttons = UIStackView(); buttons.distribution = .fillEqually
         for (name, value) in samples {
             let button = UIButton(type: .system); button.setTitle(name, for: .normal)

@@ -48,7 +48,7 @@ final class NativeCaretGuardTests: XCTestCase {
         }
         let baseline = try screenPNG(patches: [(stroke, yellow)])
         XCTAssertNil(try NativeCaretGuard(png: baseline, context: screenTestContext(), field: field,
-                                         allowsAdjacentText: true, allowsYellowCaret: false))
+                                         allowsAdjacentText: true, allowsColoredCarets: false))
         let context = screenTestContext()
         let caret = try XCTUnwrap(NativeCaretGuard(png: baseline, context: context, field: field))
         let guardValue = try ScreenGuard(png: baseline, context: context, rects: [field], policy: .init())
@@ -59,7 +59,29 @@ final class NativeCaretGuardTests: XCTestCase {
             }.0
         XCTAssertTrue(result.accepted)
         XCTAssertEqual(result.policy.maxRegionChange, 0)
-        XCTAssertEqual((result.result["caretBlinkException"] as? [String: Any])?["algorithm"] as? String, "source-blue-yellow-caret-fade-v2")
+        XCTAssertEqual((result.result["caretBlinkException"] as? [String: Any])?["algorithm"] as? String, "source-blue-yellow-green-caret-fade-v3")
+    }
+
+    func testGreenCaretFadesButDoesNotPermitTextMovementOrSelection() throws {
+        let green: [UInt8] = [7, 193, 96]
+        let context = screenTestContext()
+        let source = try screenPNG(patches: [(stroke, green)])
+        let caret = try XCTUnwrap(NativeCaretGuard(png: source, context: context, field: field))
+        for color: [UInt8] in [green, [131,224,176], [255,255,255]] {
+            XCTAssertTrue(try caret.acceptsBlink(png: screenPNG(patches: [(stroke, color)]), context: context))
+        }
+        for patches: [(CGRect, [UInt8])] in [
+            [(stroke.offsetBy(dx: 1, dy: 0), green)],
+            [(stroke, blue)],
+            [(stroke, green), (CGRect(x: 80, y: 155, width: 8, height: 10), [0,0,0])],
+            [(stroke.insetBy(dx: -5, dy: 0), green)]
+        ] {
+            XCTAssertFalse(try caret.acceptsBlink(png: screenPNG(patches: patches), context: context))
+        }
+        XCTAssertNil(try NativeCaretGuard(png: source, context: context, field: field,
+            allowsAdjacentText: true, allowsColoredCarets: false)) // Runner unchanged.
+        XCTAssertNil(try NativeCaretGuard(png: screenPNG(patches: [(stroke, green),
+            (stroke.offsetBy(dx: 20, dy: 0), green)]), context: context, field: field))
     }
 
     func testColoredContentDoesNotHideUniqueCaretButRemainsProtected() throws {
@@ -89,7 +111,7 @@ final class NativeCaretGuardTests: XCTestCase {
                 (scaled(CGRect(x: 46, y: 146, width: 10, height: 4)), yellow)]), context: screenTestContext(), field: field))
             let runnerSource = try image(content + [(scaled(stroke), blue)])
             XCTAssertNil(try NativeCaretGuard(png: runnerSource, context: screenTestContext(), field: field,
-                allowsAdjacentText: true, allowsYellowCaret: false))
+                allowsAdjacentText: true, allowsColoredCarets: false))
         }
     }
 

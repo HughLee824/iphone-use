@@ -380,7 +380,8 @@ struct TypeText: ParsableCommand {
     @Option(help: "insert uses the current caret/selection; replace selects all (XCTest also focuses the referenced field); Runner append reads validated non-secure text and replaces it with the concatenated result; native append requests document end. Native modes never focus implicitly.") var mode: String
     @Option(help: "Literal text up to 4096 UTF-8 bytes; Runner text_view accepts LF; native auto/paste accepts LF/CR, other control keys are unsupported. Empty text clears in replace mode.") var text: String?
     @Option(help: "apple-native only: auto uses keys for single-line ASCII and paste for Unicode or multiline text; keys sends up to 64 US-mapped ASCII characters through the active layout; paste inserts literal text via the device clipboard (up to 4096 UTF-8 bytes).") var method: String?
-    @Option(help: "Native type oN only: complete input field x,y,width,height in screen points; field guard with source-anchored blue caret blink tolerance and default whole-screen guard. Does not focus. Omit to protect the whole screen strictly.") var fieldRect: String?
+    @Option(help: "Native type oN only: complete input field x,y,width,height in screen points; field guard with source-anchored caret blink tolerance and default whole-screen guard. Does not focus. Omit to protect the whole screen strictly.") var fieldRect: String?
+    @Option(help: "Native type/press with --field-rect only: exclude one video/animation rectangle x,y,width,height outside the complete field, at most 25% of screen. This action only.") var ignoreRect: String?
     @Flag(help: "Read UTF-8 text from stdin until EOF, up to 4096 bytes. No trimming; use instead of --text.") var stdin = false
 
     mutating func validate() throws {
@@ -398,6 +399,7 @@ struct TypeText: ParsableCommand {
             }
             var fields: [String: Any] = ["reference": reference, "mode": mode, "text": value]
             if let fieldRect { fields["fieldRect"] = fieldRect }
+            if let ignoreRect { fields["ignoreRect"] = ignoreRect }
             if let method { fields["textMethod"] = method }
             // Old hosts ignore unknown type fields. A distinct operation makes
             // explicit method selection fail closed instead of silently using keys.
@@ -434,10 +436,12 @@ struct Press: ParsableCommand {
     @Argument(help: "Current text input reference, or native screenshot oN after visually confirming focus. Does not tap to focus; Return can submit, search, or insert a newline depending on the app.") var reference: String
     @Option(help: "Key: return, backspace, left, right, up, down, tab, shift-tab. Native oN also supports escape.") var key: String
     @Option(help: "Native press oN only: complete focused field x,y,width,height in screen points, with the same protection as native type.") var fieldRect: String?
+    @Option(help: "Native type/press with --field-rect only: exclude one video/animation rectangle x,y,width,height outside the complete field, at most 25% of screen. This action only.") var ignoreRect: String?
     mutating func run() throws {
         let session = try options.requiredSession()
         var fields: [String: Any] = ["reference": reference, "key": key]
         if let fieldRect { fields["fieldRect"] = fieldRect }
+        if let ignoreRect { fields["ignoreRect"] = ignoreRect }
         try outputAction(session: session, observe: observation.observe) { try SessionClient.call(session: session, operation: "press", fields: fields) }
     }
 }

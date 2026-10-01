@@ -182,7 +182,7 @@ struct FrameStability {
             anchor = frame; anchorPNG = png; caret = nil
             if let context {
                 let candidates = textFields.compactMap { field in
-                    try? NativeCaretGuard(png: png, context: context, field: field, allowsAdjacentText: true, allowsYellowCaret: false)
+                    try? NativeCaretGuard(png: png, context: context, field: field, allowsAdjacentText: true, allowsColoredCarets: false)
                 }
                 // At most one recognized stroke across all bounded fields. The
                 // full frame is still compared, including all other field pixels.

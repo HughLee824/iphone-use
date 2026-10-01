@@ -368,8 +368,8 @@ final class AppleDeviceBackend: SessionBackend {
               let screenGuard = (keyboardAction || homeAction) ? target.textGuard : target.gesture?.screenGuard else {
             throw ActionFailure(code: "stale_observation", description: "Observe this device/session again before input", possiblyExecuted: false, requiresObservation: true)
         }
-        let timing = try NativeInputTiming(captured: captured, now: ProcessInfo.processInfo.systemUptime,
-                                           coordinateGesture: !keyboardAction && !homeAction)
+        var timing = try NativeInputTiming(captured: captured, now: ProcessInfo.processInfo.systemUptime,
+                                           policy: keyboardAction ? .keyboard : (homeAction ? .system : .coordinateGesture))
         guard let rotation = target.context["displayRotation"] as? String,
               ["rot0", "rot90", "rot270"].contains(rotation), target.context["nativeRotation"] as? String == "rot0" else {
             throw IPhoneUseError("native_orientation_unsupported", "Native HID requires portrait or landscape on a native-portrait display")
@@ -446,6 +446,9 @@ final class AppleDeviceBackend: SessionBackend {
                 check = try preflight(stage: "after_clipboard")
                 try pasteboard!.checkOwnership()
             }
+            try cancellation.check()
+            try timing.checkBeforeDispatch(now: ProcessInfo.processInfo.systemUptime)
+            guard media.health()["healthy"] as? Bool == true else { throw IPhoneUseError("native_media_unhealthy", "Media stopped before input") }
         } catch let failure as ActionFailure {
             var result = failure.result ?? [:]
             result["inputTiming"] = timing.result
@@ -458,9 +461,6 @@ final class AppleDeviceBackend: SessionBackend {
             throw ActionFailure(code: "stale_observation", description: "Pre-input capture/guard/clipboard check failed: \(error)",
                 possiblyExecuted: false, requiresObservation: true, result: ["pasteboard": pasteboard?.status ?? [:], "preInputChecks": preInputChecks, "inputTiming": timing.result])
         }
-        try cancellation.check()
-        try timing.checkBeforeDispatch(now: ProcessInfo.processInfo.systemUptime)
-        guard media.health()["healthy"] as? Bool == true else { throw IPhoneUseError("native_media_unhealthy", "Media stopped before input") }
         var result: [String: Any]
         if let textInput {
             func health() throws {
@@ -548,10 +548,13 @@ final class AppleDeviceBackend: SessionBackend {
     func finishText(transaction: String, observation: [String: Any]) throws -> [String: Any] {
         try cancellation.check()
         let now = ProcessInfo.processInfo.systemUptime
+        // SessionHost requires the current observation; the transaction requires a
+        // post-attempt capture. Reviewing that result need not finish in 30 seconds.
+        // Restoration still checks live clipboard ownership, without sending input.
         guard observation["deviceID"] as? String == cli?.device,
               observation["sessionGeneration"] as? String == generation,
               let captured = observation["captureStartedUptime"] as? Double,
-              captured <= now, now - captured <= 30 else {
+              captured.isFinite, captured >= 0, captured <= now else {
             throw IPhoneUseError("stale_reference", "Observe this device/session again before confirming text completion")
         }
         guard let pasteboard else { throw IPhoneUseError("no_text_transaction", "No clipboard text transaction exists in this session") }

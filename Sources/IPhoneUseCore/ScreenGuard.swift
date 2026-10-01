@@ -83,7 +83,7 @@ struct ScreenGuard: Codable {
                 result["exclusionScope"] = "global_comparison_only"
             }
             if let caret = ignoredCaretBlink {
-                result["caretBlinkException"] = ["algorithm": "source-blue-yellow-caret-fade-v2", "ignored": true,
+                result["caretBlinkException"] = ["algorithm": "source-blue-yellow-green-caret-fade-v3", "ignored": true,
                     "rect": ["x": caret.x, "y": caret.y, "width": caret.width, "height": caret.height]]
             }
             return result

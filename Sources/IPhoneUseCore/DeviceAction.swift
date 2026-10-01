@@ -151,9 +151,10 @@ struct DeviceAction {
             textRegion = rect
         } else { textRegion = nil }
         if let raw = request["ignoreRect"] {
-            guard coordinate, ["tap", "double-tap", "long-press", "pinch", "swipe"].contains(operation),
-                  let value = raw as? String else {
-                throw IPhoneUseError("invalid_ignored_region", "--ignore-rect applies only to screenshot coordinate gestures")
+            let gesture = coordinate && ["tap", "double-tap", "long-press", "pinch", "swipe"].contains(operation)
+            let nativeText = allowScreenText && reference.node == nil && ["type", "press"].contains(operation) && textRegion != nil
+            guard gesture || nativeText, let value = raw as? String else {
+                throw IPhoneUseError("invalid_ignored_region", "--ignore-rect requires a screenshot coordinate gesture or native type/press with --field-rect")
             }
             let parts = value.split(separator: ",", omittingEmptySubsequences: false)
             let values = parts.compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
