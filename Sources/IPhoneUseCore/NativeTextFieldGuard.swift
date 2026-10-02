@@ -1,5 +1,14 @@
 import Foundation
 
+// ScreenGuard is also compiled into Runner. Keep the native matcher adapter
+// here so that shared screen comparison does not depend on native-only types.
+extension ScreenGuard.Check {
+    mutating func apply(_ match: NativeTextPhaseMatcher.Match) {
+        fieldPixelsMatch = match == .pixels
+        fieldTemporalMatch = match == .temporal
+    }
+}
+
 // Compare every original field pixel. No color classifier, caret mask, OCR or
 // resampling: a thin glyph must not disappear into the coarse screen grid.
 // A tiny, spatially isolated low-contrast noise budget accommodates video

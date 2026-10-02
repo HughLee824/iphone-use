@@ -71,10 +71,6 @@ struct ScreenGuard: Codable {
         let policy: Policy
         var fieldPixelsMatch: Bool? = nil
         var fieldTemporalMatch = false
-        mutating func apply(_ match: NativeTextPhaseMatcher.Match) {
-            fieldPixelsMatch = match == .pixels
-            fieldTemporalMatch = match == .temporal
-        }
         var ignoredRect: ScreenRect? = nil
         var rawScreenChange: Double? = nil
         var accepted: Bool { screenChange <= policy.maxScreenChange && (regionChanges.allSatisfy { $0 <= policy.maxRegionChange } && fieldPixelsMatch != false || fieldTemporalMatch) }
