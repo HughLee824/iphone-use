@@ -29,4 +29,4 @@ Failures retained during development:
 2. Media bursts captured both on/off phases, but an isolated pixel on the in-field floating-control edge differed by 10/255; strict 8/255 per-pixel matching rejected. This motivated the bounded isolated-noise allowance. No clipboard write or input occurred. Evidence: `.local/research/text-phase-burst-20261002/`.
 3. A half-opacity source caret never recurred within six samples even after fixing sampling and noise. This established the need for A–B–A reconstruction rather than only waiting for the exact original opacity. Again rejected before clipboard staging. Evidence: `.local/research/text-phase-noise-20261002/`.
 
-The local `.5` candidate archive was not rebuilt; use the current workspace Release for this implementation. Nothing was pushed or published.
+The local `.5` archive was not rebuilt. Subsequently the [.6 candidate](native-text-candidate-acceptance.md) was built with this implementation and a Runner compilation-boundary fix. Nothing was pushed or published.

@@ -206,7 +206,7 @@ Runner append 与 LF 多行的实现取舍、宿主测试和 Probe 精确字节�
 
 这些名称表示 HID 键盘操作，不承诺业务效果：Backspace 的删除单位、方向键的光标位置、Tab 的焦点切换、Escape 的取消行为均由前台 App/IME 决定。回执保留 `key`、`keyReportQueued`、`keyboardReleaseQueued`、`keyEffectConfirmed=false`；本地发送完成仍是 unknown，需检查结果截图。Shift+Tab 先单独按下 Shift，再按 Tab，最后释放全部按键；取消或失败沿用同通道释放和不重放契约。
 
-原生 `type` 和 `press` 可用于原生竖屏显示器的竖屏及左右横屏。无需旋转按键 usage；坐标输入框使用当前截图的屏幕点。文字模式、剪贴板所有权与恢复、设备/会话/30秒观察绑定、方向和截图保护保持不变。先使用 `text-prepare` 建立键盘，再观察并确认焦点；旋转后必须重新观察。具体真机验收范围见[原生后端记录](apple-native-backend.md)。
+原生 `type` 和 `press` 可用于原生竖屏显示器的竖屏及左右横屏。无需旋转按键 usage；坐标输入框使用当前截图的屏幕点。文字模式、剪贴板所有权与恢复、设备/会话/当前观察绑定、派发前复核预算、方向和截图保护保持不变。先使用 `text-prepare` 建立键盘，再观察并确认焦点；旋转后必须重新观察。具体真机验收范围见[原生后端记录](apple-native-backend.md)。
 
 
 ## Runner 长按与拖放
