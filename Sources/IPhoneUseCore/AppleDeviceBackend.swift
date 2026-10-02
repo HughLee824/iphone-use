@@ -275,13 +275,13 @@ final class AppleDeviceBackend: SessionBackend {
     func observe() throws -> CapturedObservation {
         try capture(preferredSource: nil)
     }
-    private func capture(preferredSource: String?) throws -> CapturedObservation {
+    private func capture(preferredSource: String?, textPhase: (guardValue: ScreenGuard, field: NativeTextPhaseMatcher, deadline: TimeInterval)? = nil) throws -> CapturedObservation {
         guard controlErrorCode != "native_orientation_unverified" else {
             throw IPhoneUseError("native_orientation_unverified", controlError!)
         }
         do {
             return try NativeCaptureChecks.withOrientationRecovery(capture: { afterRefresh in
-                try self.captureOnce(preferredSource: preferredSource, mediaTimeout: afterRefresh ? 1 : 0.15)
+                try self.captureOnce(preferredSource: preferredSource, mediaTimeout: afterRefresh ? 1 : 0.15, textPhase: textPhase)
             }, resynchronize: {
                 guard let cli = self.cli, let media = self.media else {
                     throw IPhoneUseError("native_orientation_unverified", "Owned media is unavailable")
@@ -301,7 +301,7 @@ final class AppleDeviceBackend: SessionBackend {
             throw error
         }
     }
-    private func captureOnce(preferredSource: String?, mediaTimeout: Double) throws -> CapturedObservation {
+    private func captureOnce(preferredSource: String?, mediaTimeout: Double, textPhase: (guardValue: ScreenGuard, field: NativeTextPhaseMatcher, deadline: TimeInterval)? = nil) throws -> CapturedObservation {
         guard let cli else { throw IPhoneUseError("backend_unavailable", "Native backend not started") }
         let captured = try cli.capture(generation: generation, preferredSource: preferredSource, prepareDisplay: { display in
             try self.cancellation.check()
@@ -323,22 +323,50 @@ final class AppleDeviceBackend: SessionBackend {
                   let receiver = media.recordingReceiver, receiver.snapshots != nil else {
                 throw IPhoneUseError("native_orientation_unverified", "Owned media cannot verify display geometry; reconnect explicitly")
             }
-            let frame = try receiver.snapshot(after: requestedAt, timeout: mediaTimeout, cancellation: self.cancellation)
-            if frame == nil {
-                try receiver.snapshots?.rejectConflictingGeometry(display)
+            let phase = preferredSource == "native_media" ? textPhase : nil
+            var samples: [[String: Any]] = []
+            for attempt in 1...(phase == nil ? 1 : 6) {
+                if let phase, attempt > 1 {
+                    let now = ProcessInfo.processInfo.systemUptime
+                    let delay = NativeTextPhaseSchedule.delay(attempt: attempt, started: requestedAt, now: now, deadline: phase.deadline)
+                    let end = now + delay
+                    while ProcessInfo.processInfo.systemUptime < end {
+                        try self.cancellation.check()
+                        Thread.sleep(forTimeInterval: min(0.02, max(0, end - ProcessInfo.processInfo.systemUptime)))
+                    }
+                }
+                try self.cancellation.check()
+                let sampleStarted = ProcessInfo.processInfo.systemUptime
+                guard phase == nil || sampleStarted < phase!.deadline else {
+                    throw IPhoneUseError("stale_observation", "Text phase capture deadline expired")
+                }
+                let frame = try receiver.snapshot(after: sampleStarted, timeout: mediaTimeout, cancellation: self.cancellation)
+                if frame == nil { try receiver.snapshots?.rejectConflictingGeometry(display) }
+                _ = try NativeSnapshotImage.validateGeometry(frame, display: display)
+                var facts: [String: Any] = ["geometryValidated": true, "displayRotation": display.rotation]
+                if preferredSource == "coredevice_screenshot" { return (nil, facts) }
+                let png: Data
+                do {
+                    let value = try NativeSnapshotImage.png(frame!, display: display)
+                    png = value.0; facts.merge(value.1) { _, value in value }
+                } catch let error as IPhoneUseError where NativeCaptureChecks.needsOrientationRecovery(error) { throw error }
+                catch {
+                    facts["fallbackReason"] = "media_image_unavailable"
+                    return (nil, facts)
+                }
+                guard let phase else { return (png, facts) }
+                var check = try phase.guardValue.check(png: png, context: display.context)
+                check.apply(try phase.field.check(png: png, context: display.context))
+                samples.append(["attempt": attempt, "elapsedMs": (ProcessInfo.processInfo.systemUptime - requestedAt) * 1000,
+                                "screenGuard": check.result])
+                facts["textPhaseSamples"] = samples
+                if check.accepted || check.screenChange > check.policy.maxScreenChange || attempt == 6 {
+                    // CLI.capture still validates lock/display AFTER this burst.
+                    // The outer preflight then validates this actual selected PNG.
+                    return (png, facts)
+                }
             }
-            _ = try NativeSnapshotImage.validateGeometry(frame, display: display)
-            var facts: [String: Any] = ["geometryValidated": true, "displayRotation": display.rotation]
-            if preferredSource == "coredevice_screenshot" { return (nil, facts) }
-            do {
-                let (png, imageFacts) = try NativeSnapshotImage.png(frame!, display: display)
-                facts.merge(imageFacts) { _, value in value }
-                return (png, facts)
-            } catch let error as IPhoneUseError where NativeCaptureChecks.needsOrientationRecovery(error) { throw error }
-            catch {
-                facts["fallbackReason"] = "media_image_unavailable"
-                return (nil, facts)
-            }
+            throw ScreenGuard.Failure.invalidGuard
         })
         var metadata = captured.metadata
         if controlError == nil, let health = media?.health() {
@@ -400,21 +428,33 @@ final class AppleDeviceBackend: SessionBackend {
         var captures = 0
         var preInputChecks: [[String: Any]] = []
         func preflight(stage: String) throws -> ScreenGuard.Check {
+            let deadline = timing.preflightDeadline(now: ProcessInfo.processInfo.systemUptime)
+            let matcher = keyboardAction ? target.textFieldGuard.map { NativeTextPhaseMatcher(field: $0) } : nil
+            let phase = keyboardAction && target.context["captureSource"] as? String == "native_media"
+                ? matcher.map { (guardValue: screenGuard, field: $0, deadline: deadline) } : nil
             let (value, count) = try NativeInputPreflight.check(guard: screenGuard,
                 displayID: target.context["displayID"] as? UInt64, displayRotation: rotation,
                 captureSource: target.context["captureSource"] as? String,
-                deadline: timing.preflightDeadline(now: ProcessInfo.processInfo.systemUptime),
+                deadline: deadline,
                 // Editing keys can encounter the same blinking caret as paste.
                 // Retry only captures against the original guard, never input.
-                maximumCaptures: pressing || textInput?.usesPasteboard == true ? 3 : 1,
-                caretGuard: keyboardAction ? target.textCaretGuard : nil,
+                maximumCaptures: keyboardAction && phase == nil ? 6 : 1,
+                phaseMatcher: matcher, phaseSampling: keyboardAction && phase == nil,
+                wait: { duration in
+                    let end = ProcessInfo.processInfo.systemUptime + duration
+                    while ProcessInfo.processInfo.systemUptime < end {
+                        try cancellation.check()
+                        Thread.sleep(forTimeInterval: min(0.02, max(0, end - ProcessInfo.processInfo.systemUptime)))
+                    }
+                    try cancellation.check()
+                },
                 record: { sample in
                     var sample = sample; sample["stage"] = stage
                     preInputChecks.append(sample)
                 }) {
                     try cancellation.check()
                     guard media.health()["healthy"] as? Bool == true else { throw IPhoneUseError("native_media_unhealthy", "Media stopped before input") }
-                    return try self.capture(preferredSource: target.context["captureSource"] as? String)
+                    return try self.capture(preferredSource: target.context["captureSource"] as? String, textPhase: phase)
                 }
             captures += count
             return value

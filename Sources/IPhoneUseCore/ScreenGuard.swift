@@ -69,10 +69,15 @@ struct ScreenGuard: Codable {
         let screenChange: Double
         let regionChanges: [Double]
         let policy: Policy
-        var ignoredCaretBlink: ScreenRect? = nil
+        var fieldPixelsMatch: Bool? = nil
+        var fieldTemporalMatch = false
+        mutating func apply(_ match: NativeTextPhaseMatcher.Match) {
+            fieldPixelsMatch = match == .pixels
+            fieldTemporalMatch = match == .temporal
+        }
         var ignoredRect: ScreenRect? = nil
         var rawScreenChange: Double? = nil
-        var accepted: Bool { screenChange <= policy.maxScreenChange && (regionChanges.allSatisfy { $0 <= policy.maxRegionChange } || ignoredCaretBlink != nil) }
+        var accepted: Bool { screenChange <= policy.maxScreenChange && (regionChanges.allSatisfy { $0 <= policy.maxRegionChange } && fieldPixelsMatch != false || fieldTemporalMatch) }
         var result: [String: Any] {
             var result: [String: Any] = ["algorithm": ignoredRect == nil ? ScreenGuard.algorithm : ScreenGuard.maskedAlgorithm, "accepted": accepted, "screenChange": screenChange,
              "regionChanges": regionChanges, "maxScreenChange": policy.maxScreenChange,
@@ -82,9 +87,10 @@ struct ScreenGuard: Codable {
                 result["rawScreenChange"] = rawScreenChange
                 result["exclusionScope"] = "global_comparison_only"
             }
-            if let caret = ignoredCaretBlink {
-                result["caretBlinkException"] = ["algorithm": "source-blue-yellow-green-caret-fade-v3", "ignored": true,
-                    "rect": ["x": caret.x, "y": caret.y, "width": caret.width, "height": caret.height]]
+            if let fieldPixelsMatch {
+                result["fieldPixelsMatch"] = fieldPixelsMatch
+                result["fieldAlgorithm"] = "original-field-phase-v1"
+                result["fieldTemporalMatch"] = fieldTemporalMatch
             }
             return result
         }

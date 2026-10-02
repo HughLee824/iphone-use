@@ -204,7 +204,7 @@ struct ObservedTarget {
     let path: [[String: Any]]
     var gesture: CoordinateGesture? = nil
     var textGuard: ScreenGuard? = nil
-    var textCaretGuard: NativeCaretGuard? = nil
+    var textFieldGuard: NativeTextFieldGuard? = nil
 }
 
 struct ActionFailure: Error, CustomStringConvertible {

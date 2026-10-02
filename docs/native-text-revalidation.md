@@ -1,6 +1,6 @@
 # Native text observation revalidation
 
-Status: implemented; host tests and controlled Release device acceptance passed (2026-10-02).
+Status: the request-timing/dynamic-region implementation below passed controlled Release device acceptance (2026-10-02). Native input now supersedes its color-based caret exception with [full-field phase matching](native-text-phase-matching.md).
 
 The standard-mode trial rejected three explicit text requests before clipboard or HID execution because their source screenshots were 111–134 seconds old. Returning another screenshot did not solve the cycle when the external agent again took more than 30 seconds to decide.
 

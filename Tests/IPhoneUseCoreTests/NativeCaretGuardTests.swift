@@ -49,17 +49,7 @@ final class NativeCaretGuardTests: XCTestCase {
         let baseline = try screenPNG(patches: [(stroke, yellow)])
         XCTAssertNil(try NativeCaretGuard(png: baseline, context: screenTestContext(), field: field,
                                          allowsAdjacentText: true, allowsColoredCarets: false))
-        let context = screenTestContext()
-        let caret = try XCTUnwrap(NativeCaretGuard(png: baseline, context: context, field: field))
-        let guardValue = try ScreenGuard(png: baseline, context: context, rects: [field], policy: .init())
-        let result = try NativeInputPreflight.check(guard: guardValue, displayID: 1, deadline: 8, maximumCaptures: 1,
-            caretGuard: caret, now: { 0 }) {
-                CapturedObservation(nodes: [], metadata: ["displayID": UInt64(1),
-                    "screenContext": try jsonObject(JSONEncoder().encode(context))], screenshot: try screenPNG())
-            }.0
-        XCTAssertTrue(result.accepted)
-        XCTAssertEqual(result.policy.maxRegionChange, 0)
-        XCTAssertEqual((result.result["caretBlinkException"] as? [String: Any])?["algorithm"] as? String, "source-blue-yellow-green-caret-fade-v3")
+
     }
 
     func testGreenCaretFadesButDoesNotPermitTextMovementOrSelection() throws {
@@ -162,29 +152,7 @@ final class NativeCaretGuardTests: XCTestCase {
         }
     }
 
-    func testPreflightReportsRawScoresAndExceptionButKeepsGlobalAndDeadlineChecks() throws {
-        let context = screenTestContext(), baseline = try screenPNG(patches: [(stroke, blue)])
-        let guardValue = try ScreenGuard(png: baseline, context: context, rects: [field], policy: .init())
-        let caret = try XCTUnwrap(NativeCaretGuard(png: baseline, context: context, field: field))
-        let metadata: [String: Any] = ["displayID": UInt64(1), "screenContext": try jsonObject(JSONEncoder().encode(context))]
-        XCTAssertFalse(try guardValue.check(png: screenPNG(), context: context).accepted)
-        let accepted = try NativeInputPreflight.check(guard: guardValue, displayID: 1, deadline: 8, maximumCaptures: 1,
-            caretGuard: caret, now: { 0 }) { CapturedObservation(nodes: [], metadata: metadata, screenshot: try screenPNG()) }.0
-        XCTAssertTrue(accepted.accepted)
-        XCTAssertGreaterThan(accepted.regionChanges[0], 0)
-        XCTAssertNotNil(accepted.result["caretBlinkException"])
-        for late in [false, true] {
-            var time = 0.0
-            XCTAssertThrowsError(try NativeInputPreflight.check(guard: guardValue, displayID: 1, deadline: 8, maximumCaptures: 1,
-                caretGuard: caret, now: { time }) {
-                    time = late ? 9 : 1
-                    return CapturedObservation(nodes: [], metadata: metadata, screenshot: try screenPNG(patches:
-                        late ? [] : [(CGRect(x: 0, y: 500, width: 390, height: 300), [0,0,0])]))
-                }) { XCTAssertEqual(($0 as? ActionFailure)?.possiblyExecuted, false) }
-        }
-    }
-
-    func testOnlyNativeTextWithExplicitFieldGetsAnObservationBoundAnchor() throws {
+    func testNativeTextGetsAnObservationBoundFullPixelGuard() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let cache = ObservationCache(directory: directory), context = screenTestContext()
@@ -193,11 +161,11 @@ final class NativeCaretGuardTests: XCTestCase {
         _ = try cache.store(capture)
         let request: [String: Any] = ["reference": "o1", "text": "中文", "mode": "insert", "fieldRect": "18,139,354,160"]
         let action = try DeviceAction(operation: "type", request: request, allowScreenText: true)
-        XCTAssertNotNil(try cache.resolveTarget(for: action).textCaretGuard)
+        XCTAssertNotNil(try cache.resolveTarget(for: action).textFieldGuard)
         var noField = request; noField.removeValue(forKey: "fieldRect")
-        XCTAssertNil(try cache.resolveTarget(for: DeviceAction(operation: "type", request: noField, allowScreenText: true)).textCaretGuard)
+        XCTAssertNotNil(try cache.resolveTarget(for: DeviceAction(operation: "type", request: noField, allowScreenText: true)).textFieldGuard)
         let tap = try DeviceAction(operation: "tap", request: ["reference": "o1", "x": 50, "y": 150])
-        XCTAssertNil(try cache.resolveTarget(for: tap).textCaretGuard)
+        XCTAssertNil(try cache.resolveTarget(for: tap).textFieldGuard)
         _ = try cache.store(capture)
         XCTAssertThrowsError(try cache.resolveTarget(for: action))
     }

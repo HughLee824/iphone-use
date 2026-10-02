@@ -51,7 +51,8 @@ private final class TextProbeController: UIViewController, UITextViewDelegate {
         if ProcessInfo.processInfo.arguments.contains("--dynamic-text-probe") {
             // A visible, bounded animation beside a separately protected editor.
             // The delayed mutation proves excluding animation never masks text.
-            input.tintColor = UIColor(red: 7/255, green: 193/255, blue: 96/255, alpha: 1)
+            input.tintColor = ProcessInfo.processInfo.arguments.contains("--red-caret")
+                ? .systemRed : UIColor(red: 7/255, green: 193/255, blue: 96/255, alpha: 1)
             let row = UIStackView(); row.distribution = .fillEqually
             let animation = UILabel(); animation.textAlignment = .center
             animation.font = .monospacedSystemFont(ofSize: 14, weight: .bold)

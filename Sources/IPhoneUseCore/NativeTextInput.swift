@@ -70,24 +70,44 @@ struct NativeInputTiming {
     }
 }
 
+enum NativeTextPhaseSchedule {
+    static func delay(attempt: Int, started: TimeInterval, now: TimeInterval, deadline: TimeInterval) -> TimeInterval {
+        guard attempt > 1 else { return 0 }
+        let offsets = [0.0, 0.19, 0.47, 0.83, 1.31, 1.97]
+        let gaps = [0.0, 0.07, 0.13, 0.19, 0.11, 0.23]
+        return max(0, min(deadline, max(started + offsets[attempt - 1], now + gaps[attempt - 1])) - now)
+    }
+}
+
 // Retry observations only, never input. Every frame compares with the original
 // guard, with unchanged thresholds and one shared deadline for this preflight.
 enum NativeInputPreflight {
     static func check(guard screenGuard: ScreenGuard, displayID: UInt64?, displayRotation: String? = nil, captureSource: String? = nil, deadline: TimeInterval, maximumCaptures: Int,
-                      caretGuard: NativeCaretGuard? = nil,
+                      fieldGuard: NativeTextFieldGuard? = nil, phaseMatcher: NativeTextPhaseMatcher? = nil, phaseSampling: Bool = false,
+                      wait: (TimeInterval) throws -> Void = { Thread.sleep(forTimeInterval: $0) },
                       now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
                       record: ([String: Any]) -> Void = { _ in },
                       capture: () throws -> CapturedObservation) throws -> (ScreenGuard.Check, Int) {
-        guard (1...3).contains(maximumCaptures), deadline.isFinite else { throw ScreenGuard.Failure.invalidGuard }
+        guard (1...6).contains(maximumCaptures), deadline.isFinite else { throw ScreenGuard.Failure.invalidGuard }
         let started = now()
+        let matcher = phaseMatcher ?? fieldGuard.map { NativeTextPhaseMatcher(field: $0) }
+        var actualCaptures = 0
         for attempt in 1...maximumCaptures {
             guard now() < deadline else { throw IPhoneUseError("stale_observation", "Input observation deadline expired") }
+            if phaseSampling, attempt > 1 {
+                // Cover ~2 seconds with fast capture; stagger slow captures too,
+                // rather than sampling a periodic blink at one fixed phase.
+                try wait(NativeTextPhaseSchedule.delay(attempt: attempt, started: started, now: now(), deadline: deadline))
+                guard now() < deadline else { throw IPhoneUseError("stale_observation", "Input observation deadline expired") }
+            }
             let captureStarted = now()
             let frame = try capture()
+            let phaseSamples = (frame.metadata["mediaSnapshot"] as? [String: Any])?["textPhaseSamples"] as? [[String: Any]] ?? []
+            actualCaptures += max(1, phaseSamples.count)
             if frame.metadata["orientationResynchronized"] as? Bool == true {
                 throw ActionFailure(code: "stale_observation", description: "Media orientation was resynchronized; inspect the new observation before choosing coordinates",
                     possiblyExecuted: false, requiresObservation: true,
-                    result: ["preInputCaptures": attempt, "orientationResynchronized": true], rejectedCapture: frame)
+                    result: ["preInputCaptures": actualCaptures, "orientationResynchronized": true], rejectedCapture: frame)
             }
             if let captureSource, frame.metadata["captureSource"] as? String != captureSource {
                 record(["attempt": attempt, "captureSourceChanged": true,
@@ -96,7 +116,7 @@ enum NativeInputPreflight {
                         "elapsedMs": (now() - started) * 1000])
                 throw ActionFailure(code: "stale_observation", description: "Screenshot source changed; inspect the new observation before choosing an action",
                     possiblyExecuted: false, requiresObservation: true,
-                    result: ["preInputCaptures": attempt, "captureSourceChanged": true], rejectedCapture: frame)
+                    result: ["preInputCaptures": actualCaptures, "captureSourceChanged": true], rejectedCapture: frame)
             }
             let context: ScreenContext
             var check: ScreenGuard.Check
@@ -118,11 +138,10 @@ enum NativeInputPreflight {
                         "elapsedMs": (now() - started) * 1000])
                 throw ActionFailure(code: "stale_observation", description: "Display geometry or orientation changed; inspect the new screenshot before choosing coordinates",
                     possiblyExecuted: false, requiresObservation: true,
-                    result: ["preInputCaptures": attempt, "screenContextChanged": true], rejectedCapture: frame)
+                    result: ["preInputCaptures": actualCaptures, "screenContextChanged": true], rejectedCapture: frame)
             }
-            if !check.accepted, check.screenChange <= check.policy.maxScreenChange,
-               let caretGuard, try caretGuard.acceptsBlink(png: frame.screenshot, context: context) {
-                check.ignoredCaretBlink = caretGuard.caret
+            if let matcher {
+                check.apply(try matcher.check(png: frame.screenshot, context: context))
             }
             let checkedAt = now()
             let inTime = checkedAt < deadline
@@ -131,12 +150,12 @@ enum NativeInputPreflight {
                     "captureSource": frame.metadata["captureSource"] ?? "unknown",
                     "captureTimingsMs": frame.metadata["captureTimingsMs"] ?? [:],
                     "orientationRevalidated": frame.metadata["orientationRevalidated"] as? Bool ?? false,
-                    "screenGuard": check.result, "inTime": inTime])
-            if check.accepted && inTime { return (check, attempt) }
+                    "screenGuard": check.result, "inTime": inTime, "phaseSampling": phaseSampling || !phaseSamples.isEmpty, "mediaPhaseSamples": phaseSamples])
+            if check.accepted && inTime { return (check, actualCaptures) }
             if attempt == maximumCaptures || !inTime || check.screenChange > check.policy.maxScreenChange {
                 throw ActionFailure(code: "stale_observation", description: "Screen guard or deadline rejected input; inspect the attached pre-input image",
                     possiblyExecuted: false, requiresObservation: true,
-                    result: ["screenGuard": check.result, "preInputCaptures": attempt, "preInputDeadlineExceeded": !inTime], rejectedCapture: frame)
+                    result: ["screenGuard": check.result, "preInputCaptures": actualCaptures, "preInputDeadlineExceeded": !inTime], rejectedCapture: frame)
             }
         }
         throw ScreenGuard.Failure.invalidGuard

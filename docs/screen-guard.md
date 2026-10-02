@@ -2,7 +2,7 @@
 
 画面校验覆盖 tap/swipe：宿主根据原观察准备坐标和画面指纹，Runner 重新截图并校验，通过后执行坐标手势。type/press 的 AX 目标解析、动作后的容差帧稳定检测、每次派发后重新 observe、unknown 不重发均保持不变。
 
-上述 Runner 路径之外，实验性 apple-native 的 `type oN` 和 `press oN --key return` 都从当前截图生成完整字段保护，并在输入前重新截图校验；显式 `--field-rect` 可使用同一有界光标例外，不读取 AX 或自动聚焦。`text-prepare` 只准备自有键盘，随后使旧引用失效并返回新图。具体约束见[原生文字输入](actions.md#实验性原生文字输入)。
+上述 Runner 路径之外，实验性 apple-native 的 `type oN` 和 `press oN --key return` 都从当前截图生成完整字段保护，并在输入前重新截图校验；完整字段使用颜色无关的逐像素跨帧匹配，不读取 AX 或自动聚焦。`text-prepare` 只准备自有键盘，随后使旧引用失效并返回新图。具体约束见[原生文字输入](actions.md#实验性原生文字输入)。
 
 这是启发式的动作前置条件，不是页面 ID、目标身份保证、业务正确性或事务隔离。每次 observe 仍产生新引用；相似画面不恢复失效引用，也不合并观察。
 

@@ -8,7 +8,7 @@
 
 `text-prepare` 的 `keyboardPrepared` 和 `inputReportsSent=0` 描述服务准备事实，不证明焦点；截图失败时命令返回非零并保留准备结果，需要另行 observe。注册结果不确定时保留键盘状态和清理要求，不自动重复注册。仅适用于 apple-native，旧宿主拒绝未知命令。
 
-原生 `press oN --key return --field-rect x,y,width,height --observe` 现支持向已确认焦点发送独立 Return。完整字段、当前 observationID、全屏保护、方向、请求受理后的验证预算及有界光标例外与 type 相同；省略字段矩形时保护整个屏幕。不聚焦、不访问剪贴板、不自动完成待恢复的粘贴事务。调用方先核对输入结果并 text-finish，再决定是否发送 Return。Return 由 App 解释，可能搜索、完成、换行或提交；`keyReportQueued` 仅是本地发送事实，`keyEffectConfirmed=false`，结果仍为 unknown，必须检查新图。原生 type 的 auto/paste 正文允许 LF/CR 换行，作为文本一次粘贴，不转换或隐式附加 Return；keys 及其他控制字符仍拒绝。XCTest 仍使用原有 `press oN:eN --key return`。
+原生 `press oN --key return --field-rect x,y,width,height --observe` 现支持向已确认焦点发送独立 Return。完整字段、当前 observationID、全屏保护、方向、请求受理后的验证预算及完整字段跨帧复核与 type 相同；省略字段矩形时保护整个屏幕。不聚焦、不访问剪贴板、不自动完成待恢复的粘贴事务。调用方先核对输入结果并 text-finish，再决定是否发送 Return。Return 由 App 解释，可能搜索、完成、换行或提交；`keyReportQueued` 仅是本地发送事实，`keyEffectConfirmed=false`，结果仍为 unknown，必须检查新图。原生 type 的 auto/paste 正文允许 LF/CR 换行，作为文本一次粘贴，不转换或隐式附加 Return；keys 及其他控制字符仍拒绝。XCTest 仍使用原有 `press oN:eN --key return`。
 
 `apple-native` 使用 `type oN --mode insert|replace|append --text 'Ab7!?'`，绑定当前截图而非 AX 节点。所有模式都要求先在受控页面观察、点击输入框，再用新截图确认焦点。`insert` 使用当前光标/选区；`replace` 先发送 Command-A 全选；`append` 先发送 Command-Down 请求移动到全文末尾。后两者不读取或重构原文，也不声明已经确认选区或末尾定位。ASCII 路径接受 1–64 个可打印字符，使用 US HID 映射。包含非 ASCII 字符或 LF/CR 换行的整段文本（如 `中文`、` A7，测🙂`）使用原生剪贴板服务与一次自写 HID Paste，最多 4096 UTF-8 bytes；不拆成拼音，不做候选词判断。不切换设备布局/输入法，不自动聚焦，auto/paste 保留正文中的 LF/CR（包括 CRLF），不规范化换行；其他控制字符仍拒绝。发送 Return 按键必须通过上述独立 press 操作。只有 `replace` 接受空文本，使用全选后 Delete，不读写剪贴板；即使显式指定 paste，空文本也不创建粘贴事务。
 
@@ -24,7 +24,7 @@ Unicode 输入会读取并在内存中备份设备通用剪贴板，写入整段
 
 关闭时仅在内容和身份/计数仍匹配时尝试恢复；`pasteboardRestoreAcknowledged=false` 会使整体清理不确认。协议不提供原子比较后恢复，不能与其他剪贴板写入者并发使用；宿主崩溃、断连、写入回包丢失可能导致无法恢复。原剪贴板正文不写入诊断日志或磁盘备份，不能恢复时不得宣称清理成功。
 
-原生 `type` 可指定 `--field-rect x,y,width,height`，由调用方在当前原始截图中选择完整输入框，以屏幕 points 表示。局部基准为零变化限制，全屏仍为 1% 变化限制；省略该参数时仍对整屏实施局部零变化保护。矩形必须在该截图范围内，不自动聚焦、不自动识别输入框，不接受 XCTest/节点引用用法。显式字段允许下述有界光标例外；不符合条件的闪烁仍可能被拒绝。Unicode 路径在剪贴板写入前后各最多采集 3 帧、各最多 8 秒，始终比较原 observation 的指纹，且从请求受理到输入的总预算为 30 秒；最后阶段的期限同时约束后续所有权检查和输入派发；全屏超限立即拒绝。这里只重复只读截图，不重试输入，也不刷新比较基准。不得缩小矩形去绕开正文或光标。
+原生 `type` 可指定 `--field-rect x,y,width,height`，由调用方在当前原始截图中选择完整输入框，以屏幕 points 表示。局部基准为零变化限制，全屏仍为 1% 变化限制；省略该参数时仍对整屏实施局部零变化保护。矩形必须在该截图范围内，不自动聚焦、不自动识别输入框，不接受 XCTest/节点引用用法。文字与按键均使用下述完整字段跨帧复核，不按光标颜色放行。Unicode 路径在剪贴板写入前后各最多采集 6 帧、各最多 8 秒，始终比较原 observation 的指纹，且从请求受理到输入的总预算为 30 秒；最后阶段的期限同时约束后续所有权检查和输入派发；全屏超限立即拒绝。这里只重复只读截图，不重试输入，也不刷新比较基准。不得缩小矩形去绕开正文或光标。
 
 原生画面差异拒绝现在返回 `result.screenGuard` 的实际变化比例，并将触发拒绝的原图作为 `observation.phase=pre_input_rejection` 附带。`result.rejectedObservationID` 是该新观察，原引用失效；它不是动作后图，不提供 `afterObservationID`，动作仍为 `not_dispatched`。调用方先检查附图，再决定新动作；捕获失败/无差异比较结果的拒绝不保证带图。缓存仍只保留两个观察，关闭会话时移除，需及时保存证据。
 
@@ -194,14 +194,15 @@ Runner append 与 LF 多行的实现取舍、宿主测试和 Probe 精确字节�
 
 详细的原生事实字段、旧宿主兼容保护和限制见[原生后端](apple-native-backend.md#explicit-text-methods-and-clipboard-completion)。
 
-原生显式字段的光标例外 `source-blue-yellow-green-caret-fade-v3` 只从原 observation 的 PNG 按 8 邻域连通区域定位唯一符合形状的可见蓝色、黄色或绿色竖线；其他彩色正文或 emoji 仍逐像素保护，不与光标合并。光标要求宽 1–3 points、高 8–40 points、周围背景均匀。新图仅允许该固定位置整体明暗变化；完整字段的其他像素按原分辨率逐通道检查，仍使用原 8/255 噪声容差。正文、选区、位置或背景变化不属于例外，全屏 1%、设备/会话、方向和请求受理后的截止时间检查保留。普通差异比例仍输出；例外通过时额外记录 `screenGuard.caretBlinkException`，不能把非零 `regionChanges` 解释成阈值被调大。
+原生输入使用 `original-field-phase-v1` 对完整字段按原分辨率逐通道比较（通道容差 8/255；另允许最多 4 个互不相邻且差值不超过 16/255 的孤立噪声像素）。未指定字段时保护整屏。首次完整匹配立即返回；局部不匹配而全局通过时，在同一阶段最多采样六帧。原生媒体在一次 Apple 锁屏/方向前后检查之间连续取帧，避免每次 Apple CLI 调用使采样总落在相似阶段。快速采样覆盖约两秒；每阶段八秒期限、请求三十秒派发期限及取消检查不变。只重复读取，不重放输入、不替换原观察。动画排除仍不得覆盖字段。
 
-原图光标不可见、颜色不支持、多个候选、邻近文字干扰或背景不均匀时回到原严格检查；不自动等待光标、不重新绑定基准、不重放输入。截图无法区分外观完全相同的蓝色/黄色文字竖线与光标，也无法仅凭光标消失证明焦点未丢失；这是像素启发式，不是焦点保证。`focusConfirmed=false` 和外部 Agent 的焦点确认、输入后核对责任不变。tap/swipe、XCTest 和未指定完整字段的 type 不使用该例外。
+如果原图抓到半透明光标，不要求再次碰巧获得同一透明度：必须在新帧中实际观察到 A–B–A 周期，变化仅占同一窄竖条（不超过 4 点宽、8–80 点高），且原完整字段能以同一混合比例由 A/B 两帧重建。逐像素核对重建结果，不整块遮盖，也不按蓝色、绿色等颜色识别。连续文字变化、移动光标产生的反向边缘和宽选区都不能通过此规则。没有周期证据时仍拒绝。
 
+`screenGuard.fieldPixelsMatch` 记录直接像素匹配，`fieldTemporalMatch` 单独记录周期重建匹配；全局保护始终生效。原生输入不再输出 `caretBlinkException`。截图仍无法证明不可见焦点或隐藏光标的位置，也不能从像素中绝对区分形态和周期完全一致的其他窄条动画；`focusConfirmed=false` 不变。Runner 动作后的判稳算法没有随本次变更修改。
 
 ## 原生编辑按键与横屏文字
 
-`apple-native` 的 `press oN --key KEY` 支持 `return`、`backspace`、`left`、`right`、`up`、`down`、`tab`、`shift-tab`、`escape`。使用当前截图确认焦点，可通过 `--field-rect x,y,width,height` 保护完整输入框。每次只发送一个按键或明确的 Shift+Tab 组合，包含释放；没有重复次数、任意快捷键或自动补发。Runner 使用元素引用 `press oN:eN`，其实现和验收范围见 [Runner 编辑按键](runner-editing-keys.md)。按键与 Unicode 粘贴共用最多三次只读预检：始终比较原 observation，沿用每阶段 8 秒及请求受理后 30 秒总预算，方向变化立即拒绝；只重取截图，不重发按键。
+`apple-native` 的 `press oN --key KEY` 支持 `return`、`backspace`、`left`、`right`、`up`、`down`、`tab`、`shift-tab`、`escape`。使用当前截图确认焦点，可通过 `--field-rect x,y,width,height` 保护完整输入框。每次只发送一个按键或明确的 Shift+Tab 组合，包含释放；没有重复次数、任意快捷键或自动补发。Runner 使用元素引用 `press oN:eN`，其实现和验收范围见 [Runner 编辑按键](runner-editing-keys.md)。按键、ASCII 和 Unicode 粘贴共用最多六次只读预检：始终比较原 observation，沿用每阶段 8 秒及请求受理后 30 秒总预算，方向变化立即拒绝；只重取截图，不重发按键。
 
 这些名称表示 HID 键盘操作，不承诺业务效果：Backspace 的删除单位、方向键的光标位置、Tab 的焦点切换、Escape 的取消行为均由前台 App/IME 决定。回执保留 `key`、`keyReportQueued`、`keyboardReleaseQueued`、`keyEffectConfirmed=false`；本地发送完成仍是 unknown，需检查结果截图。Shift+Tab 先单独按下 Shift，再按 Tab，最后释放全部按键；取消或失败沿用同通道释放和不重放契约。
 
