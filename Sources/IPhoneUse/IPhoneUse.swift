@@ -19,7 +19,7 @@ struct IPhoneUse: ParsableCommand {
     @OptionGroup var options: SessionOptions
 }
 
-private func output(compact: Bool = false, _ operation: () throws -> [String: Any]) throws {
+private func output(compact: Bool = false, agentOutput: Bool = false, _ operation: () throws -> [String: Any]) throws {
     let response: [String: Any]
     do { response = try operation() }
     catch {
@@ -28,16 +28,21 @@ private func output(compact: Bool = false, _ operation: () throws -> [String: An
     }
     if compact, response["ok"] as? Bool == true, let result = response["result"] as? [String: Any],
        let text = result["text"] as? String { print(text) }
-    else { print(String(decoding: try jsonData(response), as: UTF8.self)) }
+    else { print(String(decoding: try jsonData(agentOutput ? AgentOutput.render(response) : response), as: UTF8.self)) }
     if response["ok"] as? Bool != true { throw ExitCode.failure }
 }
 
+struct AgentOutputOptions: ParsableArguments {
+    @Flag(help: "Return a concise diagnostic summary and a private temporary receipt path containing the full response. Does not change execution or exit status.") var agentOutput = false
+}
+
 struct ActionObservationOptions: ParsableArguments {
+    @OptionGroup var output: AgentOutputOptions
     @Flag(help: "Follow this action with a fresh observation. Return JSON with separate action and observation results; never replay input.") var observe = false
 }
 
-private func outputAction(session: String, observe: Bool, _ operation: () throws -> [String: Any]) throws {
-    try output {
+private func outputAction(session: String, observe: Bool, agentOutput: Bool, _ operation: () throws -> [String: Any]) throws {
+    try output(agentOutput: agentOutput) {
         let action = try operation()
         return observe ? SessionClient.observing(session: session, action: action) : action
     }
@@ -159,7 +164,7 @@ struct Open: ParsableCommand {
     @Argument(help: "Installed app bundle identifier returned by apps.") var bundleID: String
     mutating func run() throws {
         let session = try options.requiredSession()
-        try outputAction(session: session, observe: observation.observe) { try SessionClient.call(session: session, operation: "open", fields: ["bundleId": bundleID]) }
+        try outputAction(session: session, observe: observation.observe, agentOutput: observation.output.agentOutput) { try SessionClient.call(session: session, operation: "open", fields: ["bundleId": bundleID]) }
     }
 }
 
@@ -170,7 +175,7 @@ struct Terminate: ParsableCommand {
     @Argument(help: "Exact installed app bundle identifier returned by apps.") var bundleID: String
     mutating func run() throws {
         let session = try options.requiredSession()
-        try outputAction(session: session, observe: observation.observe) {
+        try outputAction(session: session, observe: observation.observe, agentOutput: observation.output.agentOutput) {
             try SessionClient.call(session: session, operation: "terminate", fields: ["bundleId": bundleID])
         }
     }
@@ -183,7 +188,7 @@ struct Relaunch: ParsableCommand {
     @Argument(help: "Exact installed app bundle identifier returned by apps. Unsaved app state may be lost.") var bundleID: String
     mutating func run() throws {
         let session = try options.requiredSession()
-        try outputAction(session: session, observe: observation.observe) {
+        try outputAction(session: session, observe: observation.observe, agentOutput: observation.output.agentOutput) {
             try SessionClient.call(session: session, operation: "relaunch", fields: ["bundleId": bundleID])
         }
     }
@@ -266,7 +271,7 @@ struct Tap: ParsableCommand {
         var fields = screenGuard.fields
         fields["reference"] = reference
         fields["x"] = x; fields["y"] = y
-        try outputAction(session: session, observe: observation.observe) { try SessionClient.call(session: session, operation: "tap", fields: fields) }
+        try outputAction(session: session, observe: observation.observe, agentOutput: observation.output.agentOutput) { try SessionClient.call(session: session, operation: "tap", fields: fields) }
     }
 }
 
@@ -282,7 +287,7 @@ struct DoubleTap: ParsableCommand {
         let session = try options.requiredSession()
         var fields = screenGuard.fields
         fields["reference"] = reference; fields["x"] = x; fields["y"] = y
-        try outputAction(session: session, observe: observation.observe) { try SessionClient.call(session: session, operation: "double-tap", fields: fields) }
+        try outputAction(session: session, observe: observation.observe, agentOutput: observation.output.agentOutput) { try SessionClient.call(session: session, operation: "double-tap", fields: fields) }
     }
 }
 
@@ -302,7 +307,7 @@ struct Pinch: ParsableCommand {
         var fields = screenGuard.fields
         fields["reference"] = reference; fields["x"] = x; fields["y"] = y
         fields["fromDistance"] = fromDistance; fields["toDistance"] = toDistance; fields["duration"] = duration
-        try outputAction(session: session, observe: observation.observe) { try SessionClient.call(session: session, operation: "pinch", fields: fields) }
+        try outputAction(session: session, observe: observation.observe, agentOutput: observation.output.agentOutput) { try SessionClient.call(session: session, operation: "pinch", fields: fields) }
     }
 }
 
@@ -319,7 +324,7 @@ struct LongPress: ParsableCommand {
         let session = try options.requiredSession()
         var fields = screenGuard.fields
         fields["reference"] = reference; fields["x"] = x; fields["y"] = y; fields["duration"] = duration
-        try outputAction(session: session, observe: observation.observe) { try SessionClient.call(session: session, operation: "long-press", fields: fields) }
+        try outputAction(session: session, observe: observation.observe, agentOutput: observation.output.agentOutput) { try SessionClient.call(session: session, operation: "long-press", fields: fields) }
     }
 }
 
@@ -330,7 +335,7 @@ struct Home: ParsableCommand {
     @Argument(help: "Current screenshot observation ID.") var reference: String
     mutating func run() throws {
         let session = try options.requiredSession()
-        try outputAction(session: session, observe: observation.observe) {
+        try outputAction(session: session, observe: observation.observe, agentOutput: observation.output.agentOutput) {
             try SessionClient.call(session: session, operation: "home", fields: ["reference": reference])
         }
     }
@@ -368,7 +373,7 @@ struct Swipe: ParsableCommand {
         fields["reference"] = reference; fields["direction"] = direction
         fields["fromX"] = fromX; fields["fromY"] = fromY; fields["toX"] = toX; fields["toY"] = toY
         fields["velocity"] = velocity; fields["pressDuration"] = pressDuration; fields["holdDuration"] = holdDuration
-        try outputAction(session: session, observe: observation.observe) { try SessionClient.call(session: session, operation: "swipe", fields: fields) }
+        try outputAction(session: session, observe: observation.observe, agentOutput: observation.output.agentOutput) { try SessionClient.call(session: session, operation: "swipe", fields: fields) }
     }
 }
 
@@ -390,7 +395,7 @@ struct TypeText: ParsableCommand {
 
     mutating func run() throws {
         let session = try options.requiredSession()
-        try outputAction(session: session, observe: observation.observe) {
+        try outputAction(session: session, observe: observation.observe, agentOutput: observation.output.agentOutput) {
             let value: String
             do { value = try stdin ? TextInput.read(from: .standardInput) : text! }
             catch {
@@ -411,21 +416,23 @@ struct TypeText: ParsableCommand {
 struct TextPrepare: ParsableCommand {
     static let configuration = CommandConfiguration(commandName: "text-prepare", abstract: "Prepare this native session's keyboard without input or clipboard access, then capture a new screenshot. Inspect it before typing or Return.")
     @OptionGroup var options: SessionOptions
+    @OptionGroup var presentation: AgentOutputOptions
     mutating func run() throws {
         let session = try options.requiredSession()
-        try output { try SessionClient.call(session: session, operation: "text-prepare") }
+        try output(agentOutput: presentation.agentOutput) { try SessionClient.call(session: session, operation: "text-prepare") }
     }
 }
 
 struct TextFinish: ParsableCommand {
     static let configuration = CommandConfiguration(commandName: "text-finish", abstract: "After visually verifying native text input and resolving any paste dialog, restore this transaction's clipboard backup without disconnecting.")
     @OptionGroup var options: SessionOptions
+    @OptionGroup var presentation: AgentOutputOptions
     @Argument(help: "Current screenshot oN captured after the text action; confirms that you have checked its result.") var reference: String
     @Option(help: "Pending result.pasteboard.transactionID returned by native type or status.") var transaction: String
 
     mutating func run() throws {
         let session = try options.requiredSession()
-        try output { try SessionClient.call(session: session, operation: "text-finish", fields: ["reference": reference, "transaction": transaction]) }
+        try output(agentOutput: presentation.agentOutput) { try SessionClient.call(session: session, operation: "text-finish", fields: ["reference": reference, "transaction": transaction]) }
     }
 }
 
@@ -442,7 +449,7 @@ struct Press: ParsableCommand {
         var fields: [String: Any] = ["reference": reference, "key": key]
         if let fieldRect { fields["fieldRect"] = fieldRect }
         if let ignoreRect { fields["ignoreRect"] = ignoreRect }
-        try outputAction(session: session, observe: observation.observe) { try SessionClient.call(session: session, operation: "press", fields: fields) }
+        try outputAction(session: session, observe: observation.observe, agentOutput: observation.output.agentOutput) { try SessionClient.call(session: session, operation: "press", fields: fields) }
     }
 }
 

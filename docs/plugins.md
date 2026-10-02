@@ -3,7 +3,7 @@
 > iPhone-use is the new local project identity. Its renamed repository/distribution/plugin channel has not been published by this change; the commands below target that upcoming channel. Existing Logo assets remain unchanged.
 
 
-[公开网站](https://agentsoma.dev) → [安装 CLI](install.md) → 安装本页插件 → [设备 setup](onboarding.md#发布包-setup) → 首个真机任务。完整英文路径见 [First task](first-task.md)。
+[公开网站](https://agentsoma.dev) → [安装 CLI](install.md) → 安装本页插件 → [选择模式并连接](first-task.md#connect-in-standard-mode) → 首个真机任务。完整英文路径见 [First task](first-task.md)。
 
 插件是 **CLI + skill** 封装，共用设备操作契约，分别适配 Codex 的命令执行、后台续读和图片工具，以及 Claude Code 的 Bash、TaskOutput 和 Read。它不含 CLI、不创建开发签名、不自动接入手机，也不要求 MCP 服务。
 
@@ -15,7 +15,9 @@ command -v iphone-use
 iphone-use --version
 ```
 
-需要稳定版 CLI **0.1.0+**、Apple Silicon / macOS 15+、完整 Xcode、已通过 USB 信任且开启 Developer Mode 的 iPhone，以及匹配设备与 Runner bundle ID 的 Apple Development 证书、私钥和 provisioning profile。首次任务中，skill 会先运行包内只读 `scripts/preflight.sh`，检查 CLI 版本和 Xcode，再发现设备。
+当前本地候选包或源码工作流以 [first-task](first-task.md) 的环境为准：标准模式已验收 Apple Silicon / macOS 27、Xcode 27、iOS 27；需要设备信任、Developer Mode 和解锁。**只有 Runner 模式需要开发签名与 setup**。包内只读 `scripts/preflight.sh` 检查一次 CLI、Xcode 和输出能力，随后复用检测结果。
+
+本地候选包不在 PATH 时，通过 `IPHONE_USE_CLI=/absolute/path/to/bin/iphone-use sh /absolute/path/to/skill/scripts/preflight.sh --candidate` 检查；源码 `development` 版本使用 `--source`。设备调用继续使用同一个可执行文件。不要为了通过版本检查切到另一个已安装版本。正式发布路径仍要求稳定版 CLI 0.1.0+。
 
 安装后重启原本已打开的客户端，使其取得更新的 PATH。插件安装成功不等于 signing/setup 成功。免费 Personal Team 和全新 Mac 配置仍未验收；详见[前置条件和签名](first-task.md#before-you-start)。
 
@@ -51,13 +53,13 @@ claude plugin list --json
 
 ## 首个任务
 
-先按[设备准备](first-task.md#prepare-the-device)执行 `iphone-use devices`，将真实设备 ID 填入 `IOS_UDID`，完成 `iphone-use setup --device "$IOS_UDID"`。setup 成功后，在新的客户端会话中调用上述 skill，并发送：
+先按[设备准备](first-task.md#before-you-start)完成信任和解锁，在新会话调用上述 skill。标准模式直接发现设备并连接；Runner 才按提示 setup。可发送：
 
 > 打开我的 iPhone 设置，进入“通用”，读取截图确认页面，然后断开会话。不要修改任何设置。
 
 验收须包括发现设备、连接、发现/打开 App、读取实际 PNG、至少一次导航点击、读取新截图验证结果和正常断开。若本来就在“通用”，先返回再进入即可。手机界面语言可以不同；引用必须来自实际观察，不能照抄示例 `oN:eN`。
 
-测试失败时，区分 `not_dispatched` 与可能已生效的 `unknown`；按返回值刷新观察，不能重复输入来补读输出。路径字符串和截图文件存在均不等于 agent 已读取图片。`--observe` 的 `action` 与 `observation` 分别判断，观察失败不覆盖动作事实。
+测试失败时，区分 `not_dispatched` 与可能已生效的 `unknown`；优先读取已经附带的有效观察，仅在缺失时重新截图；不能重复输入来补读输出。路径字符串和截图文件存在均不等于 agent 已读取图片。`--observe` 的 `action` 与 `observation` 分别判断，观察失败不覆盖动作事实。
 
 ## 升级生效与卸载
 

@@ -102,8 +102,8 @@ class PluginPreflightTests(unittest.TestCase):
         path.chmod(0o755)
 
     def write_cli(self, version, observe=True):
-        help_text = "--observe" if observe else "tap REF"
-        self.write_command("iphone-use", f"case \"$1\" in --version) printf '%s\\n' '{version}';; tap) printf '%s\\n' '{help_text}';; *) exit 99;; esac")
+        help_text = "--observe --agent-output" if observe else "tap REF"
+        self.write_command("iphone-use", f"case \"$1\" in --version) printf '%s\\n' '{version}';; tap) printf '%s\\n' '{help_text}';; connect) printf '%s\\n' '--mode';; *) exit 99;; esac")
 
     def run_check(self, *args):
         return subprocess.run(["/bin/sh", str(ROOT / "skills/iphone-use/scripts/preflight.sh"), *args],
@@ -118,6 +118,20 @@ class PluginPreflightTests(unittest.TestCase):
         result = self.run_check()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Use separate action", result.stdout)
+
+    def test_explicit_candidate_path_with_spaces_and_capabilities(self):
+        self.write_cli("0.1.0-dev.firstuse.6")
+        candidate = self.root / "candidate with spaces"
+        (self.bin / "iphone-use").rename(candidate)
+        env = {**os.environ, "PATH": f"{self.bin}:/usr/bin:/bin", "IPHONE_USE_CLI": str(candidate)}
+        command = ["/bin/sh", str(ROOT / "skills/iphone-use/scripts/preflight.sh")]
+        rejected = subprocess.run(command, env=env, text=True, capture_output=True)
+        self.assertNotEqual(rejected.returncode, 0)
+        result = subprocess.run(command + ["--candidate"], env=env, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(str(candidate), result.stdout)
+        self.assertIn("Agent output: available", result.stdout)
+        self.assertIn("Control modes: available", result.stdout)
 
     def test_missing_cli_and_unsupported_versions_fail_with_next_step(self):
         (self.bin / "iphone-use").unlink()
@@ -145,7 +159,7 @@ class PluginPreflightTests(unittest.TestCase):
         self.assertNotEqual(self.run_check().returncode, 0)
         result = self.run_check("--source")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("supplied signed .xctestrun", result.stdout)
+        self.assertIn("standard needs no Runner", result.stdout)
         self.assertNotEqual(self.run_check("--unknown").returncode, 0)
 
 

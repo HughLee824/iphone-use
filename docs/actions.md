@@ -276,3 +276,12 @@ Home 后 Runner 清除当前 App 目标，观察可能为 `scope=unknown`、截�
 `record-start --duration 60` 与 `record-stop RECORDING_ID` 在两种模式中均使用自有原生媒体接收器和 Apple 视频写入框架。Runner 模式仅为显式录屏创建媒体连接，控制仍由 XCTest 执行；标准模式不会启动 Runner。开始/停止录屏会使旧观察失效，后续输入必须重新 observe。
 
 视频帧不是 observation，文件解码成功不确认动作效果。正常手动/定时停止会在媒体健康且接收完整时保留最后一帧到停止时间的显示时长，原 RTP 时间戳不变；保持区间明确记录，不能作为持续收到新画面的证明。方向变化结束当前片段，不承诺连续旋转录制。详见[共享录屏契约](runner-recording.md)与[时间轴修复](native-recording-timeline.md)。
+
+
+## Agent-facing output
+
+Actions, `text-prepare` and `text-finish` accept optional `--agent-output`. Execution, guard thresholds, action outcome, exit status, clipboard ownership and observation references are unchanged. The CLI saves the full JSON response once in a unique private temporary directory (directory `0700`, file `0600`) and returns its absolute `receipt` path. Receipts survive session disconnect and may contain private UI text; retain only as long as the task needs them, then remove the task-owned receipt directory.
+
+The printed response retains errors, recovery, clipboard transaction state and the attached observation, while repeated `preInputChecks` media diagnostics are replaced by one final summary per stage in `agentSummary`. `fieldMatch=pixels` means direct field comparison passed; `temporal` means the bounded phase matcher passed. A missing temporal match is not itself a failure. `mismatches` distinguishes global screen, field, and protected-region changes; deadline/context/transport errors remain separate facts. `nextStep=inspect_attached_observation` never claims visual task success. Do not capture again merely because `requiresObservation` is true when a current observation is already attached.
+
+If saving the receipt fails, the CLI emits the original full response plus `agentOutputError`; it does not replace the execution outcome or retry the action. Without the flag, the existing JSON output is unchanged. See the [native text workflow](../skills/iphone-use/references/native-text.md) and [Codex call template](../skills/iphone-use/references/codex-calls.md).

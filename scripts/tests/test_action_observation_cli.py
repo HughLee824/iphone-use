@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -13,7 +14,7 @@ CLI = Path(__file__).resolve().parents[2] / ".build/debug/iphone-use"
 
 @unittest.skipUnless(CLI.is_file(), "Run swift build or swift test before CLI integration tests")
 class ActionObservationCLITests(unittest.TestCase):
-    def run_cli(self, args, outcome="completed", refresh=None, capture_ok=True, stdin=None, lose_action=False):
+    def run_cli(self, args, outcome="completed", refresh=None, capture_ok=True, stdin=None, lose_action=False, attached=None, details=None):
         with tempfile.TemporaryDirectory(prefix="as-cli-", dir="/private/tmp") as root:
             session = "s" + "a" * 32
             directory = Path(root) / session
@@ -43,10 +44,20 @@ class ActionObservationCLITests(unittest.TestCase):
                                     if not capture_ok:
                                         response["error"] = {"code": "capture_failed"}
                                 else:
-                                    response.update(ok=outcome == "completed", outcome=outcome, result={"inputFact": "preserved"})
+                                    response.update(ok=outcome == "completed", outcome=outcome, result=details if details is not None else {"inputFact": "preserved"})
+                                    if attached is not None:
+                                        response["observation"] = attached
                                     if refresh is not None:
                                         response["requiresObservation"] = refresh
                                 connection.sendall(json.dumps(response).encode() + b"\n")
+                                # Keep the fixture socket open until the client consumes
+                                # its response; immediate close can race Network.framework
+                                # delivery for larger diagnostic replies on macOS.
+                                connection.settimeout(2)
+                                try:
+                                    connection.recv(1)
+                                except socket.timeout:
+                                    pass
                     except Exception as error:
                         failures.append(error)
 
@@ -63,6 +74,46 @@ class ActionObservationCLITests(unittest.TestCase):
                 self.assertEqual(failures, [])
             self.assertTrue(result.stdout, f"CLI returned no JSON: exit={result.returncode}, stderr={result.stderr!r}, requests={requests!r}")
             return result.returncode, json.loads(result.stdout), requests
+
+    def test_agent_output_keeps_attached_observations_without_another_host_call(self):
+        attached = {"ok": True, "phase": "pre_input_rejection", "result": {
+            "observation": "o2", "refs": "current", "screenshot": "/fixture/o2.png"}}
+        checks = [{"stage": "before_clipboard", "attempt": n, "inTime": True,
+                   "screenGuard": {"accepted": True, "fieldPixelsMatch": True, "fieldTemporalMatch": False},
+                   "mediaPhaseSamples": ["diagnostics"] * 100} for n in range(1, 7)]
+        details = {"preInputChecks": checks, "pasteboard": {"restorePending": True, "transactionID": "t1"}}
+        for args in [["type", "o1", "--mode", "replace", "--text", "中文", "--observe"],
+                     ["text-prepare"], ["text-finish", "o1", "--transaction", "t1"]]:
+            for outcome in ["completed", "not_dispatched", "unknown"]:
+                with self.subTest(command=args[0], outcome=outcome):
+                    code, response, requests = self.run_cli([*args, "--agent-output"],
+                        outcome=outcome, refresh=True, attached=attached, details=details)
+                    receipt = Path(response["receipt"])
+                    try:
+                        full = json.loads(receipt.read_text())
+                        self.assertEqual(code, 0 if outcome == "completed" else 1)
+                        self.assertEqual([r["op"] for r in requests], [args[0]])
+                        self.assertNotIn("agentOutput", requests[0])
+                        self.assertEqual(response["observation"], attached)
+                        action = response.get("action", response)
+                        original = full.get("action", full)
+                        self.assertEqual(action["outcome"], outcome)
+                        self.assertEqual(original["result"], details)
+                        self.assertEqual(action["result"]["pasteboard"], details["pasteboard"])
+                        self.assertNotIn("preInputChecks", action["result"])
+                        self.assertEqual(response["agentSummary"]["nextStep"], "inspect_attached_observation")
+                        self.assertEqual(receipt.stat().st_mode & 0o777, 0o600)
+                    finally:
+                        shutil.rmtree(receipt.parent)
+
+    def test_default_output_retains_all_diagnostics(self):
+        details = {"preInputChecks": [{"mediaPhaseSamples": ["unchanged"]}]}
+        code, response, requests = self.run_cli(["text-prepare"], details=details)
+        self.assertEqual(code, 0)
+        self.assertEqual(response["result"], details)
+        self.assertNotIn("agentSummary", response)
+        self.assertNotIn("receipt", response)
+        self.assertEqual(len(requests), 1)
 
     def test_coordinate_video_exclusion_is_per_action_and_preserves_observation_flow(self):
         args = ["swipe", "o1", "--from-x", "315", "--from-y", "685", "--to-x", "315", "--to-y", "280",

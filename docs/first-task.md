@@ -51,7 +51,6 @@ For a first manual test, open a harmless page in the app you intend to use, with
 
 ```sh
 export SESSION='SESSION_FROM_CONNECT'
-iphone-use --session "$SESSION" status
 iphone-use --session "$SESSION" observe
 ```
 
@@ -63,7 +62,7 @@ iphone-use --session "$SESSION" tap OBSERVATION_ID --x POINT_X --y POINT_Y --obs
 iphone-use --session "$SESSION" disconnect
 ```
 
-Pass means the intended visible effect happened and cleanup was confirmed, not just that `tap` exited successfully. Every next action uses a fresh observation. An `unknown` result requires observation and judgment, never automatic replay. If the action succeeds but its following observation fails, recover with `observe`, not another tap.
+Pass means the intended visible effect happened and cleanup was confirmed, not just that `tap` exited successfully. Every next action uses the latest inspected, valid observation. Reuse a successful attached observation instead of capturing it again. An `unknown` result requires inspecting that observation and judging the effect, never automatic replay. If the action succeeds but its following observation fails, recover with `observe`, not another tap.
 
 ## Optional: Runner mode
 
