@@ -26,6 +26,13 @@
 
 新增三个宿主回归已通过：40 次含 Unicode 的大回执完整返回（包括跨 64 KiB 分块与嵌套观察）；客户端不关闭时有界释放且完成回调一次；真正无回复和错误 ID 保持不确定、不重发。完整 Swift 宿主测试共 383 项，1 项既有可选检查跳过，0 失败；其中包含两种模式的宿主动作、断开和清理测试。Release CLI 构建和 `git diff --check` 均通过。本次没有修改设备端 Runner，也未重新安装或启动它。
 
-真机已自动锁屏，已请求用户解锁。本次通信修复尚未做新真机输入验证；此前光标修复的真机成功不能代替通信修复验收。
+用户解锁后，使用修复提交 `4cbb31d` 的 Release 构建完成一次标准模式 Probe 真机验证，`controlAvailable=true`、`runnerStarted=false`：
 
-本地证据：`.local/research/ipc-reply-20261003/`，含独立自写探针、`before.log`、`final-message.log`、`drain.log`、正式修复 `after.log` 和测试构建日志。没有运行第三方设备工具，没有推送或发布。
+- 只执行一次替换 `回执验证🙂完成`，截图确认输入框和完整回显均正确，Edits 从 6 增至 7；没有重放输入。
+- 输入命令含校验、剪贴板暂用和结果截图耗时 3.215 秒。源观察年龄 25.698 秒，三个输入前采样通过像素匹配。这是单次样本，不是延迟分位数或本轮时序光标路径覆盖。
+- 客户端完整接收宿主的原始 o3，没有异常后补采 o4；逐项核对请求 ID、完整 result、附带 observation 和 error，均与宿主日志一致。没有 `session_unavailable` 或 ENETDOWN。保留正常的 `unknown/native_input_unacknowledged` 语义，并以实际截图确认输入。
+- `text-finish` 正常恢复剪贴板并返回 o4；断开回执正常返回，确认自有媒体停止、键盘移除、连接关闭和缓存清理。另行核实宿主已退出、IPC socket 与观察缓存不存在。
+
+本轮真机回执链路验证通过。原始大回执和跨分块回执的覆盖来自前述本机重放与宿主回归；单次真机验证不代表跨 App、长时间稳定性或新的短上下文验收已完成。未启动新会话任务，未重打候选包。
+
+本地证据：`.local/research/ipc-reply-20261003/`，含独立自写探针、`before.log`、`final-message.log`、`drain.log`、正式修复 `after.log` 和测试构建日志；`device/` 下保存真机截图、原始回执、`reply-verification.json`、`cleanup-verified.json`。没有运行第三方设备工具，没有推送或发布。
