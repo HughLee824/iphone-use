@@ -30,6 +30,53 @@ final class ScreenGuardExclusionTests: XCTestCase {
         XCTAssertTrue(try roundTrip.check(png: frame, context: screenTestContext()).accepted)
     }
 
+    func testOnePixelVideoRimDoesNotBecomeWholeGridCells() throws {
+        let context = screenTestContext()
+        let ignored = ScreenRect(CGRect(x: 18, y: 89, width: 177, height: 60))
+        let field = ScreenRect(CGRect(x: 17, y: 209, width: 356, height: 161))
+        // The agent selected the visible point rectangle; the rasterized edge
+        // extends one native pixel beyond it. Never enlarge that rectangle.
+        let rim = CGRect(x: 53, y: 266, width: 533, height: 182)
+        let before = try screenPNG(width: 1170, height: 2532, patches: [(rim, [255, 145, 30])])
+        let after = try screenPNG(width: 1170, height: 2532, patches: [(rim, [0, 183, 211])])
+        let guardValue = try ScreenGuard(png: before, context: context, rects: [field], policy: .init(), ignoring: ignored)
+        let check = try guardValue.check(png: after, context: context)
+        XCTAssertLessThan(check.screenChange, 0.01)
+        XCTAssertTrue(check.accepted)
+        XCTAssertEqual(check.ignoredRect, ignored)
+        XCTAssertGreaterThan(try XCTUnwrap(check.rawScreenChange), 0.01)
+        // Material motion outside the exact selected rectangle still fails.
+        let moved = try screenPNG(width: 1170, height: 2532,
+            patches: [(CGRect(x: 54, y: 267, width: 891, height: 180), [0, 183, 211])])
+        XCTAssertFalse(try guardValue.check(png: moved, context: context).accepted)
+        // Native field comparison must still see even a thin character edit.
+        let edited = try screenPNG(width: 1170, height: 2532,
+            patches: [(rim, [0, 183, 211]), (CGRect(x: 100, y: 690, width: 3, height: 30), [0, 0, 0])])
+        let nativeField = try NativeTextFieldGuard(png: before, context: context, field: field)
+        XCTAssertFalse(try nativeField.matches(png: edited, context: context))
+    }
+
+    func testAreaCellsAverageAllPixelsAndKeepUnevenEdgeCells() throws {
+        let rect = ScreenRect(CGRect(x: 0, y: 0, width: 5, height: 1))
+        let png = try screenPNG(width: 5, height: 1, patches: [(CGRect(x: 0, y: 0, width: 1, height: 1), [0,0,0])])
+        let image = try ScreenImage(png: png)
+        XCTAssertEqual(Array(try image.areaRGB(rect: rect, screen: rect, columns: 2, rows: 1)), [128,128,128,255,255,255])
+        XCTAssertThrowsError(try image.areaRGB(rect: rect, screen: rect, columns: 6, rows: 1))
+        XCTAssertThrowsError(try image.areaRGB(rect: rect, screen: rect, columns: 0, rows: 1))
+    }
+
+    func testImmediatelyAdjacentProtectedControlStillRejectsChanges() throws {
+        let context = screenTestContext()
+        let ignored = ScreenRect(CGRect(x: 18, y: 89, width: 177, height: 60))
+        let adjacent = ScreenRect(CGRect(x: 195, y: 89, width: 30, height: 60))
+        let value = try ScreenGuard(png: screenPNG(), context: context, rects: [adjacent], policy: .init(), ignoring: ignored)
+        let frame = try screenPNG(patches: [(ignored.cgRect, [0,0,0]), (CGRect(x: 196, y: 110, width: 2, height: 10), [0,0,0])])
+        let check = try value.check(png: frame, context: context)
+        XCTAssertEqual(check.ignoredRect, ignored)
+        XCTAssertGreaterThan(check.regionChanges[0], 0)
+        XCTAssertFalse(check.accepted)
+    }
+
     func testVideoCannotHideTargetOrOtherPageChanges() throws {
         let baseline = try makeGuard()
         for patch in [CGRect(x: 313, y: 680, width: 4, height: 10), // touch target
@@ -59,7 +106,7 @@ final class ScreenGuardExclusionTests: XCTestCase {
             XCTAssertThrowsError(try ScreenGuard(png: screenPNG(), context: context, rects: regions, policy: .init(), ignoring: ScreenRect(rect)))
         }
         let encoded = try jsonObject(JSONEncoder().encode(makeGuard()))
-        for (key, value): (String, Any) in [("algorithm", ScreenGuard.algorithm), ("unmaskedRGB", []),
+        for (key, value): (String, Any) in [("algorithm", ScreenGuard.algorithm), ("algorithm", "srgb-grid-excluded-rect-v1"), ("unmaskedRGB", []),
             ("ignoredRect", ["x": 0, "y": 0, "width": 390, "height": 600])] {
             var raw = encoded; raw[key] = value
             let decoded = try JSONDecoder().decode(ScreenGuard.self, from: jsonData(raw))

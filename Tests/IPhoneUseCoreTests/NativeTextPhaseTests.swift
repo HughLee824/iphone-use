@@ -113,6 +113,31 @@ final class NativeTextPhaseTests: XCTestCase {
         }
     }
 
+    func testVideoRimDoesNotAbortCaretPhaseSampling() throws {
+        let textField = ScreenRect(CGRect(x: 17, y: 209, width: 356, height: 161))
+        let ignored = ScreenRect(CGRect(x: 18, y: 89, width: 177, height: 60))
+        let rim = CGRect(x: 53, y: 266, width: 533, height: 182)
+        let caret = CGRect(x: 643, y: 646, width: 8, height: 61)
+        let source = try screenPNG(width: 1170, height: 2532, patches: [(rim, [255,145,30]), (caret, [255,128,128])])
+        let hidden = try screenPNG(width: 1170, height: 2532, patches: [(rim, [0,183,211])])
+        let visible = try screenPNG(width: 1170, height: 2532, patches: [(rim, [0,183,211]), (caret, [255,0,0])])
+        let value = try ScreenGuard(png: source, context: context, rects: [textField], policy: .init(), ignoring: ignored)
+        let fieldGuard = try NativeTextFieldGuard(png: source, context: context, field: textField)
+        var time = 0.0, index = 0
+        let frames = [hidden, visible, hidden]
+        let result = try NativeInputPreflight.check(guard: value, displayID: 1, deadline: 8, maximumCaptures: 6,
+            fieldGuard: fieldGuard, phaseSampling: true, wait: { time += $0 }, now: { time }) {
+                let png = frames[min(index, 2)]; index += 1; time += 0.03
+                return CapturedObservation(nodes: [], metadata: ["displayID": UInt64(1),
+                    "screenContext": try jsonObject(JSONEncoder().encode(self.context))], screenshot: png)
+            }
+        XCTAssertEqual(result.1, 3)
+        XCTAssertTrue(result.0.accepted)
+        XCTAssertTrue(result.0.fieldTemporalMatch)
+        XCTAssertEqual(result.0.fieldPixelsMatch, false)
+        XCTAssertEqual(result.0.ignoredRect, ignored)
+    }
+
     func testCancellationDuringPhaseWaitDoesNotCaptureOrDispatchAgain() throws {
         let original = try screenPNG(), changed = try screenPNG(patches: [(stroke, [0,0,0])])
         let guardValue = try ScreenGuard(png: original, context: context, rects: [field], policy: .init())

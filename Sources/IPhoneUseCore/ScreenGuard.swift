@@ -37,7 +37,7 @@ struct ScreenContext: Codable {
 
 struct ScreenGuard: Codable {
     static let algorithm = "srgb-grid-v1"
-    static let maskedAlgorithm = "srgb-grid-excluded-rect-v1"
+    static let maskedAlgorithm = "srgb-area-excluded-rect-v2"
     static let maximumRegions = 5
     static let pixelTolerance = 8
     static let globalColumns = 32
@@ -117,7 +117,7 @@ struct ScreenGuard: Codable {
         unmaskedRGB = try ignoredRect.map { rect in
             try Self.unmaskedRects(screen: context.screen, ignored: rect, protected: rects).map {
                 let size = Self.bandGrid($0, screen: context.screen)
-                return try image.rgb(rect: $0, screen: context.screen, columns: size.columns, rows: size.rows)
+                return try image.areaRGB(rect: $0, screen: context.screen, columns: size.columns, rows: size.rows)
             }
         }
         regions = try rects.map { Region(rect: $0, rgb: try image.rgb(rect: $0, screen: context.screen, columns: Self.regionSide, rows: Self.regionSide)) }
@@ -173,12 +173,13 @@ struct ScreenGuard: Codable {
             return Check(screenChange: raw, regionChanges: changes, policy: policy)
         }
         let rects = try Self.unmaskedRects(screen: context.screen, ignored: ignoredRect, protected: regions.map(\.rect))
-        // Crop each static band BEFORE resampling, so video pixels cannot bleed
-        // into the comparison through the global grid's interpolation filter.
+        // Crop each static band BEFORE reducing it. Average every native pixel
+        // in each grid cell: interpolation can magnify a one-pixel video rim
+        // into an entire changed cell. The exclusion geometry stays exact.
         var changedArea = 0.0, area = 0.0
         for (rect, rgb) in zip(rects, unmaskedRGB) {
             let grid = Self.bandGrid(rect, screen: context.screen)
-            let current = try image.rgb(rect: rect, screen: context.screen, columns: grid.columns, rows: grid.rows)
+            let current = try image.areaRGB(rect: rect, screen: context.screen, columns: grid.columns, rows: grid.rows)
             let size = rect.width * rect.height
             changedArea += Self.changedFraction(rgb, current) * size
             area += size
@@ -331,6 +332,43 @@ struct ScreenImage {
         // Full-screen iPhone captures only; never stretch a mismatched image onto old coordinates.
         let scaleX = Double(image.width) / screen.width, scaleY = Double(image.height) / screen.height
         guard scaleX >= 1, scaleY >= 1, abs(scaleX - scaleY) <= 0.01 else { throw ScreenGuard.Failure.invalidImage }
+    }
+
+    // Deterministic box averages for the coarse, unmasked global bands only.
+    // Keep native field pixels and protected-region comparison unchanged.
+    func areaRGB(rect: ScreenRect, screen: ScreenRect, columns: Int, rows: Int) throws -> Data {
+        let scaleX = Double(image.width) / screen.width, scaleY = Double(image.height) / screen.height
+        let pixels = CGRect(x: (rect.x - screen.x) * scaleX, y: (rect.y - screen.y) * scaleY,
+                            width: rect.width * scaleX, height: rect.height * scaleY).integral
+        guard let crop = image.cropping(to: pixels), columns > 0, rows > 0,
+              columns <= crop.width, rows <= crop.height,
+              crop.width <= 16_000_000 / crop.height else { throw ScreenGuard.Failure.invalidImage }
+        let width = crop.width, height = crop.height
+        // Render at native resolution: no interpolation before the average.
+        let native = try rgb(rect: rect, screen: screen, columns: width, rows: height)
+        var result = Data(count: columns * rows * 3)
+        result.withUnsafeMutableBytes { (out: UnsafeMutableRawBufferPointer) in
+            native.withUnsafeBytes { (source: UnsafeRawBufferPointer) in
+                for row in 0..<rows {
+                    let y0 = row * height / rows, y1 = (row + 1) * height / rows
+                    for column in 0..<columns {
+                        let x0 = column * width / columns, x1 = (column + 1) * width / columns
+                        var red = 0, green = 0, blue = 0
+                        for y in y0..<y1 {
+                            for x in x0..<x1 {
+                                let offset = (y * width + x) * 3
+                                red += Int(source[offset]); green += Int(source[offset + 1]); blue += Int(source[offset + 2])
+                            }
+                        }
+                        let count = (x1 - x0) * (y1 - y0), offset = (row * columns + column) * 3
+                        out[offset] = UInt8((red + count / 2) / count)
+                        out[offset + 1] = UInt8((green + count / 2) / count)
+                        out[offset + 2] = UInt8((blue + count / 2) / count)
+                    }
+                }
+            }
+        }
+        return result
     }
 
     func rgb(rect: ScreenRect, screen: ScreenRect, columns: Int, rows: Int) throws -> Data {
