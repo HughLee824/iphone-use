@@ -121,12 +121,43 @@ final class JSONServer {
                     self.queue.async {
                         guard var wire = try? jsonData(response) else { connection.cancel(); sent(); return }
                         wire.append(10)
-                        connection.send(content: wire, completion: .contentProcessed { _ in connection.cancel(); sent() })
+                        self.sendResponse(wire, on: connection, completion: sent)
                     }
                 }
             } else if complete { connection.cancel() }
             else { receive(connection, buffer: buffer) }
         }
+    }
+
+    private func sendResponse(_ wire: Data, on connection: NWConnection, completion: @escaping () -> Void) {
+        // contentProcessed only acknowledges local processing, not peer receipt.
+        // Cancelling here can discard queued Unix-socket bytes (ENETDOWN at the
+        // client). Half-close the response, then wait for our one-shot client to
+        // consume its JSON line and close. Bound peers that never close.
+        let deadline = DispatchSource.makeTimerSource(queue: queue)
+        var finished = false
+        func finish() {
+            guard !finished else { return }
+            finished = true
+            deadline.cancel()
+            connection.cancel()
+            completion()
+        }
+        func awaitPeerClose() {
+            connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { _, _, complete, error in
+                guard !finished else { return }
+                if complete || error != nil { finish() }
+                else { awaitPeerClose() } // Never dispatch another request on this connection.
+            }
+        }
+        deadline.setEventHandler { finish() }
+        deadline.schedule(deadline: .now() + 5)
+        deadline.resume()
+        connection.send(content: wire, contentContext: .finalMessage, isComplete: true,
+                        completion: .contentProcessed { error in
+            guard !finished else { return }
+            if error != nil { finish() } else { awaitPeerClose() }
+        })
     }
 
     func stopAccepting() { listener.cancel() }
