@@ -68,6 +68,14 @@ private final class ControlledBackend: SessionBackend {
         }
         return try observationFixture()
     }
+    private(set) var textObservationCount = 0
+    func observeText(_ options: NativeTextObservationOptions) throws -> CapturedObservation {
+        textObservationCount += 1
+        let captured = try observe()
+        var metadata = captured.metadata
+        metadata["textObservationOptions"] = try options.result
+        return CapturedObservation(nodes: captured.nodes, metadata: metadata, screenshot: captured.screenshot)
+    }
     func finishText(transaction: String, observation: [String: Any]) throws -> [String: Any] {
         finishCount += 1
         return ["pasteboardRestoreAcknowledged": finishAcknowledged, "transactionID": transaction]
@@ -162,6 +170,39 @@ final class HostTests: XCTestCase {
             XCTAssertEqual(stopped["ok"] as? Bool, true)
             XCTAssertEqual(backend.recordingStops, 1)
         }
+    }
+
+    func testScopedPreparationSelectsTextObservationAndRejectsMalformedRequestBeforeRegistration() throws {
+        let backend = ControlledBackend(); backend.nativeTextFixture = true
+        let (paths, session, finished) = try host(timeout: 5, backend: backend, native: true)
+        defer { _ = try? call(paths, session: session, op: "disconnect"); wait(for: [finished], timeout: 3) }
+        let invalid = try call(paths, session: session, op: "text-prepare-scoped", fields: ["fieldRect": "0,0,-1,10"])
+        XCTAssertEqual(invalid["outcome"] as? String, "not_dispatched")
+        XCTAssertEqual(backend.prepareCount, 0)
+        let prepared = try call(paths, session: session, op: "text-prepare-scoped", fields: ["fieldRect": "18,139,354,160"])
+        XCTAssertEqual(prepared["ok"] as? Bool, true)
+        XCTAssertEqual(backend.prepareCount, 1)
+        XCTAssertEqual(backend.textObservationCount, 1)
+        XCTAssertEqual(backend.inputCount, 0)
+    }
+
+    func testScopedTextFlowKeepsNewBaselineThroughUnknownInputAndClipboardFinish() throws {
+        let backend = ControlledBackend(); backend.nativeTextFixture = true; backend.nativeSend = true
+        let (paths, session, finished) = try host(timeout: 5, backend: backend, native: true)
+        defer { _ = try? call(paths, session: session, op: "disconnect"); wait(for: [finished], timeout: 3) }
+        _ = try call(paths, session: session, op: "text-prepare-scoped", fields: ["fieldRect": "18,139,354,160"])
+        let action = try call(paths, session: session, op: "type", fields: ["reference": "o1", "text": "a", "mode": "append", "fieldRect": "18,139,354,160"])
+        XCTAssertEqual(action["outcome"] as? String, "unknown")
+        XCTAssertEqual(backend.textObservationCount, 2)
+        XCTAssertEqual(backend.inputCount, 1)
+        let completion = try call(paths, session: session, op: "text-finish", fields: ["reference": "o2", "transaction": "00000000-0000-0000-0000-000000000001"])
+        XCTAssertEqual(completion["ok"] as? Bool, true)
+        XCTAssertEqual(backend.textObservationCount, 3)
+        XCTAssertEqual(backend.finishCount, 1)
+        XCTAssertEqual(backend.inputCount, 1)
+        let stale = try call(paths, session: session, op: "type", fields: ["reference": "o1", "text": "a", "mode": "append", "fieldRect": "18,139,354,160"])
+        XCTAssertEqual(stale["outcome"] as? String, "not_dispatched")
+        XCTAssertEqual(backend.inputCount, 1)
     }
 
     func testNativePreparationCapturesNewSourceThenReturnRemainsUnknownWithoutReplay() throws {

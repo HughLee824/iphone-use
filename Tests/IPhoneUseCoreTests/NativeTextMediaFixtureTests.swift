@@ -25,6 +25,19 @@ final class NativeTextMediaFixtureTests: XCTestCase {
         XCTAssertTrue(try matches("caret-source", frames: caret).contains(.temporal))
     }
 
+    func testRecordedAppleCaretWithDifferentPixelFadeDirections() throws {
+        let field = ScreenRect(CGRect(x: 0, y: 0, width: 354, height: 160))
+        let context = ScreenContext(screen: field, scope: field, orientation: 1, keyboardCount: 0)
+        let matcher = try NativeTextPhaseMatcher(field: NativeTextFieldGuard(png: fixture("blend-source"), context: context, field: field))
+        // Recorded captures 0, 3, 6 form this cycle. Captures 0 and 6
+        // have identical PNG bytes; store that fixture once (see README).
+        let matches = try [0, 3, 0].map { try matcher.check(png: fixture("blend-\($0)"), context: context) }
+        XCTAssertEqual(matches, [.none, .none, .temporal])
+        let caret = try XCTUnwrap(matcher.caretRect)
+        XCTAssertLessThanOrEqual(caret.width, 4)
+        XCTAssertLessThanOrEqual(caret.height, 21)
+    }
+
     func testMutationHelperPreservesUneditedPixelGeometry() throws {
         let source = try fixture("encoded-source")
         let guardValue = try NativeTextFieldGuard(png: source, context: context, field: rect)

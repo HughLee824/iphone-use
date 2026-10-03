@@ -417,9 +417,18 @@ struct TextPrepare: ParsableCommand {
     static let configuration = CommandConfiguration(commandName: "text-prepare", abstract: "Prepare this native session's keyboard without input or clipboard access, then capture a new screenshot. Inspect it before typing or Return.")
     @OptionGroup var options: SessionOptions
     @OptionGroup var presentation: AgentOutputOptions
+    @Option(help: "Complete native input field x,y,width,height in screen points; establish a stable new text observation.") var fieldRect: String?
+    @Option(help: "Video rectangle outside the complete field, at most 25% of screen; requires --field-rect.") var ignoreRect: String?
     mutating func run() throws {
         let session = try options.requiredSession()
-        try output(agentOutput: presentation.agentOutput) { try SessionClient.call(session: session, operation: "text-prepare") }
+        try output(agentOutput: presentation.agentOutput) {
+            guard fieldRect != nil || ignoreRect == nil else { throw ValidationError("--ignore-rect requires --field-rect") }
+            var fields: [String: Any] = [:]
+            if let fieldRect { fields["fieldRect"] = fieldRect }
+            if let ignoreRect { fields["ignoreRect"] = ignoreRect }
+            // Old hosts must reject the scoped request, not silently skip stability checks.
+            return try SessionClient.call(session: session, operation: fieldRect == nil ? "text-prepare" : "text-prepare-scoped", fields: fields)
+        }
     }
 }
 

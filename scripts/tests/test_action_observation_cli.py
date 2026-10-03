@@ -229,6 +229,18 @@ class ActionObservationCLITests(unittest.TestCase):
                 self.assertEqual(requests[0]["mode"], mode)
                 self.assertEqual(requests[0]["text"], text)
 
+    def test_scoped_preparation_uses_fail_closed_operation(self):
+        code, response, requests = self.run_cli(["text-prepare", "--field-rect", "18,209,354,160", "--ignore-rect", "18,89,177,60"])
+        self.assertEqual(code, 0, response)
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(requests[0]["op"], "text-prepare-scoped")
+        self.assertEqual(requests[0]["fieldRect"], "18,209,354,160")
+        self.assertEqual(requests[0]["ignoreRect"], "18,89,177,60")
+        code, response, requests = self.run_cli(["text-prepare", "--field-rect", "18,209,354,160"], lose_action=True)
+        self.assertEqual(code, 1, response)
+        self.assertEqual(response["outcome"], "unknown")
+        self.assertEqual(len(requests), 1)
+
     def test_native_preparation_and_return_field_are_forwarded_once(self):
         code, response, requests = self.run_cli(["text-prepare"])
         self.assertEqual(code, 0, response)

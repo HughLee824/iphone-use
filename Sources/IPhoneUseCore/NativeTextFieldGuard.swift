@@ -177,6 +177,7 @@ final class NativeTextPhaseMatcher {
         let a = [UInt8](first), b = [UInt8](other)
         var minX = field.width, maxX = -1, minY = field.height, maxY = -1, changed = 0
         var direction: [Int]?
+        var commonDirection = true
         for pixel in 0..<(field.width * field.height) {
             let i = pixel * 3
             let delta = max(abs(Int(a[i]) - Int(b[i])), abs(Int(a[i + 1]) - Int(b[i + 1])), abs(Int(a[i + 2]) - Int(b[i + 2])))
@@ -186,10 +187,14 @@ final class NativeTextPhaseMatcher {
             changed += 1
             let vector = (0..<3).map { Int(b[i + $0]) - Int(a[i + $0]) }
             if let direction {
-                // A moved stroke has opposing edges; a fading stroke does not.
-                guard zip(direction, vector).reduce(0, { $0 + $1.0 * $1.1 }) > 0 else { return nil }
+                if zip(direction, vector).reduce(0, { $0 + $1.0 * $1.1 }) <= 0 { commonDirection = false }
             } else { direction = vector }
         }
+        // A caret can blend over different background pixels. Its RGB direction
+        // need not agree across the stroke, but each pixel must follow its own
+        // source-relative color ray with the same fade ordering. A translated
+        // stroke gains contrast at one edge and loses it at the other.
+        guard commonDirection || sourceRelativeFade(first: a, other: b) else { return nil }
         let w = maxX - minX + 1, h = maxY - minY + 1
         guard changed >= 12, w > 0, h > 0,
               Double(w) <= 4 * field.scale, Double(h) >= 8 * field.scale,
@@ -201,6 +206,31 @@ final class NativeTextPhaseMatcher {
         guard rect.width <= 4 * field.scale + 4,
               field.appearance(first, other, ignoring: rect) else { return nil }
         return rect
+    }
+
+    private func sourceRelativeFade(first: [UInt8], other: [UInt8]) -> Bool {
+        let source = [UInt8](field.source)
+        var ordering: Bool?
+        for pixel in 0..<(field.width * field.height) {
+            let i = pixel * 3
+            let delta = (0..<3).map { abs(Int(first[i + $0]) - Int(other[i + $0])) }.max()!
+            if delta <= 16 { continue }
+            let a = (0..<3).map { Double(Int(first[i + $0]) - Int(source[i + $0])) }
+            let b = (0..<3).map { Double(Int(other[i + $0]) - Int(source[i + $0])) }
+            let aa = a.reduce(0) { $0 + $1 * $1 }, bb = b.reduce(0) { $0 + $1 * $1 }
+            guard aa != bb else { return false }
+            let increasing = bb > aa
+            if let ordering, ordering != increasing { return false }
+            ordering = increasing
+            // Project the shorter vector onto the longer one. The original
+            // pixel tolerance permits rounding, not a new color/area budget.
+            let longer = increasing ? b : a, shorter = increasing ? a : b
+            let norm = max(aa, bb)
+            let factor = zip(longer, shorter).reduce(0) { $0 + $1.0 * $1.1 } / norm
+            guard factor >= 0, factor <= 1,
+                  zip(longer, shorter).allSatisfy({ abs($0.1 - factor * $0.0) <= Double(ScreenGuard.pixelTolerance) }) else { return false }
+        }
+        return ordering != nil
     }
 
     private func sourceFitsCaret(first: Data, other: Data, rect: CGRect) -> Bool {

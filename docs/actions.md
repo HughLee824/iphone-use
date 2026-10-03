@@ -6,6 +6,10 @@
 
 推荐先执行 `iphone-use --session "$SESSION" text-prepare`：显式注册本会话的自有键盘，使旧观察失效并附带新截图。该操作不要求输入框引用、不聚焦、不发送按键、不访问剪贴板。检查新图后，再点击目标字段并用新观察确认焦点。已准备的键盘不会重复创建；每次显式 prepare 仍返回新图。原有 type 的按需准备行为保留，未显式准备时仍可能因软键盘收起而拒绝旧截图。
 
+已能从当前截图确定完整输入框时，使用 `text-prepare --field-rect x,y,width,height` 建立文字基准；画面中有视频时可同时给出位于字段外、至多占屏幕 25% 的 `--ignore-rect`。返回截图前，在 3 秒媒体采样预算内以原有字段/光标规则确认稳定；不能建立基准时返回一张新的 Apple PNG。必须检查返回的新观察再输入，不会在动作执行时替换旧基准。未提供字段的旧调用仍兼容，但不承诺局部基准稳定性。带字段的 type/press 及其 text-finish 后续观察复用同一准备逻辑；不需要每次输入前重复 prepare。
+
+作用域准备使用独立协议操作 `text-prepare-scoped`，旧宿主会拒绝而非忽略字段参数。采样预算不包括 Apple 截图和前后锁屏/显示检查；取消、方向恢复和媒体互斥继续遵循原有契约。
+
 `text-prepare` 的 `keyboardPrepared` 和 `inputReportsSent=0` 描述服务准备事实，不证明焦点；截图失败时命令返回非零并保留准备结果，需要另行 observe。注册结果不确定时保留键盘状态和清理要求，不自动重复注册。仅适用于 apple-native，旧宿主拒绝未知命令。
 
 原生 `press oN --key return --field-rect x,y,width,height --observe` 现支持向已确认焦点发送独立 Return。完整字段、当前 observationID、全屏保护、方向、请求受理后的验证预算及完整字段跨帧复核与 type 相同；省略字段矩形时保护整个屏幕。不聚焦、不访问剪贴板、不自动完成待恢复的粘贴事务。调用方先核对输入结果并 text-finish，再决定是否发送 Return。Return 由 App 解释，可能搜索、完成、换行或提交；`keyReportQueued` 仅是本地发送事实，`keyEffectConfirmed=false`，结果仍为 unknown，必须检查新图。原生 type 的 auto/paste 正文允许 LF/CR 换行，作为文本一次粘贴，不转换或隐式附加 Return；keys 及其他控制字符仍拒绝。XCTest 仍使用原有 `press oN:eN --key return`。

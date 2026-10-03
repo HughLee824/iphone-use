@@ -275,13 +275,16 @@ final class AppleDeviceBackend: SessionBackend {
     func observe() throws -> CapturedObservation {
         try capture(preferredSource: nil)
     }
-    private func capture(preferredSource: String?, textPhase: (guardValue: ScreenGuard, field: NativeTextPhaseMatcher, deadline: TimeInterval)? = nil) throws -> CapturedObservation {
+    func observeText(_ options: NativeTextObservationOptions) throws -> CapturedObservation {
+        try capture(preferredSource: nil, textBaseline: options)
+    }
+    private func capture(preferredSource: String?, textBaseline: NativeTextObservationOptions? = nil, textPhase: (guardValue: ScreenGuard, field: NativeTextPhaseMatcher, deadline: TimeInterval)? = nil) throws -> CapturedObservation {
         guard controlErrorCode != "native_orientation_unverified" else {
             throw IPhoneUseError("native_orientation_unverified", controlError!)
         }
         do {
             return try NativeCaptureChecks.withOrientationRecovery(capture: { afterRefresh in
-                try self.captureOnce(preferredSource: preferredSource, mediaTimeout: afterRefresh ? 1 : 0.15, textPhase: textPhase)
+                try self.captureOnce(preferredSource: preferredSource, mediaTimeout: afterRefresh ? 1 : 0.15, textBaseline: textBaseline, textPhase: textPhase)
             }, resynchronize: {
                 guard let cli = self.cli, let media = self.media else {
                     throw IPhoneUseError("native_orientation_unverified", "Owned media is unavailable")
@@ -301,7 +304,7 @@ final class AppleDeviceBackend: SessionBackend {
             throw error
         }
     }
-    private func captureOnce(preferredSource: String?, mediaTimeout: Double, textPhase: (guardValue: ScreenGuard, field: NativeTextPhaseMatcher, deadline: TimeInterval)? = nil) throws -> CapturedObservation {
+    private func captureOnce(preferredSource: String?, mediaTimeout: Double, textBaseline: NativeTextObservationOptions?, textPhase: (guardValue: ScreenGuard, field: NativeTextPhaseMatcher, deadline: TimeInterval)? = nil) throws -> CapturedObservation {
         guard let cli else { throw IPhoneUseError("backend_unavailable", "Native backend not started") }
         let captured = try cli.capture(generation: generation, preferredSource: preferredSource, prepareDisplay: { display in
             try self.cancellation.check()
@@ -324,8 +327,20 @@ final class AppleDeviceBackend: SessionBackend {
                 throw IPhoneUseError("native_orientation_unverified", "Owned media cannot verify display geometry; reconnect explicitly")
             }
             let phase = preferredSource == "native_media" ? textPhase : nil
+            let baseline = textBaseline.map { NativeTextBaseline(options: $0) }
+            let baselineDeadline = requestedAt + NativeTextBaseline.budget
             var samples: [[String: Any]] = []
-            for attempt in 1...(phase == nil ? 1 : 6) {
+            for attempt in 1...(baseline != nil ? NativeTextBaseline.maximumSamples : phase == nil ? 1 : 6) {
+                if baseline != nil {
+                    let end = min(baselineDeadline, requestedAt + Double(attempt - 1) * NativeTextBaseline.interval)
+                    while ProcessInfo.processInfo.systemUptime < end {
+                        try self.cancellation.check()
+                        Thread.sleep(forTimeInterval: min(0.02, max(0, end - ProcessInfo.processInfo.systemUptime)))
+                    }
+                    if ProcessInfo.processInfo.systemUptime >= baselineDeadline {
+                        return (nil, ["textBaseline": baseline!.result.merging(["established": false]) { _, value in value }, "fallbackReason": "text_baseline_unstable"])
+                    }
+                }
                 if let phase, attempt > 1 {
                     let now = ProcessInfo.processInfo.systemUptime
                     let delay = NativeTextPhaseSchedule.delay(attempt: attempt, started: requestedAt, now: now, deadline: phase.deadline)
@@ -354,6 +369,17 @@ final class AppleDeviceBackend: SessionBackend {
                     facts["fallbackReason"] = "media_image_unavailable"
                     return (nil, facts)
                 }
+                if let baseline {
+                    let stable = try baseline.accept(png: png, context: display.context, at: sampleStarted)
+                    facts["textBaseline"] = baseline.result
+                    if stable, ProcessInfo.processInfo.systemUptime < baselineDeadline { return (png, facts) }
+                    if attempt == NativeTextBaseline.maximumSamples {
+                        facts["textBaseline"] = baseline.result.merging(["established": false]) { _, value in value }
+                        facts["fallbackReason"] = "text_baseline_unstable"
+                        return (nil, facts)
+                    }
+                    continue
+                }
                 guard let phase else { return (png, facts) }
                 var check = try phase.guardValue.check(png: png, context: display.context)
                 let match = try phase.field.check(png: png, context: display.context)
@@ -370,6 +396,11 @@ final class AppleDeviceBackend: SessionBackend {
             throw ScreenGuard.Failure.invalidGuard
         })
         var metadata = captured.metadata
+        if let textBaseline {
+            metadata["textObservationOptions"] = try textBaseline.result
+            // Apple PNG fallback is the source of this new observation. Later
+            // preflight remains pinned to that source by the existing contract.
+        }
         if controlError == nil, let health = media?.health() {
             metadata["mediaSessionID"] = health["mediaSessionID"]
             metadata["mediaDisplayRefreshCount"] = health["displayRefreshCount"]

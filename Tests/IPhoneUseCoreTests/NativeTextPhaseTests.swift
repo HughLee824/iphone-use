@@ -186,4 +186,32 @@ final class NativeTextPhaseTests: XCTestCase {
             XCTAssertEqual(try matcher.check(png: frame, context: context), .none)
         }
     }
+
+    func testCaretFadeOverDifferentBackgroundsIsColorIndependent() throws {
+        let lower = CGRect(x: stroke.minX - 4, y: stroke.minY + 10, width: stroke.width + 8, height: 10)
+        for color: [UInt8] in [[240,30,50], [30,210,80], [50,90,230]] {
+            let source = try screenPNG(patches: [(lower, [20,20,20])])
+            let visible = try screenPNG(patches: [(lower, [20,20,20]), (stroke, color)])
+            let upperFade = color.map { UInt8((Int($0) + 255) / 2) }
+            let lowerFade = color.map { UInt8((Int($0) + 20) / 2) }
+            let partial = try screenPNG(patches: [(lower, [20,20,20]), (stroke, upperFade),
+                (CGRect(x: stroke.minX, y: stroke.minY + 10, width: stroke.width, height: 10), lowerFade)])
+            let matcher = try NativeTextPhaseMatcher(field: NativeTextFieldGuard(png: source, context: context, field: field))
+            XCTAssertEqual(try matcher.check(png: visible, context: context), .none)
+            XCTAssertEqual(try matcher.check(png: partial, context: context), .none)
+            XCTAssertEqual(try matcher.check(png: visible, context: context), .temporal)
+        }
+    }
+
+    func testSourceRelativeFadeRejectsTranslationFromHiddenBaseline() throws {
+        let source = try screenPNG()
+        let visible = try screenPNG(patches: [(stroke, [220,30,40])])
+        for offset in [1.0, 2.0] {
+            let other = try screenPNG(patches: [(stroke.offsetBy(dx: offset, dy: 0), [220,30,40])])
+            let matcher = try NativeTextPhaseMatcher(field: NativeTextFieldGuard(png: source, context: context, field: field))
+            for frame in [visible, other, visible, other, visible, other] {
+                XCTAssertEqual(try matcher.check(png: frame, context: context), .none)
+            }
+        }
+    }
 }

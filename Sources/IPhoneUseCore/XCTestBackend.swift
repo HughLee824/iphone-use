@@ -10,6 +10,7 @@ protocol SessionBackend: AnyObject {
     func open(bundle: String) throws -> [String: Any]
     func appLifecycle(bundle: String, relaunch: Bool) throws -> [String: Any]
     func observe() throws -> CapturedObservation
+    func observeText(_ options: NativeTextObservationOptions) throws -> CapturedObservation
     func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any]
     func stop() -> [String: Any]
     func cancelCurrent()
@@ -20,6 +21,9 @@ protocol SessionBackend: AnyObject {
 }
 
 extension SessionBackend {
+    func observeText(_ options: NativeTextObservationOptions) throws -> CapturedObservation {
+        throw IPhoneUseError("native_action_unsupported", "Scoped text observations are unavailable in this backend")
+    }
     func appLifecycle(bundle: String, relaunch: Bool) throws -> [String: Any] {
         throw IPhoneUseError("native_action_unsupported", "This backend does not implement terminate/relaunch")
     }

@@ -81,7 +81,7 @@ final class SessionHost {
         }
         let id = request["id"] as? String ?? ""
         let requestedOperation = request["op"] as? String ?? ""
-        let operation = requestedOperation == "type-with-method" ? "type" : requestedOperation
+        let operation = requestedOperation == "type-with-method" ? "type" : requestedOperation == "text-prepare-scoped" ? "text-prepare" : requestedOperation
         let appLifecycle = operation == "terminate" || operation == "relaunch"
         let appAction = operation == "open" || appLifecycle
         func reject(_ code: String, _ message: String) {
@@ -119,9 +119,14 @@ final class SessionHost {
         }
         var reference: ObservationReference?
         var action: DeviceAction?
+        var textObservationOptions: NativeTextObservationOptions?
         if operation == "text-prepare", config.backend != "apple-native" {
             reject("native_action_unsupported", "text-prepare applies only to apple-native")
             return
+        }
+        if requestedOperation == "text-prepare-scoped" || (operation == "text-prepare" && (request["fieldRect"] != nil || request["ignoreRect"] != nil)) {
+            do { textObservationOptions = try NativeTextObservationOptions(request: request) }
+            catch { reject((error as? IPhoneUseError)?.code ?? "invalid_text_region", String(describing: error)); return }
         }
         if requestedOperation == "type-with-method", request["textMethod"] == nil {
             reject("invalid_text_method", "Explicit native text requests require a method")
@@ -223,6 +228,9 @@ final class SessionHost {
                     response["requiresObservation"] = true
                 case "text-finish":
                     let metadata = try observations.resolveTextConfirmation(reference!)
+                    if let raw = metadata["textObservationOptions"] as? [String: Any] {
+                        textObservationOptions = try JSONDecoder().decode(NativeTextObservationOptions.self, from: jsonData(raw))
+                    }
                     let result = try backend.finishText(transaction: request["transaction"] as! String, observation: metadata)
                     response["result"] = result
                     effective = true
@@ -236,6 +244,9 @@ final class SessionHost {
                     }
                 case "tap", "double-tap", "long-press", "pinch", "swipe", "home", "type", "press":
                     let target = try observations.resolveTarget(for: action!)
+                    if ["type", "press"].contains(action!.kind), let field = action!.textRegion {
+                        textObservationOptions = NativeTextObservationOptions(field: field, ignoring: action!.ignoredScreenRect)
+                    }
                     previousObservation = observations.beginAction()
                     effective = true
                     response["result"] = try backend.perform(action!, target: target)
@@ -288,7 +299,8 @@ final class SessionHost {
                response["outcome"] as? String != "not_dispatched" {
                 observations.invalidate("post_action_capture")
                 do {
-                    let after = try observations.store(backend.observe())
+                    let capture = try textObservationOptions.map { try backend.observeText($0) } ?? backend.observe()
+                    let after = try observations.store(capture)
                     response["observation"] = ["ok": true, "result": after]
                     var result = response["result"] as? [String: Any] ?? [:]
                     result["afterObservationID"] = after["observation"]
