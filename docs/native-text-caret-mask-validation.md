@@ -27,6 +27,17 @@
 
 Release CLI 构建和未签名 Runner `build-for-testing` 均通过，未安装或启动 Runner；Release 帮助已核对更新。对应日志为 `mask-release-build.log` 和 `mask-runner-build.log`。
 
-准备真机验收时，Apple 返回 `passcodeRequired=true`，尚未连接控制会话或发送本轮输入。已请求用户解锁并回到 Probe。新源码构建的替换、追加、实际剪贴板恢复仍未验收，不能把离线图片回放计为新真机成功。
+## 真机验证
 
-证据目录：`.local/research/caret-root-cause-20261003/`，包括 `remaining-noise.json`、`mask-matrix-final.json`、`mask-regression-tests.log`、`mask-full-tests.log`、`mask-python-tests.log`；真机准备目录为 `.local/research/caret-mask-device-20261003/`。`.8` 归档未改写，未发布或推送。
+用户解锁后，使用提交 `439be17` 的源码 Release 构建连接标准模式，`controlAvailable=true`、`runnerStarted=false`。仅操作受控 Text Probe，字段框 `17,209,356,161` 和动态视频排除框 `18,89,177,60` 保持不变。
+
+- 替换：原文 `边缘验证🙂` → `光标验证🙂`，附带截图确认全文正确，Edits 从 4 增至 5。剪贴板写入前后均为 `fieldTemporalMatch=true`，分别采集 3、5 帧，阶段耗时 1.462、2.508 秒；整个 CLI 命令含结果截图耗时 5.172 秒。
+- 追加：使用替换后恢复剪贴板所返回的观察，只执行一次 `；追加完成✅`。截图确认全文为 `光标验证🙂；追加完成✅`，Edits 从 5 增至 6。宿主原始回执确认写入前后均通过时序光标排除，分别采集 5、4 帧。没有再次准备键盘、重新选择基准观察或重放输入。
+- 两次最终识别的光标区域均约为 `x=96.667,y=215.333,width=3.333,height=20.333` 屏幕点。替换／追加的最终全屏变化分别为 0.3512%／0.1003%，均低于原有 1% 阈值。
+- 两次 `text-finish` 均确认剪贴板恢复。正常断开确认自有媒体停止、键盘移除、接收器与连接关闭；另行检查宿主进程已退出，IPC socket 和观察缓存已删除。
+
+**独立的回执异常仍待定位：**追加的宿主已经完成输入并生成 o5 回执，但客户端收到 `session_unavailable / POSIXErrorCode 50: Network is down`。CLI 随后获取的 o6、恢复后的 o7 均显示正确的最终全文；读取原会话状态恢复了待处理事务标识，随后完成剪贴板恢复，没有重放追加。追加 CLI 总耗时 5.977 秒包含这次异常后的观察，不能作为正常路径延迟基准。宿主日志中的原始追加回执保存在 `append-host.json`，客户端异常保存在 `append.receipt.json`。目前没有证据将此异常归因于手机网络、光标算法或 Device Hub。
+
+两次 HID 底层回执仍为 `unknown/native_input_unacknowledged`；实际输入成功依据截图全文和 Probe 编辑计数，不依据退出码。结论是本轮 Probe 的光标误拒绝修复、替换追加和剪贴板恢复已获得真机证据；尚不能宣称跨 App 稳定性或客户端回执链路已全部验收。未启动新的短上下文会话，也未重打候选包。
+
+证据目录：`.local/research/caret-root-cause-20261003/`，包括 `remaining-noise.json`、`mask-matrix-final.json`、`mask-regression-tests.log`、`mask-full-tests.log`、`mask-python-tests.log`；真机目录为 `.local/research/caret-mask-device-20261003/`，包括前后截图、原始回执、`native-events.jsonl`、`timing-summary.json` 和 `cleanup-verified.json`。`.8` 归档未改写，未发布或推送。
