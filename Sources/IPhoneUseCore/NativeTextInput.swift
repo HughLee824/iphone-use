@@ -103,7 +103,8 @@ enum NativeInputPreflight {
             let captureStarted = now()
             let frame = try capture()
             let phaseSamples = (frame.metadata["mediaSnapshot"] as? [String: Any])?["textPhaseSamples"] as? [[String: Any]] ?? []
-            actualCaptures += max(1, phaseSamples.count)
+            let applePhaseSamples = frame.metadata["appleTextPhaseSamples"] as? [[String: Any]] ?? []
+            actualCaptures += max(1, max(phaseSamples.count, applePhaseSamples.count))
             if frame.metadata["orientationResynchronized"] as? Bool == true {
                 throw ActionFailure(code: "stale_observation", description: "Media orientation was resynchronized; inspect the new observation before choosing coordinates",
                     possiblyExecuted: false, requiresObservation: true,
@@ -151,7 +152,9 @@ enum NativeInputPreflight {
                     "captureSource": frame.metadata["captureSource"] ?? "unknown",
                     "captureTimingsMs": frame.metadata["captureTimingsMs"] ?? [:],
                     "orientationRevalidated": frame.metadata["orientationRevalidated"] as? Bool ?? false,
-                    "screenGuard": check.result, "inTime": inTime, "phaseSampling": phaseSampling || !phaseSamples.isEmpty, "mediaPhaseSamples": phaseSamples])
+                    "screenGuard": check.result, "inTime": inTime,
+                    "phaseSampling": phaseSampling || !phaseSamples.isEmpty || !applePhaseSamples.isEmpty,
+                    "mediaPhaseSamples": phaseSamples, "applePhaseSamples": applePhaseSamples])
             if check.accepted && inTime { return (check, actualCaptures) }
             if attempt == maximumCaptures || !inTime || check.screenChange > check.policy.maxScreenChange {
                 throw ActionFailure(code: "stale_observation", description: "Screen guard or deadline rejected input; inspect the attached pre-input image",

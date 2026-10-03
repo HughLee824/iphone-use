@@ -55,14 +55,16 @@ final class AppleDeviceCLI {
         return try CoreDevice.read(arguments + ["--device", device], cancelled: { self.cancellation.isCancelled }, trailingArguments: trailingArguments, timeout: timeout)
     }
     func display() throws -> NativeDisplay { try NativeDisplay(read(["device", "info", "displays"])) }
-    func capture(generation: String, preferredSource: String? = nil, prepareDisplay: (NativeDisplay) throws -> Void = { _ in },
+    func capture(generation: String, preferredSource: String? = nil,
+                 textPhase: (guardValue: ScreenGuard, field: NativeTextPhaseMatcher, deadline: TimeInterval)? = nil,
+                 prepareDisplay: (NativeDisplay) throws -> Void = { _ in },
                  mediaCapture: ((NativeDisplay, Double) throws -> (Data?, [String: Any]))? = nil) throws -> CapturedObservation {
         let started = Date().timeIntervalSince1970
         let monotonic = ProcessInfo.processInfo.systemUptime
         var timings: [String: Double] = [:]
         func timed<T>(_ name: String, _ operation: () throws -> T) rethrows -> T {
             let start = ProcessInfo.processInfo.systemUptime
-            defer { timings[name] = (ProcessInfo.processInfo.systemUptime - start) * 1000 }
+            defer { timings[name, default: 0] += (ProcessInfo.processInfo.systemUptime - start) * 1000 }
             return try operation()
         }
         let initial = try timed("checksBefore") { try NativeCaptureChecks.read { try self.read($0) } }
@@ -88,6 +90,7 @@ final class AppleDeviceCLI {
             return fingerprint
         }
         var mediaFacts = media?.1 ?? ["fallbackReason": "owned_media_unavailable"]
+        var applePhaseSamples: [[String: Any]] = []
         var selected: (png: Data, fingerprint: FrameFingerprint)?
         if preferredSource == "coredevice_screenshot" {
             mediaFacts["fallbackReason"] = "source_pinned"
@@ -101,9 +104,39 @@ final class AppleDeviceCLI {
         else {
             source = "coredevice_screenshot"
             if mediaFacts["fallbackReason"] == nil { mediaFacts["fallbackReason"] = "media_image_unavailable" }
-            _ = try timed("screenshot") { try read(["device", "capture", "screenshot", "--destination", destination.path]) }
-            let png = try Data(contentsOf: destination)
-            selected = (png, try timed("appleImageValidation") { try validate(png) })
+            // Like media sampling, keep the whole phase burst between fresh
+            // lock/display checks. Repeating those checks for each Apple PNG
+            // previously consumed ~3 seconds per sample and starved the matcher.
+            // Only an already Apple-pinned observation may use this burst.
+            let phase = preferredSource == "coredevice_screenshot" ? textPhase : nil
+            for attempt in 1...(phase == nil ? 1 : 6) {
+                if let phase {
+                    let now = ProcessInfo.processInfo.systemUptime
+                    let end = now + NativeTextPhaseSchedule.delay(attempt: attempt, started: requestedAt, now: now, deadline: phase.deadline)
+                    while ProcessInfo.processInfo.systemUptime < end {
+                        try cancellation.check()
+                        Thread.sleep(forTimeInterval: min(0.02, max(0, end - ProcessInfo.processInfo.systemUptime)))
+                    }
+                    try cancellation.check()
+                    if ProcessInfo.processInfo.systemUptime >= phase.deadline {
+                        // Preserve the last actual image for outer rejection;
+                        // the final checks and dispatch deadline still apply.
+                        if selected != nil { break }
+                        throw IPhoneUseError("stale_observation", "Text phase capture deadline expired")
+                    }
+                }
+                let timeout = phase.map { max(1, Int(ceil($0.deadline - ProcessInfo.processInfo.systemUptime))) } ?? 20
+                _ = try timed("screenshot") { try read(["device", "capture", "screenshot", "--destination", destination.path], timeout: timeout) }
+                let png = try Data(contentsOf: destination)
+                selected = (png, try timed("appleImageValidation") { try validate(png) })
+                guard let phase else { break }
+                var check = try phase.guardValue.check(png: png, context: before.context)
+                check.apply(try phase.field.check(png: png, context: before.context), caret: phase.field.caretRect)
+                applePhaseSamples.append(["attempt": attempt,
+                    "elapsedMs": (ProcessInfo.processInfo.systemUptime - requestedAt) * 1000,
+                    "screenGuard": check.result])
+                if check.accepted || check.screenChange > check.policy.maxScreenChange { break }
+            }
         }
         let final = try timed("checksAfter") { try NativeCaptureChecks.read { try self.read($0) } }
         let after = final.display
@@ -115,7 +148,7 @@ final class AppleDeviceCLI {
         return CapturedObservation(nodes: [], metadata: [
             "captureSource": source,
             "captureSourcePolicy": captureSourcePolicy,
-            "captureTimingsMs": timings, "mediaSnapshot": mediaFacts,
+            "captureTimingsMs": timings, "mediaSnapshot": mediaFacts, "appleTextPhaseSamples": applePhaseSamples,
             "backend": "apple-native", "deviceID": device, "sessionGeneration": generation,
             "captureID": UUID().uuidString, "captureStartedAt": started, "captureCompletedAt": Date().timeIntervalSince1970,
             "captureStartedUptime": monotonic, "screenshotCapturedAt": Date().timeIntervalSince1970,
@@ -306,7 +339,7 @@ final class AppleDeviceBackend: SessionBackend {
     }
     private func captureOnce(preferredSource: String?, mediaTimeout: Double, textBaseline: NativeTextObservationOptions?, textPhase: (guardValue: ScreenGuard, field: NativeTextPhaseMatcher, deadline: TimeInterval)? = nil) throws -> CapturedObservation {
         guard let cli else { throw IPhoneUseError("backend_unavailable", "Native backend not started") }
-        let captured = try cli.capture(generation: generation, preferredSource: preferredSource, prepareDisplay: { display in
+        let captured = try cli.capture(generation: generation, preferredSource: preferredSource, textPhase: textPhase, prepareDisplay: { display in
             try self.cancellation.check()
             // Startup failure remains observation-only. Once control is started,
             // a failed display rebind cannot silently return an unsafe image.
@@ -462,8 +495,7 @@ final class AppleDeviceBackend: SessionBackend {
         func preflight(stage: String) throws -> ScreenGuard.Check {
             let deadline = timing.preflightDeadline(now: ProcessInfo.processInfo.systemUptime)
             let matcher = keyboardAction ? target.textFieldGuard.map { NativeTextPhaseMatcher(field: $0) } : nil
-            let phase = keyboardAction && target.context["captureSource"] as? String == "native_media"
-                ? matcher.map { (guardValue: screenGuard, field: $0, deadline: deadline) } : nil
+            let phase = matcher.map { (guardValue: screenGuard, field: $0, deadline: deadline) }
             let (value, count) = try NativeInputPreflight.check(guard: screenGuard,
                 displayID: target.context["displayID"] as? UInt64, displayRotation: rotation,
                 captureSource: target.context["captureSource"] as? String,
