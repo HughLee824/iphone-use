@@ -504,6 +504,7 @@ final class AppleDeviceBackend: SessionBackend {
                 // Retry only captures against the original guard, never input.
                 maximumCaptures: keyboardAction && phase == nil ? 6 : 1,
                 phaseMatcher: matcher, phaseSampling: keyboardAction && phase == nil,
+                gestureAppearanceGuard: target.gestureAppearanceGuard,
                 wait: { duration in
                     let end = ProcessInfo.processInfo.systemUptime + duration
                     while ProcessInfo.processInfo.systemUptime < end {

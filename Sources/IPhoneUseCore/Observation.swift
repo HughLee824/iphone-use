@@ -283,7 +283,10 @@ final class ObservationCache {
             throw IPhoneUseError("swipe_duration_exceeded", "Estimated swipe motion exceeds 10 seconds; use a shorter distance, faster velocity or shorter holds")
         }
         try gesture.validate(kind: action.kind)
-        return ObservedTarget(context: capture.metadata, path: [], gesture: gesture)
+        let appearance = capture.metadata["backend"] as? String == "apple-native"
+            && capture.metadata["captureSource"] as? String == "native_media"
+            ? try NativeGestureAppearanceGuard(png: capture.screenshot, guardValue: guardValue) : nil
+        return ObservedTarget(context: capture.metadata, path: [], gesture: gesture, gestureAppearanceGuard: appearance)
     }
 
     func clear() throws {

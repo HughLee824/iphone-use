@@ -84,6 +84,7 @@ enum NativeTextPhaseSchedule {
 enum NativeInputPreflight {
     static func check(guard screenGuard: ScreenGuard, displayID: UInt64?, displayRotation: String? = nil, captureSource: String? = nil, deadline: TimeInterval, maximumCaptures: Int,
                       fieldGuard: NativeTextFieldGuard? = nil, phaseMatcher: NativeTextPhaseMatcher? = nil, phaseSampling: Bool = false,
+                      gestureAppearanceGuard: NativeGestureAppearanceGuard? = nil,
                       wait: (TimeInterval) throws -> Void = { Thread.sleep(forTimeInterval: $0) },
                       now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
                       record: ([String: Any]) -> Void = { _ in },
@@ -140,6 +141,11 @@ enum NativeInputPreflight {
                 throw ActionFailure(code: "stale_observation", description: "Display geometry or orientation changed; inspect the new screenshot before choosing coordinates",
                     possiblyExecuted: false, requiresObservation: true,
                     result: ["preInputCaptures": actualCaptures, "screenContextChanged": true], rejectedCapture: frame)
+            }
+            if captureSource == "native_media", let gestureAppearanceGuard, !check.accepted,
+               check.screenChange <= check.policy.maxScreenChange {
+                check.regionAppearanceMatches = try gestureAppearanceGuard.matches(png: frame.screenshot, context: context,
+                    guardValue: screenGuard, check: check)
             }
             if let matcher {
                 let match = try matcher.check(png: frame.screenshot, context: context)

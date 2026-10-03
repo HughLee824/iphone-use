@@ -72,14 +72,25 @@ struct ScreenGuard: Codable {
         var fieldPixelsMatch: Bool? = nil
         var fieldTemporalMatch = false
         var fieldAppearanceMatch = false
+        var regionAppearanceMatches: [Bool]? = nil
         var caretRect: ScreenRect? = nil
         var ignoredRect: ScreenRect? = nil
         var rawScreenChange: Double? = nil
-        var accepted: Bool { screenChange <= policy.maxScreenChange && (regionChanges.allSatisfy { $0 <= policy.maxRegionChange } && fieldPixelsMatch != false || fieldTemporalMatch || fieldAppearanceMatch) }
+        var regionsAccepted: Bool {
+            regionChanges.enumerated().allSatisfy { index, change in
+                change <= policy.maxRegionChange || (regionAppearanceMatches?.count == regionChanges.count
+                    && regionAppearanceMatches?[index] == true)
+            }
+        }
+        var accepted: Bool { screenChange <= policy.maxScreenChange && (regionsAccepted && fieldPixelsMatch != false || fieldTemporalMatch || fieldAppearanceMatch) }
         var result: [String: Any] {
             var result: [String: Any] = ["algorithm": ignoredRect == nil ? ScreenGuard.algorithm : ScreenGuard.maskedAlgorithm, "accepted": accepted, "screenChange": screenChange,
              "regionChanges": regionChanges, "maxScreenChange": policy.maxScreenChange,
              "maxRegionChange": policy.maxRegionChange, "pixelTolerance": ScreenGuard.pixelTolerance]
+            if let regionAppearanceMatches {
+                result["regionAppearanceMatches"] = regionAppearanceMatches
+                result["regionAppearanceAlgorithm"] = "native-gesture-edge-v1"
+            }
             if let rect = ignoredRect {
                 result["ignoredRect"] = ["x": rect.x, "y": rect.y, "width": rect.width, "height": rect.height]
                 result["rawScreenChange"] = rawScreenChange
