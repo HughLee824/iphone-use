@@ -356,7 +356,8 @@ final class AppleDeviceBackend: SessionBackend {
                 }
                 guard let phase else { return (png, facts) }
                 var check = try phase.guardValue.check(png: png, context: display.context)
-                check.apply(try phase.field.check(png: png, context: display.context))
+                let match = try phase.field.check(png: png, context: display.context)
+                check.apply(match, caret: phase.field.caretRect)
                 samples.append(["attempt": attempt, "elapsedMs": (ProcessInfo.processInfo.systemUptime - requestedAt) * 1000,
                                 "screenGuard": check.result])
                 facts["textPhaseSamples"] = samples

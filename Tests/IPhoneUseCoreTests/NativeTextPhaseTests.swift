@@ -153,4 +153,37 @@ final class NativeTextPhaseTests: XCTestCase {
             })
         XCTAssertEqual(captures, 1)
     }
+
+    func testMaskAcceptsDifferentOpacityAlongOneCaretWithoutGlobalBlend() throws {
+        let partial = try screenPNG(patches: [
+            (stroke, [180,180,180]),
+            (CGRect(x: stroke.minX, y: stroke.minY + 10, width: 2, height: 10), [80,80,80])])
+        let hidden = try screenPNG(), visible = try screenPNG(patches: [(stroke, [0,0,0])])
+        var clock = 0.0
+        let result = try run(source: partial, frames: [hidden, visible, hidden], clock: &clock)
+        XCTAssertTrue(result.0.accepted)
+        XCTAssertTrue(result.0.fieldTemporalMatch)
+        let caret = try XCTUnwrap(result.0.caretRect)
+        XCTAssertTrue(caret.cgRect.contains(stroke))
+        XCTAssertLessThanOrEqual(caret.width, 6) // 2px stroke plus fixed 2px rim on each side
+    }
+
+    func testNewLowContrastStrokeCannotBeClassifiedAsSmallNoiseBlocks() throws {
+        let source = try screenPNG()
+        for height in [3, 14] {
+            let changed = try screenPNG(patches: [(CGRect(x: 100, y: 170, width: 1, height: height), [243,243,243])])
+            let matcher = try NativeTextPhaseMatcher(field: NativeTextFieldGuard(png: source, context: context, field: field))
+            for _ in 0..<6 { XCTAssertEqual(try matcher.check(png: changed, context: context), .none) }
+        }
+    }
+
+    func testVisibleSourceCaretMovedEvenWithinMaskRimIsRejected() throws {
+        let original = try screenPNG(patches: [(stroke, [255,0,0])])
+        let hidden = try screenPNG()
+        let moved = try screenPNG(patches: [(stroke.offsetBy(dx: 1, dy: 0), [255,0,0])])
+        let matcher = try NativeTextPhaseMatcher(field: NativeTextFieldGuard(png: original, context: context, field: field))
+        for frame in [hidden, moved, hidden, moved, hidden, moved] {
+            XCTAssertEqual(try matcher.check(png: frame, context: context), .none)
+        }
+    }
 }

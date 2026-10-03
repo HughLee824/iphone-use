@@ -141,7 +141,8 @@ enum NativeInputPreflight {
                     result: ["preInputCaptures": actualCaptures, "screenContextChanged": true], rejectedCapture: frame)
             }
             if let matcher {
-                check.apply(try matcher.check(png: frame.screenshot, context: context))
+                let match = try matcher.check(png: frame.screenshot, context: context)
+                check.apply(match, caret: matcher.caretRect)
             }
             let checkedAt = now()
             let inTime = checkedAt < deadline

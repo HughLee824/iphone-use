@@ -385,7 +385,7 @@ struct TypeText: ParsableCommand {
     @Option(help: "insert uses the current caret/selection; replace selects all (XCTest also focuses the referenced field); Runner append reads validated non-secure text and replaces it with the concatenated result; native append requests document end. Native modes never focus implicitly.") var mode: String
     @Option(help: "Literal text up to 4096 UTF-8 bytes; Runner text_view accepts LF; native auto/paste accepts LF/CR, other control keys are unsupported. Empty text clears in replace mode.") var text: String?
     @Option(help: "apple-native only: auto uses keys for single-line ASCII and paste for Unicode or multiline text; keys sends up to 64 US-mapped ASCII characters through the active layout; paste inserts literal text via the device clipboard (up to 4096 UTF-8 bytes).") var method: String?
-    @Option(help: "Native type oN only: complete input field x,y,width,height in screen points; full-pixel field guard with bounded color-independent phase matching and default whole-screen guard. Does not focus. Omit to protect the whole screen strictly.") var fieldRect: String?
+    @Option(help: "Native type oN only: complete input field x,y,width,height in screen points; local field comparison with bounded automatic caret exclusion and the default whole-screen guard. Does not focus. Omit to protect the whole screen.") var fieldRect: String?
     @Option(help: "Native type/press with --field-rect only: exclude one video/animation rectangle x,y,width,height outside the complete field, at most 25% of screen. This action only.") var ignoreRect: String?
     @Flag(help: "Read UTF-8 text from stdin until EOF, up to 4096 bytes. No trimming; use instead of --text.") var stdin = false
 

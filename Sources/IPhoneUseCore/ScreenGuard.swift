@@ -71,9 +71,11 @@ struct ScreenGuard: Codable {
         let policy: Policy
         var fieldPixelsMatch: Bool? = nil
         var fieldTemporalMatch = false
+        var fieldAppearanceMatch = false
+        var caretRect: ScreenRect? = nil
         var ignoredRect: ScreenRect? = nil
         var rawScreenChange: Double? = nil
-        var accepted: Bool { screenChange <= policy.maxScreenChange && (regionChanges.allSatisfy { $0 <= policy.maxRegionChange } && fieldPixelsMatch != false || fieldTemporalMatch) }
+        var accepted: Bool { screenChange <= policy.maxScreenChange && (regionChanges.allSatisfy { $0 <= policy.maxRegionChange } && fieldPixelsMatch != false || fieldTemporalMatch || fieldAppearanceMatch) }
         var result: [String: Any] {
             var result: [String: Any] = ["algorithm": ignoredRect == nil ? ScreenGuard.algorithm : ScreenGuard.maskedAlgorithm, "accepted": accepted, "screenChange": screenChange,
              "regionChanges": regionChanges, "maxScreenChange": policy.maxScreenChange,
@@ -85,8 +87,12 @@ struct ScreenGuard: Codable {
             }
             if let fieldPixelsMatch {
                 result["fieldPixelsMatch"] = fieldPixelsMatch
-                result["fieldAlgorithm"] = "original-field-phase-v1"
+                result["fieldAlgorithm"] = "field-edge-temporal-caret-v2"
                 result["fieldTemporalMatch"] = fieldTemporalMatch
+                result["fieldAppearanceMatch"] = fieldAppearanceMatch
+                if let caretRect {
+                    result["caretRect"] = ["x": caretRect.x, "y": caretRect.y, "width": caretRect.width, "height": caretRect.height]
+                }
             }
             return result
         }

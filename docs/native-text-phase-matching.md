@@ -1,18 +1,36 @@
-# Native text: color-independent phase matching
+# Native text: bounded caret exclusion
 
-2026-10-03 follow-up: real-media replay exposed repeatable false rejections even when an A–B–A caret cycle is present. The per-pixel noise budget and whole-field blend reconstruction are not a general solution for encoded screenshots. See [root-cause evidence and remaining limits](native-text-phase-root-cause.md). The successful samples below remain historical evidence, not full workflow acceptance.
+The current native field algorithm is `field-edge-temporal-caret-v2`. It replaces the original whole-field blend reconstruction after [real-media failure replay](native-text-phase-root-cause.md). It does not change Runner text execution, the global screen guard, explicit video exclusion, observation ownership, input deadlines or unknown-result replay policy.
 
-Native type/press compare every pixel of the original complete field with each fresh frame, with the existing 8/255 channel noise tolerance. At most four isolated pixels may differ by up to 16/255; any adjacent pair (including diagonals), a fifth pixel, or a stronger difference rejects. This tiny video-quantization allowance does not mask a connected stroke. They no longer construct NativeCaretGuard or erase suspected caret pixels. The coarse screen/local grid checks remain additional requirements; a thin changed I/l/| glyph cannot be averaged away by the grid.
+## Full-field comparison
 
-The first match returns immediately. Native media frames are sampled inside one acquisition bracket: Apple lock/display checks occur before and after the burst, each frame is fresh and geometry-validated, and the selected actual PNG is checked again by preflight. This avoids making every phase sample wait for separate Apple CLI state calls. Apple PNG retains separate bounded captures. A local-only mismatch enters bounded read-only sampling, always against the original baseline. Up to six captures use offsets 0, 0.19, 0.47, 0.83, 1.31 and 1.97 seconds and minimum intervening gaps of 0.07, 0.13, 0.19, 0.11 and 0.23 seconds. This covers about two seconds with fast capture and avoids uniform sampling with slow capture. Eight-second phase and thirty-second request dispatch budgets remain fixed. Large global differences, display/source changes, cancellation and capture errors still reject. Waits check cancellation every 20 ms. No input is retried.
+The original source pixels and coordinates remain fixed. A strict fast path retains the channel tolerance of 8 and the old allowance of four isolated pixels up to 16. A second local appearance path examines every native field pixel without resampling, translation, OCR or semantic text inference:
 
-Visible and hidden phases use the same color-independent comparison. An intermediate source phase can also pass with current A–B–A evidence: A and the returning frame match across the complete field; A/B differ only in a narrow vertical stroke (width ≤4 points, height 8–80 points, aspect ≥3, changed-pixel occupancy ≥30%, at least 12 pixels). Changed pixels must fade in a consistent direction, rejecting opposing edges from a moving stroke. One least-squares blend factor must reconstruct every original field pixel from A/B within the same noise limits. No region is erased, no RGB hue is classified, and persistent changed text must still match. The matcher is reset for every preflight, including after clipboard staging. Only the selected actual PNG can reuse that preflight's evidence after Apple lock/display checks.
+- Differences above 8 have a total cap of `max(4, min(512, pixelCount / 1000))` pixels. No accepted difference exceeds 32.
+- A pixel may use the edge allowance only when both images have contrast in the same channel within the same 5×5 native-pixel neighborhood: at least `max(24, 2 * difference)`. New strong strokes and changes on a flat background do not qualify merely because their area is small.
+- Other low-contrast noise must be at most 16, at most `max(4, min(32, pixelCount / 16384))` pixels total, and each 8-connected component must fit within 2×2 native pixels. Connected lines longer than this are rejected.
 
-This is visual evidence, not proof of focus or semantics. An invisible caret move cannot be detected, and an unrelated animation with exactly the same narrow geometry and fade cycle is visually indistinguishable. Custom block/underline cursors or phases not covered within the bounded window may still reject; there is no claim that arbitrary animated editors always pass.
+These are bounded engineering tolerances, not a proof that every possible low-contrast character change is distinguishable from encoding noise. A tiny low-contrast 2×2 change can fall within the documented noise allowance. Tests include real media pixels with injected thin strokes, deleted text and selection-like changes; passing a single positive sample is insufficient.
 
-The Agent-visible source image is not rewritten or silently replaced. Observation-time stable-frame selection is not enabled: before the Agent supplies a field rectangle, an arbitrary dynamic page cannot establish which region should determine that selection. This implementation preserves the original baseline and solves phase differences at preflight; it does not claim to normalize every continuously changing editor animation. Runner post-input frame stability retains its separate existing policy.
+A native field appearance match can supersede the coarse 48×48 field-region mismatch, just as the previous temporal exception could. The independent whole-screen check must still pass. Coordinate gestures and Runner guards do not use this native-only matcher.
 
-Result diagnostics include `screenGuard.fieldAlgorithm=original-field-phase-v1`, `fieldPixelsMatch`, `fieldTemporalMatch`, `phaseSampling`, per-attempt elapsed time and capture count. Native admission no longer reports `caretBlinkException`.
+## Automatic caret region
+
+If direct field matching fails, at most six fresh frames are examined within the existing deadline. Current frames must establish an A–B–A return with stable field appearance. Significant A/B changes must form a narrow vertical core: at least 12 pixels, width ≤4 points, height 8–80 points, aspect ratio ≥3 and occupancy ≥30%. Changes must fade in a consistent direction; opposing moving edges reject.
+
+The mask adds exactly two native pixels around that core for antialias/chroma fringes, clipped to the complete field. It never grows after rejection. Outside that mask, A/B and the original/current field must pass the full local comparison. Inside it, source channel values must fit the observed A/B and fixed-rim background range within 16; arbitrary incompatible source marks are not accepted merely because they intersect the mask. No single blend factor is required.
+
+This mask is internal, action-local and color-independent. It does not authorize Agent-specified `--ignore-rect` inside the field. `fieldPixelsMatch`, `fieldAppearanceMatch`, `fieldTemporalMatch` and the confirmed screen-point `caretRect` distinguish the evidence; concise output uses `fieldMatch=pixels|appearance|temporal|different`. A repeated outer check of the same selected PNG reuses only that preflight's evidence. Each clipboard stage starts a new matcher.
+
+Visible displaced cursors, new persistent text outside the mask and wide selections are covered by rejection tests. A hidden cursor's invisible displacement, a mark visually indistinguishable from the caret, or arbitrary custom block/underline cursors cannot be guaranteed by screenshot comparison. No claim of focus or semantic correctness is added.
+
+Source observations are never silently replaced. The schedule, cancellation checks, eight-second preflight budget and thirty-second keyboard request budget remain unchanged. There is no input replay, color list, new external model, automatic Runner fallback or user setting to disable the guard.
+
+## Current validation
+
+Implementation validation is recorded in [the mask implementation report](native-text-caret-mask-validation.md). Historical v1 results below describe the earlier algorithm and do not constitute acceptance of v2.
+
+## Historical v1 validation
 
 Host validation: **362 tests, one existing optional skip, zero failures**; Release build passed. Regressions cover black/white/red/purple/green/blue on light/dark backgrounds, visible/hidden/intermediate source phases, real A–B–A evidence rather than two frames, full-field thin-stroke and selection changes, moving-stroke opposing edges, isolated video noise, six-sample coverage, immediate first-match return and cancellation during the phase wait. Runner post-input code was not modified or revalidated on device.
 

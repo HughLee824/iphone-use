@@ -75,6 +75,17 @@ final class AgentOutputTests: XCTestCase {
         }
     }
 
+    func testAppearanceMatchDoesNotReportProtectedFieldFailure() {
+        let check: [String: Any] = ["accepted": true, "screenChange": 0.0, "maxScreenChange": 0.01,
+            "regionChanges": [0.01], "maxRegionChange": 0.0, "fieldPixelsMatch": false,
+            "fieldTemporalMatch": false, "fieldAppearanceMatch": true]
+        let compact = AgentOutput.summarize(["result": ["screenGuard": check]])
+        let summary = compact["agentSummary"] as! [String: Any]
+        let comparison = summary["comparison"] as! [String: Any]
+        XCTAssertEqual(comparison["fieldMatch"] as? String, "appearance")
+        XCTAssertEqual(comparison["mismatches"] as? [String], [])
+    }
+
     func testPrivateReceiptRoundTripsFullReplyAndSurvivesPresentation() throws {
         let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: false)

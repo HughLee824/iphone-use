@@ -84,16 +84,17 @@ public enum AgentOutput {
 
     private static func comparison(_ check: [String: Any]) -> [String: Any] {
         var result = check.filter { ["accepted", "screenChange", "maxScreenChange", "regionChanges",
-                                    "maxRegionChange", "ignoredRect"].contains($0.key) }
+                                    "maxRegionChange", "ignoredRect", "caretRect"].contains($0.key) }
         let temporal = check["fieldTemporalMatch"] as? Bool == true
+        let appearance = check["fieldAppearanceMatch"] as? Bool == true
         if let pixels = check["fieldPixelsMatch"] as? Bool {
-            result["fieldMatch"] = temporal ? "temporal" : (pixels ? "pixels" : "different")
+            result["fieldMatch"] = temporal ? "temporal" : (appearance ? "appearance" : (pixels ? "pixels" : "different"))
         }
         var reasons: [String] = []
         if let change = check["screenChange"] as? Double, let limit = check["maxScreenChange"] as? Double, change > limit {
             reasons.append("screen_changed")
         }
-        if !temporal {
+        if !temporal && !appearance {
             if check["fieldPixelsMatch"] as? Bool == false { reasons.append("field_changed") }
             if let regions = check["regionChanges"] as? [Double], let limit = check["maxRegionChange"] as? Double,
                regions.contains(where: { $0 > limit }) { reasons.append("protected_region_changed") }
