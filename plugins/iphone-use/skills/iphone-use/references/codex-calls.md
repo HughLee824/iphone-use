@@ -1,10 +1,10 @@
-# Fixed Codex call templates
+# Codex: execute and display in one call
 
-Use these templates when `functions.exec` exposes `tools.exec_command` and `tools.write_stdin`. They run one command at a time; choose the next device action from its observed result. Other clients should use their native execution tool with the same completion discipline.
+With `functions.exec` exposing `tools.exec_command`, use the start block for each selected CLI command. It prints completion/action facts and **displays an attached successful screenshot in the same invocation**, including `text-prepare`, `text-finish` and actions whose outcome is `unknown`. Inspect the emitted image before selecting the next action; do not separately call `view_image` or `observe` when it is already present.
 
-## Start a command
+## Start
 
-Change only the `argv` array for the intended CLI call. Every entry must be a string containing one literal argument. Keep the quoting expression and completion fields, including `session_id` and `exit_code`. Use the same resolved executable throughout the task. For isolated configuration, prefix the array with `"/usr/bin/env", "IPHONE_USE_CONFIG_DIR=/absolute/config path"`; do not invent `--config`.
+Change `argv` to the command: one literal string per argument, using the resolved executable and actual session/reference values. Keep the shell quoting, result storage and image branch intact. Example arguments after the executable: `["--session", "SESSION", "tap", "oN", "--x", "X", "--y", "Y", "--observe", "--agent-output"]`. Use supported options only.
 
 ```javascript
 const argv = ["iphone-use", "devices"];
@@ -28,19 +28,13 @@ if (!Number.isInteger(result.exit_code)) {
 }
 ```
 
-For example, Runner text replacement uses these arguments in the same template (native text uses `oN` and a complete `--field-rect`, as described in [the native text workflow](native-text.md)):
+Shell quoting preserves user quotes, dollar signs, backticks and newlines. `JSON.stringify` is not shell quoting; shell operators in `argv` are literal arguments. For isolated configuration, prefix `argv` with `"/usr/bin/env", "IPHONE_USE_CONFIG_DIR=/absolute/path"`; there is no `--config` option. Use the execution tool's stdin/file mechanism for `--stdin`.
 
-```json
-["iphone-use", "--session", "SESSION_FROM_CONNECT", "type", "o4:e21", "--mode", "replace", "--text", "版本发布事项讨论", "--observe"]
-```
+If a tool permission error or CoreDevice diagnostic requires host execution, use the tool's supported `sandbox_permissions: "require_escalated"` and `justification` consistent with active policy and authorization. These are tool options, not CLI arguments. Do not request elevation speculatively.
 
-Use current session/reference values from actual results. Quotes, dollar signs, backticks, and spaces in user text stay literal under the template's shell quoting. Do not replace it with `JSON.stringify(argv)` as shell command text. Shell operators in the argument array are literal arguments, not pipelines; use the execution tool's supported stdin/file mechanism when `--stdin` is needed.
+## Continue only if pending
 
-If a tool-level permission error or the CoreDevice diagnostic requires host execution, add the execution tool's supported `sandbox_permissions: "require_escalated"` and an appropriate `justification` to its options, following the active host policy and existing authorization. Do not treat that option as an iPhone-use CLI argument or request elevation speculatively.
-
-## Continue the same command
-
-When the result has a background `session_id`, use its actual numeric value below. This is **not** the iPhone-use session string. Repeat continuation only while the tool reports the same command is still running. These templates retain output chunks in `store` for the result reader; finish and read this command before starting another, which replaces that stored result.
+If `functions.exec` returns a running **cell ID**, resume with `functions.wait` first, never rerun the block. If the command returns a background **session_id**, use its actual numeric value below; this is not the iPhone-use device session. Continue until an exit code exists. Do not start another command while output is pending; it would replace the stored state. Keep waits short enough for progress updates.
 
 ```javascript
 const sessionId = 12345;
@@ -69,18 +63,11 @@ if (!Number.isInteger(execution.exit_code)) {
 }
 ```
 
-If `functions.exec` itself reports a running cell ID, resume that cell with its `wait` tool first. Do not re-execute the original script. Keep individual waits short enough to provide progress updates.
+Exit status is process completion, not task success. Read `action.outcome` and `observation.ok` separately. A nonzero action exit can still include a fresh screenshot; never use `action && observe` or repeat input to recover output. A wrapper syntax error before tool execution did not reach the device.
 
-## Interpret completion
+## Only if image reading failed
 
-- A background handle or partial stdout is pending work, even if stdout already contains a CLI path or some JSON. Do not relaunch the command.
-- An exit code means that shell process ended. Read its output and any iPhone-use `outcome` together; exit code zero does not establish the user's business result.
-- `unknown` means input may have happened. Inspect the attached successful observation before deciding what to do next; capture only if one is missing. Do not use `action && observe` as an unconditional recovery template: a nonzero action exit can still need observation.
-- A JavaScript syntax error before the execution tool was called did not reach iPhone-use. Correct the wrapper. Do not classify it as a device failure.
-
-## Recover image reading without another device command
-
-The start/continuation templates print the reply and open an attached successful PNG in the same tool call, including for native `text-prepare` and `text-finish`. Do not run another reader if the image was already displayed. If image reading failed after command completion, use this recovery reader in `functions.exec`. It uses the accumulated output and does not issue device input. Read `action` and `observation` separately: an `unknown` action or a guard rejection can return top-level `ok: false` with a successful fresh observation. In that case the PNG still needs to be opened and checked alongside the returned text and references.
+The command facts are printed and stored before image loading. If that loading failed, retry this reader, not the command. It performs no device operation. Failed/skipped observations have no fresh image; follow their error and reference validity.
 
 ```javascript
 const execution = load("iphone-use.execution");
@@ -96,6 +83,4 @@ if (!Number.isInteger(execution?.exit_code)) {
 }
 ```
 
-When preflight reports support, add `--agent-output` to actions and native `text-prepare`/`text-finish` to avoid printing repeated media diagnostics. The `receipt` retains the full response. Default output remains compatible with older clients.
-
-A screenshot path in JSON does not mean the image was read. Inspect the emitted image and verify the intended UI result before another input. If parsing or image loading fails, retain the printed command/action facts and resolve that reading failure; do not replay the action. A failed or skipped observation supplies no fresh screenshot; follow its error and reference validity before proceeding.
+Use `--agent-output` when available; consult its private full receipt only for a concrete question. A displayed image still needs visual judgment: `completed` is not task success, and `unknown` never authorizes automatic replay.
