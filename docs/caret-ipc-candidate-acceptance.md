@@ -40,4 +40,6 @@
 
 结论：本包已完成一次独立文字工作流，回执错误没有复现，结果与资源清理可核验；首次字段误拒绝样本及 Agent 命令间开销仍需处理。不能以本轮成功掩盖仍存在的保护拒绝，也不能宣称达到 2–3 分钟目标。原始 summary 不改写，父会话补充 `parent-timing.json` 和 `parent-cleanup.json` 保留不同计时口径。
 
+后续[首次拒绝离线定位](native-text-nine-rejection.md)确认最后一对图片在光标区域之外也有大量静态边缘像素漂移，排除光标后仍不能通过字段比较；没有继续放宽阈值。前五帧没有 PNG，不扩大为已逐帧证明六次拒绝原因。
+
 证据目录 `.local/research/caret-ipc-candidate-20261003/`，包含 `build.json`、`verification.json`、`preflight.log`、归档和上述验收材料。计划的独立运行证据目录为 `.local/research/caret-ipc-short-context-20261003/`。
