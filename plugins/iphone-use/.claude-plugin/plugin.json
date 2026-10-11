@@ -1,12 +1,12 @@
 {
   "name": "iphone-use",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Observe and operate a connected physical iPhone with the iPhone-use CLI.",
   "author": {
     "name": "iPhone-use contributors",
     "url": "https://github.com/HughLee824/iphone-use"
   },
-  "homepage": "https://agentsoma.dev",
+  "homepage": "https://iphone-use.com",
   "repository": "https://github.com/HughLee824/iphone-use",
   "license": "MIT",
   "keywords": ["iphone", "ios", "automation", "xctest"],

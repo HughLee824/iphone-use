@@ -3,7 +3,7 @@
 > CLI 0.2.0、Homebrew 和新名称网站已公开；Release 附带插件 0.1.4。源码插件的 0.1.5 是文档修订版，本次不发布新 ZIP 或替换已有资产。两种客户端的公开安装、缓存升级和真机任务验证仍未在本次发布中补做，详见[渠道状态](rename-to-iphone-use.md)。
 
 
-[公开网站](https://agentsoma.dev) → [安装 CLI](install.md) → 安装本页插件 → [选择模式并连接](first-task.md#connect-in-standard-mode) → 首个真机任务。完整英文路径见 [First task](first-task.md)。
+[公开网站](https://iphone-use.com) → [安装 CLI](install.md) → 安装本页插件 → [选择模式并连接](first-task.md#connect-in-standard-mode) → 首个真机任务。完整英文路径见 [First task](first-task.md)。
 
 插件是 **CLI + skill** 封装，共用设备操作契约，分别适配 Codex 的命令执行、后台续读和图片工具，以及 Claude Code 的 Bash、TaskOutput 和 Read。它不含 CLI、不创建开发签名、不自动接入手机，也不要求 MCP 服务。
 
