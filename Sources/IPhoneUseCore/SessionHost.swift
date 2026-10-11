@@ -21,6 +21,7 @@ final class SessionHost {
         self.backend = backend
         observations = ObservationCache(directory: paths.directory)
         lifecycle = SessionLifecycle(timeout: config.idleTimeoutSeconds)
+        backend.setEventDeliveryQueue(work)
     }
 
     func run() throws {
@@ -81,7 +82,8 @@ final class SessionHost {
         }
         let id = request["id"] as? String ?? ""
         let requestedOperation = request["op"] as? String ?? ""
-        let operation = requestedOperation == "type-with-method" ? "type" : requestedOperation == "text-prepare-scoped" ? "text-prepare" : requestedOperation
+        let operation = ["type-with-method", "type-with-caret"].contains(requestedOperation) ? "type" :
+            requestedOperation == "press-with-caret" ? "press" : requestedOperation == "text-prepare-scoped" ? "text-prepare" : requestedOperation
         let appLifecycle = operation == "terminate" || operation == "relaunch"
         let appAction = operation == "open" || appLifecycle
         func reject(_ code: String, _ message: String) {
@@ -120,6 +122,7 @@ final class SessionHost {
         var reference: ObservationReference?
         var action: DeviceAction?
         var textObservationOptions: NativeTextObservationOptions?
+        var postActionSourceContext: ScreenContext?
         if operation == "text-prepare", config.backend != "apple-native" {
             reject("native_action_unsupported", "text-prepare applies only to apple-native")
             return
@@ -127,6 +130,10 @@ final class SessionHost {
         if requestedOperation == "text-prepare-scoped" || (operation == "text-prepare" && (request["fieldRect"] != nil || request["ignoreRect"] != nil)) {
             do { textObservationOptions = try NativeTextObservationOptions(request: request) }
             catch { reject((error as? IPhoneUseError)?.code ?? "invalid_text_region", String(describing: error)); return }
+        }
+        if ["type-with-caret", "press-with-caret"].contains(requestedOperation), request["caretRect"] == nil {
+            reject("invalid_caret_region", "Explicit caret requests require --caret-rect")
+            return
         }
         if requestedOperation == "type-with-method", request["textMethod"] == nil {
             reject("invalid_text_method", "Explicit native text requests require a method")
@@ -218,8 +225,8 @@ final class SessionHost {
                     }
                     effective = true
                 case "text-prepare":
-                    // Registration can change keyboard visibility. Consume old references
-                    // and capture afterward even when the owned keyboard already exists.
+                    // Bind preparation to a fresh observation, even when the borrowed
+                    // CoreDevice keyboard is already ready. Preparation does not focus a field.
                     previousObservation = observations.beginAction()
                     effective = true
                     response["result"] = try backend.prepareText()
@@ -244,6 +251,9 @@ final class SessionHost {
                     }
                 case "tap", "double-tap", "long-press", "pinch", "swipe", "home", "type", "press":
                     let target = try observations.resolveTarget(for: action!)
+                    if config.backend == "apple-native", let raw = target.context["screenContext"] as? [String: Any] {
+                        postActionSourceContext = try JSONDecoder().decode(ScreenContext.self, from: jsonData(raw))
+                    }
                     if ["type", "press"].contains(action!.kind), let field = action!.textRegion {
                         textObservationOptions = NativeTextObservationOptions(field: field, ignoring: action!.ignoredScreenRect)
                     }
@@ -292,6 +302,9 @@ final class SessionHost {
                 }
                 if operation == "status" { observations.invalidate("backend_unavailable") }
                 response["error"] = ["code": failure?.code ?? (error as? IPhoneUseError)?.code ?? "backend_error", "message": String(describing: error)]
+                if let diagnostics = (error as? IPhoneUseError)?.diagnostics, !diagnostics.isEmpty {
+                    response["diagnostics"] = diagnostics
+                }
             }
             // Native actions always return a new observation while still holding the device
             // work queue. Capture failure preserves the action's execution facts.
@@ -299,14 +312,33 @@ final class SessionHost {
                response["outcome"] as? String != "not_dispatched" {
                 observations.invalidate("post_action_capture")
                 do {
-                    let capture = try textObservationOptions.map { try backend.observeText($0) } ?? backend.observe()
+                    let capture: CapturedObservation
+                    if operation == "text-finish" {
+                        capture = try textObservationOptions.map { try backend.observeText($0) } ?? backend.observe()
+                    } else {
+                        capture = try backend.observeAfterAction(textOptions: textObservationOptions,
+                            ignoring: action?.ignoredScreenRect ?? textObservationOptions?.ignoring,
+                            sourceContext: postActionSourceContext)
+                    }
                     let after = try observations.store(capture)
-                    response["observation"] = ["ok": true, "result": after]
+                    var observation: [String: Any] = ["ok": true, "result": after]
+                    if let stability = capture.metadata["postActionStability"] as? [String: Any] {
+                        observation["stability"] = stability
+                        if stability["stable"] as? Bool != true {
+                            let reason = stability["reason"] as? String ?? "frame_stability_timeout"
+                            observation["warning"] = "\(reason): inspect the latest screenshot and capture diagnostics; do not replay input"
+                        }
+                    }
+                    response["observation"] = observation
                     var result = response["result"] as? [String: Any] ?? [:]
                     result["afterObservationID"] = after["observation"]
                     response["result"] = result
                 } catch {
                     response["observation"] = ["ok": false, "error": String(describing: error)]
+                    if let failure = error as? IPhoneUseError {
+                        response["observation"] = ["ok": false, "error": failure.description,
+                            "errorCode": failure.code, "diagnostics": failure.diagnostics]
+                    }
                     if operation == "text-prepare" {
                         // Preparation completed, but there is no usable input baseline.
                         response["ok"] = false

@@ -44,124 +44,119 @@ final class AppleDeviceCLI {
     let cancellation: NativeCancellation
     private let reader: (([String]) throws -> [String: Any])?
     var captureSourcePolicy: [String: Any] {
-        ["strategy": "media_first", "fallback": "coredevice_screenshot"]
+        ["strategy": "coredevice_only"]
     }
     init(device: String, cancellation: NativeCancellation, reader: (([String]) throws -> [String: Any])? = nil) {
         self.device = device; self.cancellation = cancellation; self.reader = reader
     }
-    func read(_ arguments: [String], trailingArguments: [String] = [], timeout: Int = 20) throws -> [String: Any] {
+    func read(_ arguments: [String], trailingArguments: [String] = [], timeout: Int = 20,
+              budget: NativeCaptureBudget? = nil) throws -> [String: Any] {
         try cancellation.check()
-        if let reader { return try reader(arguments) }
-        return try CoreDevice.read(arguments + ["--device", device], cancelled: { self.cancellation.isCancelled }, trailingArguments: trailingArguments, timeout: timeout)
+        try budget?.check()
+        do {
+            let result: [String: Any]
+            if let reader { result = try reader(arguments) }
+            else {
+                result = try CoreDevice.read(arguments + ["--device", device], cancelled: {
+                    self.cancellation.isCancelled || budget.map { ProcessInfo.processInfo.systemUptime >= $0.deadline } == true
+                }, trailingArguments: trailingArguments, timeout: timeout)
+            }
+            try cancellation.check()
+            try budget?.check()
+            return result
+        } catch {
+            do {
+                try cancellation.check()
+                try budget?.check()
+            } catch let deadlineError as IPhoneUseError {
+                throw IPhoneUseError(deadlineError.code, deadlineError.description,
+                                     diagnostics: (error as? IPhoneUseError)?.diagnostics ?? [:])
+            }
+            throw error
+        }
     }
     func display() throws -> NativeDisplay { try NativeDisplay(read(["device", "info", "displays"])) }
-    func capture(generation: String, preferredSource: String? = nil,
-                 textPhase: (guardValue: ScreenGuard, field: NativeTextPhaseMatcher, deadline: TimeInterval)? = nil,
+    func capture(generation: String, budget: NativeCaptureBudget? = nil,
                  prepareDisplay: (NativeDisplay) throws -> Void = { _ in },
-                 mediaCapture: ((NativeDisplay, Double) throws -> (Data?, [String: Any]))? = nil) throws -> CapturedObservation {
+                 validateDisplay: (NativeDisplay, Double) throws -> [String: Any] = { _, _ in [:] }) throws -> CapturedObservation {
         let started = Date().timeIntervalSince1970
         let monotonic = ProcessInfo.processInfo.systemUptime
         var timings: [String: Double] = [:]
+        let diagnostics = NativeCaptureDiagnostics()
+        var phase = "checksBefore"
         func timed<T>(_ name: String, _ operation: () throws -> T) rethrows -> T {
+            phase = name
             let start = ProcessInfo.processInfo.systemUptime
             defer { timings[name, default: 0] += (ProcessInfo.processInfo.systemUptime - start) * 1000 }
             return try operation()
         }
-        let initial = try timed("checksBefore") { try NativeCaptureChecks.read { try self.read($0) } }
-        let before = initial.display
-        for (key, value) in initial.timings { timings[key + "Before"] = value }
-        try timed("prepareDisplay") { try prepareDisplay(before) }
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("iphone-use-screen-\(UUID().uuidString)")
-        try SessionPaths.secureDirectory(directory)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let destination = directory.appendingPathComponent("screen.png")
-        let requestedAt = ProcessInfo.processInfo.systemUptime
-        // The media callback must verify orientation even when preflight pins
-        // Apple pixels. Geometry/freshness failures must propagate, not fallback.
-        let media = try timed("mediaSnapshot") { try mediaCapture?(before, requestedAt) }
-        func validate(_ png: Data, media: Bool = false) throws -> FrameFingerprint {
-            let fingerprint = try FrameFingerprint(png: png)
-            guard fingerprint.width == Int(before.pixelWidth), fingerprint.height == Int(before.pixelHeight) else {
-                throw IPhoneUseError(media ? "native_snapshot_geometry_unavailable" : "invalid_image", "Screenshot dimensions disagree with the current display")
-            }
-            let image = try ScreenImage(png: png)
-            let samples = try image.rgb(rect: before.screen, screen: before.screen, columns: 32, rows: 64)
-            guard samples.contains(where: { $0 > 8 }) else { throw IPhoneUseError("capture_unavailable", "Screenshot is black or unavailable") }
-            return fingerprint
+        func read(_ arguments: [String], phase: String) throws -> [String: Any] {
+            try diagnostics.read(arguments, phase: phase) { try self.read(arguments, budget: budget) }
         }
-        var mediaFacts = media?.1 ?? ["fallbackReason": "owned_media_unavailable"]
-        var applePhaseSamples: [[String: Any]] = []
-        var selected: (png: Data, fingerprint: FrameFingerprint)?
-        if preferredSource == "coredevice_screenshot" {
-            mediaFacts["fallbackReason"] = "source_pinned"
-        } else if let png = media?.0 {
-            do { selected = (png, try timed("mediaImageValidation") { try validate(png, media: true) }) }
-            catch let error as IPhoneUseError where error.code == "native_snapshot_geometry_unavailable" { throw error }
-            catch { mediaFacts["fallbackReason"] = "media_image_invalid" }
-        }
-        let source: String
-        if selected != nil { source = "native_media" }
-        else {
-            source = "coredevice_screenshot"
-            if mediaFacts["fallbackReason"] == nil { mediaFacts["fallbackReason"] = "media_image_unavailable" }
-            // Like media sampling, keep the whole phase burst between fresh
-            // lock/display checks. Repeating those checks for each Apple PNG
-            // previously consumed ~3 seconds per sample and starved the matcher.
-            // Only an already Apple-pinned observation may use this burst.
-            let phase = preferredSource == "coredevice_screenshot" ? textPhase : nil
-            for attempt in 1...(phase == nil ? 1 : 6) {
-                if let phase {
-                    let now = ProcessInfo.processInfo.systemUptime
-                    let end = now + NativeTextPhaseSchedule.delay(attempt: attempt, started: requestedAt, now: now, deadline: phase.deadline)
-                    while ProcessInfo.processInfo.systemUptime < end {
-                        try cancellation.check()
-                        Thread.sleep(forTimeInterval: min(0.02, max(0, end - ProcessInfo.processInfo.systemUptime)))
-                    }
-                    try cancellation.check()
-                    if ProcessInfo.processInfo.systemUptime >= phase.deadline {
-                        // Preserve the last actual image for outer rejection;
-                        // the final checks and dispatch deadline still apply.
-                        if selected != nil { break }
-                        throw IPhoneUseError("stale_observation", "Text phase capture deadline expired")
-                    }
+        do {
+            let initial = try timed("checksBefore") { try NativeCaptureChecks.read { try read($0, phase: "checksBefore") } }
+            let before = initial.display
+            for (key, value) in initial.timings { timings[key + "Before"] = value }
+            try timed("prepareDisplay") { try prepareDisplay(before) }
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("iphone-use-screen-\(UUID().uuidString)")
+            try SessionPaths.secureDirectory(directory)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let destination = directory.appendingPathComponent("screen.png")
+            let requestedAt = ProcessInfo.processInfo.systemUptime
+            // Geometry evidence never supplies observation pixels. Apple PNG is
+            // the only source, including after media recovery or screenshot failure.
+            let geometry = try timed("displayGeometry") { try validateDisplay(before, requestedAt) }
+            func validate(_ png: Data) throws -> FrameFingerprint {
+                let fingerprint = try FrameFingerprint(png: png)
+                guard fingerprint.width == Int(before.pixelWidth), fingerprint.height == Int(before.pixelHeight) else {
+                    throw IPhoneUseError("invalid_image", "Screenshot dimensions disagree with the current display")
                 }
-                let timeout = phase.map { max(1, Int(ceil($0.deadline - ProcessInfo.processInfo.systemUptime))) } ?? 20
-                _ = try timed("screenshot") { try read(["device", "capture", "screenshot", "--destination", destination.path], timeout: timeout) }
-                let png = try Data(contentsOf: destination)
-                selected = (png, try timed("appleImageValidation") { try validate(png) })
-                guard let phase else { break }
-                var check = try phase.guardValue.check(png: png, context: before.context)
-                check.apply(try phase.field.check(png: png, context: before.context), caret: phase.field.caretRect)
-                applePhaseSamples.append(["attempt": attempt,
-                    "elapsedMs": (ProcessInfo.processInfo.systemUptime - requestedAt) * 1000,
-                    "screenGuard": check.result])
-                if check.accepted || check.screenChange > check.policy.maxScreenChange { break }
+                let image = try ScreenImage(png: png)
+                let samples = try image.rgb(rect: before.screen, screen: before.screen, columns: 32, rows: 64)
+                guard samples.contains(where: { $0 > 8 }) else { throw IPhoneUseError("capture_unavailable", "Screenshot is black or unavailable") }
+                return fingerprint
             }
+            try budget?.beginValidation()
+            _ = try timed("screenshot") { try read(["device", "capture", "screenshot", "--destination", destination.path], phase: "screenshot") }
+            let png = try timed("readPNG") { try Data(contentsOf: destination) }
+            let fingerprint = try timed("appleImageValidation") { try validate(png) }
+            let final = try timed("checksAfter") { try NativeCaptureChecks.read { try read($0, phase: "checksAfter") } }
+            let after = final.display
+            for (key, value) in final.timings { timings[key + "After"] = value }
+            try cancellation.check()
+            try budget?.check()
+            phase = "displayConsistency"
+            guard before == after, after.backlightOn else { throw IPhoneUseError("capture_context_changed", "Display changed during screenshot acquisition") }
+            timings["total"] = (ProcessInfo.processInfo.systemUptime - monotonic) * 1000
+            return CapturedObservation(nodes: [], metadata: [
+                "captureSource": "coredevice_screenshot",
+                "captureSourcePolicy": captureSourcePolicy,
+                "captureTimingsMs": timings, "captureCommands": diagnostics.commands, "displayGeometry": geometry,
+                "backend": "apple-native", "deviceID": device, "sessionGeneration": generation,
+                "captureID": UUID().uuidString, "captureStartedAt": started, "captureCompletedAt": Date().timeIntervalSince1970,
+                "captureStartedUptime": monotonic, "screenshotCapturedAt": Date().timeIntervalSince1970,
+                "screenshotWidth": fingerprint.width, "screenshotHeight": fingerprint.height, "frameHash": fingerprint.hash,
+                "displayID": after.id, "displayRotation": after.rotation, "nativeRotation": after.nativeRotation,
+                "coordinateSpace": "screen_points", "pointScale": after.scale,
+                "imageTransform": ["cropOriginPixels": [0, 0], "resizeScale": 1, "pixelsPerPoint": after.scale],
+                "screenFrame": try jsonObject(JSONEncoder().encode(after.screen)),
+                "screenContext": try jsonObject(JSONEncoder().encode(after.context)),
+                "scope": "screen", "foregroundBundleId": NSNull(), "keyboardState": "unknown",
+                "axStatus": "unavailable", "axError": "Native backend uses screenshots; AX is not collected",
+                "sourceTruncated": false, "validity": "valid"
+            ], screenshot: png)
+        } catch {
+            timings["total"] = (ProcessInfo.processInfo.systemUptime - monotonic) * 1000
+            var facts: [String: Any] = ["failedStage": phase, "timingsMs": timings, "commands": diagnostics.commands]
+            if let budget {
+                facts["budgetPurpose"] = budget.purpose == .input ? "input" : "observation"
+                facts["deadlineUptime"] = budget.deadline
+                facts["requestDeadlineUptime"] = budget.requestDeadline
+                facts["validationStartedUptime"] = budget.validationStartedAt
+            }
+            throw IPhoneUseError((error as? IPhoneUseError)?.code ?? "capture_failed", String(describing: error),
+                                 diagnostics: ["capture": facts])
         }
-        let final = try timed("checksAfter") { try NativeCaptureChecks.read { try self.read($0) } }
-        let after = final.display
-        for (key, value) in final.timings { timings[key + "After"] = value }
-        try cancellation.check()
-        guard before == after, after.backlightOn else { throw IPhoneUseError("capture_context_changed", "Display changed during screenshot acquisition") }
-        let (png, fingerprint) = selected!
-        timings["total"] = (ProcessInfo.processInfo.systemUptime - monotonic) * 1000
-        return CapturedObservation(nodes: [], metadata: [
-            "captureSource": source,
-            "captureSourcePolicy": captureSourcePolicy,
-            "captureTimingsMs": timings, "mediaSnapshot": mediaFacts, "appleTextPhaseSamples": applePhaseSamples,
-            "backend": "apple-native", "deviceID": device, "sessionGeneration": generation,
-            "captureID": UUID().uuidString, "captureStartedAt": started, "captureCompletedAt": Date().timeIntervalSince1970,
-            "captureStartedUptime": monotonic, "screenshotCapturedAt": Date().timeIntervalSince1970,
-            "screenshotWidth": fingerprint.width, "screenshotHeight": fingerprint.height, "frameHash": fingerprint.hash,
-            "displayID": after.id, "displayRotation": after.rotation, "nativeRotation": after.nativeRotation,
-            "coordinateSpace": "screen_points", "pointScale": after.scale,
-            "imageTransform": ["cropOriginPixels": [0, 0], "resizeScale": 1, "pixelsPerPoint": after.scale],
-            "screenFrame": try jsonObject(JSONEncoder().encode(after.screen)),
-            "screenContext": try jsonObject(JSONEncoder().encode(after.context)),
-            "scope": "screen", "foregroundBundleId": NSNull(), "keyboardState": "unknown",
-            "axStatus": "unavailable", "axError": "Native backend uses screenshots; AX is not collected",
-            "sourceTruncated": false, "validity": "valid"
-        ], screenshot: png)
     }
 }
 
@@ -179,12 +174,19 @@ final class AppleDeviceBackend: SessionBackend {
     private var buttonError: String?
     private var hidTransport: NativeTransport?
     private var mediaTransport: NativeTransport?
+    private var mediaClient: NativeFeatureClient?
+    private var connectedDeviceIdentifier: String?
+    private var connectedDeviceAddress: String?
     private var hid: NativeHIDAdapter?
     private var media: NativeDisplayMediaSession?
     private var tunnel: ASPairedTunnel?
     private var controlError: String?
     private var controlErrorCode: String?
     private var cleanupFacts: [String: Any] = [:]
+    private var recordingMediaCleanup: [String: Any] = [:]
+    private var recordingCleanupByID: [String: [String: Any]] = [:]
+    private var currentRecordingID: String?
+    private var eventDeliveryQueue: DispatchQueue?
     private var stopped = false
     private var recording: NativeStreamRecording?
     private var recordingSupported = false
@@ -197,6 +199,7 @@ final class AppleDeviceBackend: SessionBackend {
          }) {
         self.config = config; self.paths = paths; self.makeHID = makeHID
     }
+    func setEventDeliveryQueue(_ queue: DispatchQueue) { eventDeliveryQueue = queue }
     func start() throws -> [String: Any] {
         let details = try CoreDevice.read(["device", "info", "details", "--device", config.device])
         recordingSupported = NativeRecordingOptions.supported(by: details)
@@ -210,7 +213,15 @@ final class AppleDeviceBackend: SessionBackend {
         }
         deviceLock = try SessionDeviceLock(root: paths.directory.deletingLastPathComponent(), device: udid)
         cli = AppleDeviceCLI(device: udid, cancellation: cancellation)
-        recording = NativeStreamRecording(root: paths.directory.appendingPathComponent("recordings"))
+        let deliveryQueue = eventDeliveryQueue
+        recording = NativeStreamRecording(root: paths.directory.appendingPathComponent("recordings"), onFinish: { [weak self] recordingID, mediaID in
+            deliveryQueue?.async { [weak self] in
+                guard let self, !self.stopped,
+                      self.currentRecordingID == recordingID,
+                      self.media?.health()["mediaSessionID"] as? String == mediaID else { return }
+                self.releaseRecordingMediaIfFinished()
+            }
+        })
         do {
             guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 27,
                   (properties["osVersionNumber"] as? String)?.hasPrefix("27.") == true else {
@@ -219,17 +230,16 @@ final class AppleDeviceBackend: SessionBackend {
             let inventory = try NativeEndpointInventory.read(path: config.nativeEndpointInventory)
             let paired = try ASPairedTunnel(udid: udid, deviceIdentifier: identifier, endpointInventory: inventory)
             tunnel = paired
+            connectedDeviceIdentifier = identifier
+            connectedDeviceAddress = address
             try cancellation.check()
             guard paired.deviceAddress == address else { throw IPhoneUseError("native_device_mismatch", "Paired tunnel changed since device discovery; connect again explicitly") }
             let displayTransport = try AppleServiceTransport(tunnel: paired, service: "com.apple.coredevice.displayservice")
             mediaTransport = displayTransport
+            mediaClient = NativeFeatureClient(transport: displayTransport, deviceIdentifier: identifier,
+                                              version: try NativeMediaFactory.coreDeviceVersion())
             let inputTransport = try AppleServiceTransport(tunnel: paired, service: "com.apple.coredevice.hid.universalhidservice")
             hidTransport = inputTransport
-            let display = try cli!.display()
-            let session = try NativeMediaFactory.make(transport: displayTransport, identifier: identifier,
-                                                      address: address, cancellation: cancellation, captureSnapshots: true)
-            media = session
-            try session.ensureDisplay(display, mayReplace: true)
             let input = makeHID(inputTransport, cancellation)
             try input.prepare(); hid = input
         } catch {
@@ -248,18 +258,20 @@ final class AppleDeviceBackend: SessionBackend {
     }
     func status() throws -> [String: Any] {
         guard !stopped else { throw IPhoneUseError("backend_unavailable", "Native session closed") }
-        let health = media?.health() ?? [:]
+        releaseRecordingMediaIfFinished()
+        let health = mediaStatus
         let streamRecordingSupported = media?.recordingReceiver.map { NativeStreamRecording.supports($0.recordingConfiguration()) } ?? false
         let hidState = hid?.state
         let closing = cancellation.isCancelled
         let control = NativeControlStatus.resolve(hid: hidState, media: health, closing: closing,
-                                                   startupCode: controlErrorCode, startupError: controlError)
+                                                   startupCode: controlErrorCode, startupError: controlError,
+                                                   requiresMedia: media?.isActive == true)
         var result: [String: Any] = ["backend": "apple-native", "sessionGeneration": generation, "deviceID": cli?.device ?? config.device,
                 "captureSourcePolicy": cli?.captureSourcePolicy ?? [:],
                 "recording": recording?.status() ?? ["state": "idle"],
-                "recordingSupport": ["supported": streamRecordingSupported, "source": "owned_native_rtp",
+                "recordingSupport": ["supported": control.available, "formatVerified": streamRecordingSupported, "source": "owned_native_rtp",
                     "appleCLIAvailable": recordingSupported, "codec": "hevc", "method": "native_rtp"],
-                "capabilities": ["terminate": !closing, "relaunch": !closing, "recording": streamRecordingSupported && control.available, "screenshot": true, "tap": control.available, "ax": false, "swipe": control.available,
+                "capabilities": ["terminate": !closing, "relaunch": !closing, "recording": control.available, "screenshot": true, "tap": control.available, "ax": false, "swipe": control.available,
                     "pinch": control.available, "doubleTap": control.available, "longPress": control.available, "home": control.available && buttonError == nil,
                     "text": control.available && hid?.canType == true, "press": control.available && hid?.canType == true],
                 "systemButtons": ["servicePrepared": buttonTransport != nil, "error": buttonError as Any? ?? NSNull()],
@@ -267,18 +279,90 @@ final class AppleDeviceBackend: SessionBackend {
                 "textInputMethods": ["asciiHID": control.available && hid?.canType == true,
                     "unicodePasteboard": control.available && hid?.canType == true && pasteboardError == nil && (pasteboard?.available ?? true)],
                 "textMethodSelection": ["auto", "keys", "paste"], "textModes": ["insert", "replace", "append"], "textFinishSupported": true,
-                "textPrepareSupported": true, "pressKeys": NativePressKey.allCases.map(\.rawValue),
+                "textPrepareSupported": true, "textCaretConfirmationSupported": true, "pressKeys": NativePressKey.allCases.map(\.rawValue),
                 "pasteboard": pasteboard?.status ?? ["restorePending": false],
                 "sessionClosing": closing, "hidState": hidState?.rawValue ?? "unprepared",
                 "media": health, "runnerStarted": false, "serviceTransport": config.nativeEndpointInventory == nil ? "apple-coredevice-service-socket" : "apple-paired-tunnel",
+                "mediaOwnershipPolicy": "read_only_inventory_before_input_dispatch", "recordingMediaCleanup": recordingMediaCleanup,
                 "endpointDiscovery": config.nativeEndpointInventory == nil ? "apple-coredevice-service-socket" : "supplied-apple-netstat-inventory",
                 "validation": "experimental; inspect the after-observation to verify each input"]
         result.merge(control.result) { _, new in new }
         return result
     }
+    private var mediaStatus: [String: Any] {
+        guard let media, media.isActive else { return ["state": "inactive", "healthy": false] }
+        return media.health()
+    }
     private func controlStatus(mediaHealth: [String: Any]) -> NativeControlStatus {
         NativeControlStatus.resolve(hid: hid?.state, media: mediaHealth, closing: cancellation.isCancelled,
-                                    startupCode: controlErrorCode, startupError: controlError)
+                                    startupCode: controlErrorCode, startupError: controlError,
+                                    requiresMedia: media?.isActive == true)
+    }
+    private func makeMediaSession() throws -> NativeDisplayMediaSession {
+        guard let mediaTransport, let identifier = connectedDeviceIdentifier,
+              let address = connectedDeviceAddress, let tunnel else {
+            throw IPhoneUseError("native_recording_unavailable", "Native display transport is unavailable")
+        }
+        guard tunnel.deviceAddress == address else { throw IPhoneUseError("native_device_mismatch", "Paired tunnel changed before recording") }
+        return try NativeMediaFactory.make(transport: mediaTransport, identifier: identifier, address: address,
+                                           cancellation: cancellation, captureSnapshots: true)
+    }
+    private func assertNoForeignMediaSessions(budget: NativeCaptureBudget? = nil) throws {
+        try checkMediaInventory(expectedOwnedID: nil, budget: budget)
+    }
+    private func checkMediaInventory(expectedOwnedID: String?, budget: NativeCaptureBudget? = nil) throws {
+        guard let mediaClient else { throw IPhoneUseError("native_media_ownership_unknown", "CoreDevice media inventory is unavailable") }
+        try budget?.check()
+        let timeout = budget.map { min(10, $0.deadline - ProcessInfo.processInfo.systemUptime) } ?? 10
+        guard timeout > 0 else { throw IPhoneUseError("input_preflight_timeout", "No input budget remains for media ownership validation") }
+        let result = try mediaClient.invoke("getmediastreamserverstatus", action: "mediastreamstatus", timeout: timeout)
+        try budget?.check()
+        guard let sessions = result["sessions"] as? [[String: Any]] else {
+            throw IPhoneUseError("native_media_ownership_unknown", "CoreDevice media ownership inventory is unavailable")
+        }
+        guard let expectedOwnedID else {
+            guard sessions.isEmpty else {
+                throw IPhoneUseError("native_media_busy", "Another client's media session exists. End that control or recording session before input; iPhone-use will not stop another client's media session.")
+            }
+            return
+        }
+        guard sessions.count == 1,
+              let connection = sessions[0]["connection"] as? [String: Any],
+              let options = connection["options"] as? [String: Any],
+              let identity = options["avcMediaStreamOptionClientSessionID"] as? [String: Any],
+              let uuid = identity["uuid"] as? UUID, uuid.uuidString == expectedOwnedID else {
+            throw IPhoneUseError("native_media_busy", "Another client's media session exists. End that control or recording session before input; iPhone-use will not stop another client's media session.")
+        }
+    }
+    private func checkInputAvailability(budget: NativeCaptureBudget? = nil) throws {
+        try cancellation.check()
+        if media?.isActive == true {
+            guard media?.health()["healthy"] as? Bool == true else {
+                throw IPhoneUseError("native_media_unhealthy", "Owned recording media stopped before input")
+            }
+            guard let mediaID = media?.health()["mediaSessionID"] as? String else {
+                throw IPhoneUseError("native_media_ownership_unknown", "Owned media session ID is unavailable")
+            }
+            try checkMediaInventory(expectedOwnedID: mediaID, budget: budget)
+        } else {
+            try assertNoForeignMediaSessions(budget: budget)
+        }
+    }
+    private func checkInputCanContinue() throws {
+        try cancellation.check()
+        if media?.isActive == true, media?.health()["healthy"] as? Bool != true {
+            throw IPhoneUseError("native_media_unhealthy", "Owned recording media stopped during input")
+        }
+    }
+    private func releaseRecordingMediaIfFinished() {
+        guard recording?.isActive != true, media?.isActive == true else { return }
+        recordingMediaCleanup = media?.close() ?? ["mediaStopAcknowledged": true]
+        if let currentRecordingID { recordingCleanupByID[currentRecordingID] = recordingMediaCleanup }
+        media = nil
+        if recordingMediaCleanup["mediaStopAcknowledged"] as? Bool != true {
+            controlErrorCode = "native_media_cleanup_unconfirmed"
+            controlError = "Owned recording media stop was not confirmed; close this session and inspect cleanup before reconnecting"
+        }
     }
     func apps() throws -> AppCatalog {
         guard let cli else { throw IPhoneUseError("backend_unavailable", "Native backend not started") }
@@ -306,141 +390,129 @@ final class AppleDeviceBackend: SessionBackend {
         }, checkCancellation: { try self.cancellation.check() }).run(bundle: bundle, relaunch: relaunch)
     }
     func observe() throws -> CapturedObservation {
-        try capture(preferredSource: nil)
+        try capture(budget: NativeCaptureBudget(requestDeadline: ProcessInfo.processInfo.systemUptime + 30, purpose: .observation))
     }
     func observeText(_ options: NativeTextObservationOptions) throws -> CapturedObservation {
-        try capture(preferredSource: nil, textBaseline: options)
+        try capture(textOptions: options, budget: NativeCaptureBudget(requestDeadline: ProcessInfo.processInfo.systemUptime + 30, purpose: .observation))
     }
-    private func capture(preferredSource: String?, textBaseline: NativeTextObservationOptions? = nil, textPhase: (guardValue: ScreenGuard, field: NativeTextPhaseMatcher, deadline: TimeInterval)? = nil) throws -> CapturedObservation {
+    func observeAfterAction(textOptions: NativeTextObservationOptions?, ignoring: ScreenRect?, sourceContext: ScreenContext?) throws -> CapturedObservation {
+        try NativePostActionStability.capture(ignoring: ignoring, sourceContext: sourceContext,
+            checkCancellation: { try self.cancellation.check() }) { deadline in
+                // All samples and owned recovery share one bounded post-action
+                // deadline. No sampling can extend the original input lease.
+                try self.capture(textOptions: textOptions, budget: NativeCaptureBudget(requestDeadline: deadline, purpose: .observation))
+            }
+    }
+    private func capture(textOptions: NativeTextObservationOptions? = nil, budget: NativeCaptureBudget? = nil) throws -> CapturedObservation {
+        releaseRecordingMediaIfFinished()
+        guard recordingMediaCleanup["mediaStopAcknowledged"] as? Bool != false else {
+            throw IPhoneUseError("native_media_cleanup_unconfirmed", "Owned media may still be active; screenshot orientation cannot be verified")
+        }
         guard controlErrorCode != "native_orientation_unverified" else {
             throw IPhoneUseError("native_orientation_unverified", controlError!)
         }
         do {
-            return try NativeCaptureChecks.withOrientationRecovery(capture: { afterRefresh in
-                try self.captureOnce(preferredSource: preferredSource, mediaTimeout: afterRefresh ? 1 : 0.15, textBaseline: textBaseline, textPhase: textPhase)
+            let observation = try NativeCaptureChecks.withOrientationRecovery(capture: { afterRefresh in
+                try budget?.check()
+                return try self.captureOnce(mediaTimeout: afterRefresh ? 1 : 0.15, textOptions: textOptions, budget: budget)
             }, resynchronize: {
+                try self.cancellation.check()
+                try budget?.check()
                 guard let cli = self.cli, let media = self.media else {
                     throw IPhoneUseError("native_orientation_unverified", "Owned media is unavailable")
                 }
-                // A CLI screenshot can share the same stale Apple transform.
-                if self.recording?.isActive == true { self.recording?.endSegment(reason: "orientation_unverified") }
-                return try media.resynchronizeOrientation(mayReplace: self.hid?.state == .ready) {
-                    let first = try NativeCaptureChecks.read { try cli.read($0) }.display
-                    let second = try NativeCaptureChecks.read { try cli.read($0) }.display
+                if self.recording?.isActive == true {
+                    // Keep the captured recording segment, then leave the stream
+                    // stopped. The retry is an Apple PNG observation and must
+                    // not silently create another resident stream.
+                    self.recording?.endSegment(reason: "orientation_unverified")
+                    self.releaseRecordingMediaIfFinished()
+                    guard self.recordingMediaCleanup["mediaStopAcknowledged"] as? Bool == true else {
+                        throw IPhoneUseError("native_orientation_unverified", "Owned media stop was not confirmed")
+                    }
+                    try self.cancellation.check()
+                    try budget?.check()
+                    let first = try NativeCaptureChecks.read { try cli.read($0, budget: budget) }.display
+                    let second = try NativeCaptureChecks.read { try cli.read($0, budget: budget) }.display
+                    guard first == second else { throw IPhoneUseError("capture_context_changed", "Display changed while verifying orientation") }
+                    return true
+                }
+                return try media.resynchronizeOrientation(mayReplace: self.hid?.state == .ready, check: {
+                    try self.cancellation.check()
+                    try budget?.check()
+                }) {
+                    let first = try NativeCaptureChecks.read { try cli.read($0, budget: budget) }.display
+                    let second = try NativeCaptureChecks.read { try cli.read($0, budget: budget) }.display
                     guard first == second else { throw IPhoneUseError("capture_context_changed", "Display changed while resynchronizing orientation") }
                     return second
                 }
-            })
+                }, diagnostics: { self.media?.health() ?? [:] })
+            releaseRecordingMediaIfFinished()
+            return observation
         } catch let error as IPhoneUseError where error.code == "native_orientation_unverified" {
             controlErrorCode = error.code
             controlError = String(describing: error)
             throw error
         }
     }
-    private func captureOnce(preferredSource: String?, mediaTimeout: Double, textBaseline: NativeTextObservationOptions?, textPhase: (guardValue: ScreenGuard, field: NativeTextPhaseMatcher, deadline: TimeInterval)? = nil) throws -> CapturedObservation {
+    private func captureOnce(mediaTimeout: Double, textOptions: NativeTextObservationOptions?, budget: NativeCaptureBudget?) throws -> CapturedObservation {
         guard let cli else { throw IPhoneUseError("backend_unavailable", "Native backend not started") }
-        let captured = try cli.capture(generation: generation, preferredSource: preferredSource, textPhase: textPhase, prepareDisplay: { display in
+        let captured = try cli.capture(generation: generation, budget: budget, prepareDisplay: { display in
             try self.cancellation.check()
             // Startup failure remains observation-only. Once control is started,
             // a failed display rebind cannot silently return an unsafe image.
-            if self.controlError == nil {
+            if self.controlError == nil, self.media?.isActive == true {
                 if self.recording?.isActive == true, self.media?.matchesDisplay(display) == false {
                     self.recording?.endSegment(reason: "display_changed")
+                    self.releaseRecordingMediaIfFinished()
+                    guard self.recordingMediaCleanup["mediaStopAcknowledged"] as? Bool == true else {
+                        throw IPhoneUseError("native_orientation_unverified", "Owned media stop was not confirmed")
+                    }
+                    // The pre-stop topology may be Apple's stale transform.
+                    // Discard this capture attempt and read the display again.
+                    throw IPhoneUseError("capture_context_changed", "Recording ended after a display change; recapture after media cleanup")
                 }
-                try self.media?.ensureDisplay(display, mayReplace: self.hid?.state == .ready)
+                if self.media?.isActive == true {
+                    try self.media?.ensureDisplay(display, mayReplace: self.hid?.state == .ready)
+                }
             }
-        }, mediaCapture: { display, requestedAt in
+        }, validateDisplay: { display, requestedAt in
             try self.cancellation.check()
             guard self.controlError == nil else {
-                return (nil, ["fallbackReason": "owned_media_unavailable"])
+                return ["verification": "observation_only"]
             }
-            guard let media = self.media,
-                  media.matchesDisplay(display), media.health()["healthy"] as? Bool == true,
+            guard let media = self.media, media.isActive else {
+                return ["verification": "apple_png_and_stable_display_metadata"]
+            }
+            guard media.matchesDisplay(display), media.health()["healthy"] as? Bool == true,
                   let receiver = media.recordingReceiver, receiver.snapshots != nil else {
                 throw IPhoneUseError("native_orientation_unverified", "Owned media cannot verify display geometry; reconnect explicitly")
             }
-            let phase = preferredSource == "native_media" ? textPhase : nil
-            let baseline = textBaseline.map { NativeTextBaseline(options: $0) }
-            let baselineDeadline = requestedAt + NativeTextBaseline.budget
-            var samples: [[String: Any]] = []
-            for attempt in 1...(baseline != nil ? NativeTextBaseline.maximumSamples : phase == nil ? 1 : 6) {
-                if baseline != nil {
-                    let end = min(baselineDeadline, requestedAt + Double(attempt - 1) * NativeTextBaseline.interval)
-                    while ProcessInfo.processInfo.systemUptime < end {
-                        try self.cancellation.check()
-                        Thread.sleep(forTimeInterval: min(0.02, max(0, end - ProcessInfo.processInfo.systemUptime)))
-                    }
-                    if ProcessInfo.processInfo.systemUptime >= baselineDeadline {
-                        return (nil, ["textBaseline": baseline!.result.merging(["established": false]) { _, value in value }, "fallbackReason": "text_baseline_unstable"])
-                    }
-                }
-                if let phase, attempt > 1 {
-                    let now = ProcessInfo.processInfo.systemUptime
-                    let delay = NativeTextPhaseSchedule.delay(attempt: attempt, started: requestedAt, now: now, deadline: phase.deadline)
-                    let end = now + delay
-                    while ProcessInfo.processInfo.systemUptime < end {
-                        try self.cancellation.check()
-                        Thread.sleep(forTimeInterval: min(0.02, max(0, end - ProcessInfo.processInfo.systemUptime)))
-                    }
-                }
-                try self.cancellation.check()
-                let sampleStarted = ProcessInfo.processInfo.systemUptime
-                guard phase == nil || sampleStarted < phase!.deadline else {
-                    throw IPhoneUseError("stale_observation", "Text phase capture deadline expired")
-                }
-                let frame = try receiver.snapshot(after: sampleStarted, timeout: mediaTimeout, cancellation: self.cancellation)
-                if frame == nil { try receiver.snapshots?.rejectConflictingGeometry(display) }
-                _ = try NativeSnapshotImage.validateGeometry(frame, display: display)
-                var facts: [String: Any] = ["geometryValidated": true, "displayRotation": display.rotation]
-                if preferredSource == "coredevice_screenshot" { return (nil, facts) }
-                let png: Data
-                do {
-                    let value = try NativeSnapshotImage.png(frame!, display: display)
-                    png = value.0; facts.merge(value.1) { _, value in value }
-                } catch let error as IPhoneUseError where NativeCaptureChecks.needsOrientationRecovery(error) { throw error }
-                catch {
-                    facts["fallbackReason"] = "media_image_unavailable"
-                    return (nil, facts)
-                }
-                if let baseline {
-                    let stable = try baseline.accept(png: png, context: display.context, at: sampleStarted)
-                    facts["textBaseline"] = baseline.result
-                    if stable, ProcessInfo.processInfo.systemUptime < baselineDeadline { return (png, facts) }
-                    if attempt == NativeTextBaseline.maximumSamples {
-                        facts["textBaseline"] = baseline.result.merging(["established": false]) { _, value in value }
-                        facts["fallbackReason"] = "text_baseline_unstable"
-                        return (nil, facts)
-                    }
-                    continue
-                }
-                guard let phase else { return (png, facts) }
-                var check = try phase.guardValue.check(png: png, context: display.context)
-                let match = try phase.field.check(png: png, context: display.context)
-                check.apply(match, caret: phase.field.caretRect)
-                samples.append(["attempt": attempt, "elapsedMs": (ProcessInfo.processInfo.systemUptime - requestedAt) * 1000,
-                                "screenGuard": check.result])
-                facts["textPhaseSamples"] = samples
-                if check.accepted || check.screenChange > check.policy.maxScreenChange || attempt == 6 {
-                    // CLI.capture still validates lock/display AFTER this burst.
-                    // The outer preflight then validates this actual selected PNG.
-                    return (png, facts)
-                }
-            }
-            throw ScreenGuard.Failure.invalidGuard
+            // Apple can cache its old transform while a media stream survives
+            // rotation. Retain independent geometry verification, without using
+            // any decoded pixel as an observation or input-comparison baseline.
+            let frame = try receiver.snapshot(after: requestedAt, timeout: mediaTimeout, cancellation: self.cancellation)
+            if frame == nil { try receiver.snapshots?.rejectConflictingGeometry(display) }
+            _ = try NativeSnapshotImage.validateGeometry(frame, display: display)
+            return ["verification": "owned_media_geometry", "geometryValidated": true,
+                    "displayRotation": display.rotation]
         })
         var metadata = captured.metadata
-        if let textBaseline {
-            metadata["textObservationOptions"] = try textBaseline.result
-            // Apple PNG fallback is the source of this new observation. Later
-            // preflight remains pinned to that source by the existing contract.
+        if let textOptions {
+            guard let rawContext = captured.metadata["screenContext"] as? [String: Any] else { throw ScreenGuard.Failure.invalidGuard }
+            let context = try JSONDecoder().decode(ScreenContext.self, from: jsonData(rawContext))
+            _ = try ScreenGuard(png: captured.screenshot, context: context,
+                                rects: [textOptions.field], policy: .init(), ignoring: textOptions.ignoring)
+            metadata["textObservationOptions"] = try textOptions.result
         }
-        if controlError == nil, let health = media?.health() {
+        if controlError == nil, media?.isActive == true, let health = media?.health() {
             metadata["mediaSessionID"] = health["mediaSessionID"]
             metadata["mediaDisplayRefreshCount"] = health["displayRefreshCount"]
         }
         return CapturedObservation(nodes: captured.nodes, metadata: metadata, screenshot: captured.screenshot)
     }
     func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any] {
+        releaseRecordingMediaIfFinished()
         let typing = action.kind == "type" && action.reference.node == nil
         let pressing = action.kind == "press" && action.reference.node == nil
         let keyboardAction = typing || pressing
@@ -450,8 +522,8 @@ final class AppleDeviceBackend: SessionBackend {
         }
         let textInput = typing ? try NativeTextInput(text: action.fields["text"] as! String, mode: action.fields["mode"] as! String, method: action.fields["textMethod"] as? String ?? "auto") : nil
         defer { if textInput?.usesPasteboard == true { pasteboard?.endInputAttempt() } }
-        let control = controlStatus(mediaHealth: media?.health() ?? [:])
-        guard control.available, let hid, let media else {
+        let control = controlStatus(mediaHealth: mediaStatus)
+        guard control.available, let hid else {
             throw ActionFailure(code: "native_control_unavailable", description: control.message ?? "Native control is unavailable",
                                 possiblyExecuted: false, requiresObservation: false, result: control.result)
         }
@@ -473,7 +545,7 @@ final class AppleDeviceBackend: SessionBackend {
         if keyboardAction {
             try screenGuard.validate()
             guard screenGuard.regions.map(\.rect) == [action.textRegion ?? screenGuard.context.screen] else { throw ScreenGuard.Failure.invalidGuard }
-            // Registration can change keyboard visibility. Capture/guard after it, before any key.
+            // Discover the built-in keyboard, then capture/guard before any key.
             try hid.prepareKeyboard()
         }
         if homeAction {
@@ -492,34 +564,23 @@ final class AppleDeviceBackend: SessionBackend {
         var check: ScreenGuard.Check
         var captures = 0
         var preInputChecks: [[String: Any]] = []
+        var inputBudget: NativeCaptureBudget?
         func preflight(stage: String) throws -> ScreenGuard.Check {
-            let deadline = timing.preflightDeadline(now: ProcessInfo.processInfo.systemUptime)
-            let matcher = keyboardAction ? target.textFieldGuard.map { NativeTextPhaseMatcher(field: $0) } : nil
-            let phase = matcher.map { (guardValue: screenGuard, field: $0, deadline: deadline) }
+            let budget = try timing.captureBudget(now: ProcessInfo.processInfo.systemUptime)
+            inputBudget = budget
+            let deadline = budget.requestDeadline
             let (value, count) = try NativeInputPreflight.check(guard: screenGuard,
                 displayID: target.context["displayID"] as? UInt64, displayRotation: rotation,
                 captureSource: target.context["captureSource"] as? String,
                 deadline: deadline,
-                // Editing keys can encounter the same blinking caret as paste.
-                // Retry only captures against the original guard, never input.
-                maximumCaptures: keyboardAction && phase == nil ? 6 : 1,
-                phaseMatcher: matcher, phaseSampling: keyboardAction && phase == nil,
-                gestureAppearanceGuard: target.gestureAppearanceGuard,
-                wait: { duration in
-                    let end = ProcessInfo.processInfo.systemUptime + duration
-                    while ProcessInfo.processInfo.systemUptime < end {
-                        try cancellation.check()
-                        Thread.sleep(forTimeInterval: min(0.02, max(0, end - ProcessInfo.processInfo.systemUptime)))
-                    }
-                    try cancellation.check()
-                },
+                maximumCaptures: 1, fieldGuard: keyboardAction ? target.textFieldGuard : nil,
+                caretGuard: keyboardAction ? target.textCaretGuard : nil, budget: budget,
                 record: { sample in
                     var sample = sample; sample["stage"] = stage
                     preInputChecks.append(sample)
                 }) {
-                    try cancellation.check()
-                    guard media.health()["healthy"] as? Bool == true else { throw IPhoneUseError("native_media_unhealthy", "Media stopped before input") }
-                    return try self.capture(preferredSource: target.context["captureSource"] as? String, textPhase: phase)
+                    try checkInputAvailability(budget: budget)
+                    return try self.capture(budget: budget)
                 }
             captures += count
             return value
@@ -552,8 +613,8 @@ final class AppleDeviceBackend: SessionBackend {
                 try pasteboard!.checkOwnership()
             }
             try cancellation.check()
+            try checkInputAvailability(budget: inputBudget)
             try timing.checkBeforeDispatch(now: ProcessInfo.processInfo.systemUptime)
-            guard media.health()["healthy"] as? Bool == true else { throw IPhoneUseError("native_media_unhealthy", "Media stopped before input") }
         } catch let failure as ActionFailure {
             var result = failure.result ?? [:]
             result["inputTiming"] = timing.result
@@ -563,14 +624,20 @@ final class AppleDeviceBackend: SessionBackend {
             throw ActionFailure(code: failure.code, description: failure.description, possiblyExecuted: failure.possiblyExecuted,
                 requiresObservation: failure.requiresObservation, result: result, rejectedCapture: failure.rejectedCapture)
         } catch {
-            throw ActionFailure(code: "stale_observation", description: "Pre-input capture/guard/clipboard check failed: \(error)",
+            if let failure = error as? IPhoneUseError,
+               ["native_media_busy", "native_media_ownership_unknown", "native_media_unhealthy"].contains(failure.code) {
+                throw ActionFailure(code: failure.code, description: failure.description,
+                                    possiblyExecuted: false, requiresObservation: false,
+                                    result: ["controlAvailable": false, "controlErrorCode": failure.code,
+                                             "controlError": failure.description, "recovery": NativeRecovery.resolveError.result])
+            }
+            let code = (error as? IPhoneUseError)?.code == "input_preflight_timeout" ? "input_preflight_timeout" : "stale_observation"
+            throw ActionFailure(code: code, description: "Pre-input capture/guard/clipboard check failed: \(error)",
                 possiblyExecuted: false, requiresObservation: true, result: ["pasteboard": pasteboard?.status ?? [:], "preInputChecks": preInputChecks, "inputTiming": timing.result])
         }
         var result: [String: Any]
         if let textInput {
-            func health() throws {
-                guard media.health()["healthy"] as? Bool == true else { throw IPhoneUseError("native_media_unhealthy", "Media stopped during typing") }
-            }
+            func health() throws { try checkInputCanContinue() }
             do {
                 switch textInput {
                 case .keyboard(let keys): result = try hid.type(keys, mode: action.fields["mode"] as! String, checkHealth: health)
@@ -588,33 +655,23 @@ final class AppleDeviceBackend: SessionBackend {
             }
         } else if homeAction {
             result = try hid.home(using: buttonTransport!) {
-                guard media.health()["healthy"] as? Bool == true else { throw IPhoneUseError("native_media_unhealthy", "Media stopped during Home") }
+                try checkInputCanContinue()
             }
         } else if pressing {
             guard let name = action.fields["key"] as? String, let key = NativePressKey(rawValue: name) else {
                 throw IPhoneUseError("invalid_key", "Unknown native keyboard key")
             }
-            result = try hid.press(key) {
-                guard media.health()["healthy"] as? Bool == true else { throw IPhoneUseError("native_media_unhealthy", "Media stopped during key press") }
-            }
+            result = try hid.press(key) { try checkInputCanContinue() }
         } else if action.kind == "double-tap" {
             let point = try NativeCoordinateMapper.map(target.gesture!.start, screen: screenGuard.context.screen, rotation: rotation)
-            result = try hid.doubleTap(point) {
-                guard media.health()["healthy"] as? Bool == true else { throw IPhoneUseError("native_media_unhealthy", "Media stopped during double tap") }
-            }
+            result = try hid.doubleTap(point) { try checkInputCanContinue() }
         } else if let pinch {
-            result = try hid.pinch(pinch) {
-                guard media.health()["healthy"] as? Bool == true else { throw IPhoneUseError("native_media_unhealthy", "Media stopped during pinch") }
-            }
+            result = try hid.pinch(pinch) { try checkInputCanContinue() }
         } else if let swipe {
-            result = try hid.swipe(swipe) {
-                guard media.health()["healthy"] as? Bool == true else { throw IPhoneUseError("native_media_unhealthy", "Media stopped during swipe") }
-            }
+            result = try hid.swipe(swipe) { try checkInputCanContinue() }
         } else {
             let point = try NativeCoordinateMapper.map(target.gesture!.start, screen: screenGuard.context.screen, rotation: rotation)
-            result = try hid.tap(point, hold: action.fields["duration"] as? Double ?? 0.06) {
-                guard media.health()["healthy"] as? Bool == true else { throw IPhoneUseError("native_media_unhealthy", "Media stopped during touch") }
-            }
+            result = try hid.tap(point, hold: action.fields["duration"] as? Double ?? 0.06) { try checkInputCanContinue() }
         }
         result["sourceObservationID"] = action.reference.observation
         result["inputTiming"] = timing.result
@@ -632,7 +689,8 @@ final class AppleDeviceBackend: SessionBackend {
     func cancelCurrent() { cancellation.cancel() }
     func prepareText() throws -> [String: Any] {
         try cancellation.check()
-        let control = controlStatus(mediaHealth: media?.health() ?? [:])
+        releaseRecordingMediaIfFinished()
+        let control = controlStatus(mediaHealth: mediaStatus)
         guard control.available, let hid else {
             throw ActionFailure(code: "native_control_unavailable", description: control.message ?? "Native control is unavailable",
                                 possiblyExecuted: false, requiresObservation: false, result: control.result)
@@ -640,10 +698,9 @@ final class AppleDeviceBackend: SessionBackend {
         let alreadyPrepared = hid.keyboardStatus["prepared"] as? Bool == true
         do { try hid.prepareKeyboard() }
         catch {
-            // Unlike a typing preflight, registration is this command's operation.
-            // A possibly-created service is therefore an unknown preparation result.
+            // Discovery is read-only: failure cannot have sent input or created a service.
             throw ActionFailure(code: (error as? ActionFailure)?.code ?? (error as? IPhoneUseError)?.code ?? "native_keyboard_unavailable",
-                description: String(describing: error), possiblyExecuted: hid.keyboardStatus["serviceMayExist"] as? Bool == true,
+                description: String(describing: error), possiblyExecuted: false,
                 requiresObservation: true, result: ["keyboardPrepared": false, "keyboard": hid.keyboardStatus,
                     "inputReportsSent": 0, "clipboardAccessed": false, "recovery": NativeRecovery.resolveError.result])
         }
@@ -668,37 +725,57 @@ final class AppleDeviceBackend: SessionBackend {
     func startRecording(duration: Double) throws -> [String: Any] {
         guard let cli, let recording, !stopped else { throw IPhoneUseError("backend_unavailable", "Native backend not started") }
         try cancellation.check()
+        guard eventDeliveryQueue != nil else { throw IPhoneUseError("native_recording_unavailable", "Recording requires serialized completion delivery") }
         _ = try NativeRecordingOptions.duration(["duration": duration])
         guard !recording.isActive else { throw IPhoneUseError("recording_busy", "A recording is already active") }
-        guard let media, media.health()["healthy"] as? Bool == true, hid?.state == .ready else {
-            throw IPhoneUseError("native_recording_unavailable", "Need a healthy owned native media session and ready HID")
-        }
+        releaseRecordingMediaIfFinished()
+        let control = controlStatus(mediaHealth: mediaStatus)
+        guard control.available else { throw IPhoneUseError(control.code ?? "native_recording_unavailable", control.message ?? "Native control unavailable") }
+        currentRecordingID = nil
+        guard hid?.state == .ready else { throw IPhoneUseError("native_recording_unavailable", "Need ready HID before recording") }
         guard try cli.read(["device", "info", "lockState"])["passcodeRequired"] as? Bool == false else {
             throw IPhoneUseError("device_locked", "Unlock the device before recording")
         }
         let display = try cli.display()
         guard display.backlightOn else { throw IPhoneUseError("capture_unavailable", "Wake the display before recording") }
-        guard media.matchesDisplay(display) else { throw IPhoneUseError("stale_observation", "Observe the changed display before starting recording") }
         guard display.nativeRotation == "rot0", NativeVideoOrientation(rawValue: display.rotation) != nil else {
             throw IPhoneUseError("native_recording_orientation_unsupported", "Recording requires verified native portrait display axes")
         }
         // SessionHost invalidates observations before this explicit command.
-        // Reuse the paired transport and ready HID; replace only our own stream.
-        try media.refreshForRecording(display, mayReplace: hid?.state == .ready)
-        guard let receiver = media.recordingReceiver, let mediaID = media.health()["mediaSessionID"] as? String else {
-            throw IPhoneUseError("native_recording_unavailable", "Fresh owned recording stream unavailable")
+        // Start a stream only for this explicit recording. NativeMediaSession
+        // checks the ownership inventory and refuses to replace another client.
+        if media == nil { media = try makeMediaSession() }
+        do {
+            guard let media else { throw IPhoneUseError("native_recording_unavailable", "Native media session unavailable") }
+            try media.refreshForRecording(display, mayReplace: hid?.state == .ready)
+            guard let receiver = media.recordingReceiver, let mediaID = media.health()["mediaSessionID"] as? String else {
+                throw IPhoneUseError("native_recording_unavailable", "Fresh owned recording stream unavailable")
+            }
+            let deadline = ProcessInfo.processInfo.systemUptime + 3
+            while receiver.recordingConfiguration()["RTPClockRate"] == nil, ProcessInfo.processInfo.systemUptime < deadline {
+                try cancellation.check(); Thread.sleep(forTimeInterval: 0.05)
+            }
+            try cancellation.check()
+            guard try cli.display() == display else { throw IPhoneUseError("capture_context_changed", "Display changed while preparing recording; observe again") }
+            let result = try recording.start(duration: duration, receiver: receiver, mediaID: mediaID, rotation: display.rotation)
+            currentRecordingID = result["recordingID"] as? String
+            return result
+        } catch {
+            releaseRecordingMediaIfFinished()
+            throw error
         }
-        let deadline = ProcessInfo.processInfo.systemUptime + 3
-        while receiver.recordingConfiguration()["RTPClockRate"] == nil, ProcessInfo.processInfo.systemUptime < deadline {
-            try cancellation.check(); Thread.sleep(forTimeInterval: 0.05)
-        }
-        try cancellation.check()
-        guard try cli.display() == display else { throw IPhoneUseError("capture_context_changed", "Display changed while preparing recording; observe again") }
-        return try recording.start(duration: duration, receiver: receiver, mediaID: mediaID, rotation: display.rotation)
     }
     func stopRecording(id: String) throws -> [String: Any] {
         guard let recording else { throw IPhoneUseError("backend_unavailable", "Native backend not started") }
-        return try recording.stop(id: id)
+        var result = try recording.stop(id: id)
+        releaseRecordingMediaIfFinished()
+        let cleanup = recordingCleanupByID[id] ?? [:]
+        result["mediaCleanup"] = cleanup
+        if cleanup["mediaStopAcknowledged"] as? Bool == false {
+            throw ActionFailure(code: "recording_cleanup_unconfirmed", description: "Recording stopped but media cleanup was not confirmed",
+                                possiblyExecuted: true, requiresObservation: true, result: result)
+        }
+        return result
     }
     func stop() -> [String: Any] {
         if stopped { return cleanupFacts }
@@ -708,8 +785,10 @@ final class AppleDeviceBackend: SessionBackend {
         result.merge(hid?.closeKeyboard() ?? ["keyboardRemoveAcknowledged": true]) { _, new in new }
         result.merge(pasteboard?.close() ?? ["pasteboardRestoreAcknowledged": true]) { _, new in new }
         pasteboardTransport?.cancel(); pasteboardTransport = nil
-        result.merge(media?.close() ?? cleanupFacts) { _, new in new }
-        mediaTransport?.cancel(); hidTransport?.cancel(); buttonTransport?.cancel(); buttonTransport = nil; hid = nil; media = nil
+        let mediaCleanup = media?.close() ?? (recordingMediaCleanup.isEmpty ? ["mediaStopAcknowledged": true] : recordingMediaCleanup)
+        result.merge(cleanupFacts) { _, new in new }
+        result.merge(mediaCleanup) { _, new in new }
+        mediaTransport?.cancel(); hidTransport?.cancel(); buttonTransport?.cancel(); buttonTransport = nil; hid = nil; media = nil; mediaClient = nil
         result["tunnelReleaseAcknowledged"] = tunnel?.close() ?? (cleanupFacts["tunnelReleaseAcknowledged"] as? Bool ?? true)
         tunnel = nil
         deviceLock = nil

@@ -4,13 +4,18 @@ import AppleNativeBridge
 // Both control modes use the same Apple display negotiation and owned RTP
 // implementation. This factory never opens a HID or pasteboard service.
 enum NativeMediaFactory {
-    static func make(transport: NativeTransport, identifier: String, address: String,
-                     cancellation: NativeCancellation, captureSnapshots: Bool = false) throws -> NativeDisplayMediaSession {
+    static func coreDeviceVersion() throws -> String {
         let infoURL = URL(fileURLWithPath: "/Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/Resources/Info.plist")
         let info = try PropertyListSerialization.propertyList(from: Data(contentsOf: infoURL), format: nil) as? [String: Any]
         guard let version = info?["CFBundleVersion"] as? String else {
             throw IPhoneUseError("native_version_unsupported", "Installed CoreDevice version unavailable")
         }
+        return version
+    }
+
+    static func make(transport: NativeTransport, identifier: String, address: String,
+                     cancellation: NativeCancellation, captureSnapshots: Bool = false) throws -> NativeDisplayMediaSession {
+        let version = try coreDeviceVersion()
         return NativeDisplayMediaSession(makeSession: {
             try cancellation.check()
             let receiver = try NativeRTPReceiver(deviceAddress: address, captureSnapshots: captureSnapshots)

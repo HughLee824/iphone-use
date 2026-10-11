@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 enum NativePressKey: String, CaseIterable {
     case returnKey = "return", backspace, left, right, up, down, tab
@@ -53,26 +54,30 @@ enum NativeKeyboard {
         for index in 0..<6 { bytes[31 + index] = UInt8(truncatingIfNeeded: timestamp >> (8 * index)) }
         return Data(bytes)
     }
-    // Standard keyboard descriptor: modifiers, reserved byte, six usage slots.
-    // Remote UniversalHID's 39-byte usage-set envelope is separate from this descriptor.
-    static let descriptor = Data([
-        0x05,0x01, 0x09,0x06, 0xa1,0x01,
-        0x05,0x07, 0x19,0xe0, 0x29,0xe7, 0x15,0x00, 0x25,0x01, 0x75,0x01, 0x95,0x08, 0x81,0x02,
-        0x75,0x08, 0x95,0x01, 0x81,0x01,
-        0x19,0x00, 0x2a,0xff,0x00, 0x15,0x00, 0x26,0xff,0x00, 0x75,0x08, 0x95,0x06, 0x81,0x00, 0xc0
-    ])
-    static func properties(id: UInt64, product: String) -> [String: Any] {
-        let pair: [String: Any] = ["DeviceUsagePage": 1, "DeviceUsage": 6]
-        let storage: [String: Any] = [
-            "Manufacturer": ["string": "iPhone-use"], "Product": ["string": product],
-            "VendorID": ["int": 0], "ProductID": ["int": 0],
-            "PrimaryUsagePage": ["int": 1], "PrimaryUsage": ["int": 6],
-            "DeviceUsagePairs": ["array": [["dictionary": ["DeviceUsagePage": ["int": 1], "DeviceUsage": ["int": 6]]]]],
-            "Transport": ["string": "Virtual"], "ReportDescriptor": ["data": descriptor],
-            "UniversalControlVirtualService": ["bool": true], "_ServiceID": ["uint": nativeUInt(id)]
-        ]
-        return ["PrimaryUsagePage": nativeUInt(1), "PrimaryUsage": nativeUInt(6), "DeviceUsagePairs": [pair],
-                "VendorID": 0, "ProductID": 0, "Product": product, "_ServiceID": nativeUInt(id),
-                "_CoreDevice_codablePropertyStorage": storage]
+    static func builtInService(in services: [[String: Any]]) throws -> UInt64 {
+        func identifier(_ value: Any?) -> UInt64? {
+            guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+                  let id = UInt64(number.stringValue), id > 0 else { return nil }
+            return id
+        }
+        let matches = services.filter { service in
+            guard service["DeviceTypeHint"] as? String == "Keyboard",
+                  service["Product"] as? String == "CoreDevice keyboard",
+                  (service["PrimaryUsagePage"] as? NSNumber)?.intValue == 0,
+                  (service["PrimaryUsage"] as? NSNumber)?.intValue == 0,
+                  let storage = service["_CoreDevice_codablePropertyStorage"] as? [String: Any],
+                  (storage["Transport"] as? [String: String])?["string"] == "CoreDevice",
+                  let usages = (storage["_CoreDevice_originalUsages"] as? [String: Any])?["array"] as? [[String: Any]] else { return false }
+            return usages.contains { usage in
+                guard let pair = usage["dictionary"] as? [String: Any] else { return false }
+                return (pair["DeviceUsagePage"] as? [String: Int])?["int"] == 1
+                    && (pair["DeviceUsage"] as? [String: Int])?["int"] == 6
+            }
+        }
+        guard matches.count == 1, let id = identifier(matches[0]["_ServiceID"]),
+              services.filter({ identifier($0["_ServiceID"]) == id }).count == 1 else {
+            throw IPhoneUseError("native_keyboard_unavailable", "No unique built-in CoreDevice keyboard; no hardware keyboard will be registered")
+        }
+        return id
     }
 }

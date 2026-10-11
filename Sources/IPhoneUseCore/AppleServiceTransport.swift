@@ -128,7 +128,7 @@ struct NativeFeatureClient {
     let deviceIdentifier: String
     let version: String
 
-    func invoke(_ feature: String, action: String, input: [String: Any] = [:]) throws -> [String: Any] {
+    func invoke(_ feature: String, action: String, input: [String: Any] = [:], timeout: TimeInterval = 10) throws -> [String: Any] {
         let invocation = UUID().uuidString
         let components = version.split(separator: ".").compactMap { UInt64($0) }
         guard !components.isEmpty, components.count == version.split(separator: ".").count else {
@@ -143,7 +143,7 @@ struct NativeFeatureClient {
             "CoreDevice.featureIdentifier": "com.apple.coredevice.feature.\(feature)",
             "CoreDevice.actionIdentifier": "com.apple.coredevice.action.\(action)",
             "CoreDevice.action": [:], "CoreDevice.input": input
-        ], timeout: 10)
+        ], timeout: timeout)
         if let echoed = reply["CoreDevice.invocationIdentifier"] as? String, echoed != invocation {
             transport.cancel()
             throw TransportError(description: "CoreDevice invocation mismatch", possiblySent: true)

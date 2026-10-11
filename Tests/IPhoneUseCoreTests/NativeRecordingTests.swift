@@ -34,8 +34,41 @@ final class NativeRecordingTests: XCTestCase {
         let decoder = FixtureHEVCDecoder()
         return NativeVideoWriter(url: url, timescale: timescale, orientation: orientation, decode: { try decoder.decode($0) })
     }
-    private func fixtureRecorder(root: URL, now: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime }) -> NativeStreamRecording {
-        NativeStreamRecording(root: root, now: now, makeWriter: { self.fixtureWriter(url: $0, timescale: $1, orientation: $2) })
+    private func fixtureRecorder(root: URL, now: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime },
+                                 onFinish: @escaping (String, String) -> Void = { _, _ in }) -> NativeStreamRecording {
+        NativeStreamRecording(root: root, now: now, onFinish: onFinish, makeWriter: { self.fixtureWriter(url: $0, timescale: $1, orientation: $2) })
+    }
+
+    func testTimerDeliversOwnedCompletionWithoutStatusOrStopPolling() throws {
+        for reason in ["duration", "media_lost"] {
+            let source = RecordingSource(), clock = RecordingTestClock()
+            let delivery = DispatchQueue(label: "recording-test.owner")
+            let finished = expectation(description: reason)
+            var delivered: [(String, String)] = []
+            var recorder: NativeStreamRecording!
+            recorder = fixtureRecorder(root: try root(), now: clock.now, onFinish: { id, mediaID in
+                delivery.async {
+                    // Like SessionHost, serialized delivery can inspect the
+                    // recorder without reentering its private finish queue.
+                    XCTAssertFalse(recorder.isActive)
+                    XCTAssertFalse(source.attached)
+                    delivered.append((id, mediaID))
+                    finished.fulfill()
+                }
+            })
+            let start = try recorder.start(duration: 2, receiver: source, mediaID: "owned-\(reason)", rotation: "rot0")
+            let id = try XCTUnwrap(start["recordingID"] as? String)
+            if reason == "duration" { clock.set(103) } else { source.setHealthy(false) }
+            wait(for: [finished], timeout: 3)
+            let result = try recorder.stop(id: id)
+            XCTAssertEqual(result["stopReason"] as? String, reason)
+            _ = recorder.close()
+            delivery.sync {
+                XCTAssertEqual(delivered.count, 1, "Idempotent stop and close cannot deliver another completion")
+                XCTAssertEqual(delivered.first?.0, id)
+                XCTAssertEqual(delivered.first?.1, "owned-\(reason)")
+            }
+        }
     }
 
     func testReceiverFeedsSnapshotAndRecordingIndependently() throws {

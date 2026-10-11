@@ -46,7 +46,7 @@ enum NativeRecovery: String {
                     || (response["observation"] as? [String: Any])?["ok"] as? Bool == true {
             step = (response["observation"] as? [String: Any])?["ok"] as? Bool == true
                 ? NativeRecovery.inspectObservation.result : NativeRecovery.observe.result
-        } else if ["device_locked", "capture_unavailable", "capture_context_changed", "invalid_image", "stale_reference", "stale_observation"].contains(code ?? "") {
+        } else if ["device_locked", "capture_unavailable", "capture_context_changed", "capture_timeout", "coredevice_timeout", "invalid_image", "stale_reference", "stale_observation"].contains(code ?? "") {
             step = NativeRecovery.observe.result
         } else { step = NativeRecovery.none.result }
         facts["recovery"] = step
@@ -68,7 +68,7 @@ struct NativeControlStatus {
     }
 
     static func resolve(hid: NativeHIDAdapter.State?, media: [String: Any], closing: Bool,
-                        startupCode: String?, startupError: String?) -> Self {
+                        startupCode: String?, startupError: String?, requiresMedia: Bool = true) -> Self {
         // Preserve irreversible input uncertainty even if media also stops or cancellation follows.
         if hid == .releaseUncertain { return Self(code: "native_release_uncertain", message: "Input release was not confirmed by the local send barrier; device delivery remains unknown.", recovery: .reconnectAndObserve) }
         if hid == .inputUncertain { return Self(code: "native_input_uncertain", message: "An input failed after a send attempt; this HID session cannot accept more input.", recovery: .reconnectAndObserve) }
@@ -76,11 +76,11 @@ struct NativeControlStatus {
         if let startupError { return Self(code: startupCode ?? "native_control_unavailable", message: startupError, recovery: .resolveError) }
         guard let hid, hid != .unprepared else { return Self(code: "native_hid_unavailable", message: "No negotiated HID surface is available.", recovery: .resolveError) }
         if hid == .contactActive { return Self(code: "native_contact_active", message: "A touch contact or keyboard key is still active; wait for the original action and inspect the session.", recovery: .checkSession) }
-        if media["healthReason"] as? String == "display_refresh_failed" {
+        if requiresMedia, media["healthReason"] as? String == "display_refresh_failed" {
             return Self(code: "native_media_display_refresh_failed", message: media["error"] as? String,
                         recovery: .reconnectAndObserve, mediaFailureSnapshot: media)
         }
-        guard media["healthy"] as? Bool == true else {
+        guard !requiresMedia || media["healthy"] as? Bool == true else {
             return Self(code: "native_media_unhealthy", message: media["error"] as? String ?? "Media has no recent healthy RTP/RTCP flow.",
                         recovery: .checkMediaAndObserve, mediaFailureSnapshot: media)
         }

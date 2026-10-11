@@ -22,8 +22,10 @@ private final class ControlledBackend: SessionBackend {
     var actionFailure: ActionFailure?
     var blockAction = false
     var failObservation = false
+    var observationFailure: IPhoneUseError?
     var nativeSend = false
     var nativeTextFixture = false
+    var nativeCaretFixture = false
     var finishAcknowledged = true
     private(set) var finishCount = 0
     private(set) var prepareCount = 0
@@ -61,14 +63,24 @@ private final class ControlledBackend: SessionBackend {
     }
     func observe() throws -> CapturedObservation {
         observeCount += 1
+        if let observationFailure { throw observationFailure }
         if failObservation { throw IPhoneUseError("capture_failed", "Fixture capture failure") }
         if nativeTextFixture {
             return CapturedObservation(nodes: [], metadata: ["backend": "apple-native",
-                "screenContext": try jsonObject(JSONEncoder().encode(screenTestContext()))], screenshot: try screenPNG())
+                "screenContext": try jsonObject(JSONEncoder().encode(screenTestContext()))], screenshot: try screenPNG(patches: nativeCaretFixture ? [(CGRect(x:50,y:150,width:2,height:20),[7,193,96])] : []))
         }
         return try observationFixture()
     }
     private(set) var textObservationCount = 0
+    var postActionStable = true
+    private(set) var postActionObserveCount = 0
+    func observeAfterAction(textOptions: NativeTextObservationOptions?, ignoring: ScreenRect?, sourceContext: ScreenContext?) throws -> CapturedObservation {
+        postActionObserveCount += 1
+        let frame = try textOptions.map { try observeText($0) } ?? observe()
+        var metadata = frame.metadata
+        metadata["postActionStability"] = ["stable": postActionStable, "reason": postActionStable ? "stable" : "frame_stability_timeout"]
+        return CapturedObservation(nodes: frame.nodes, metadata: metadata, screenshot: frame.screenshot)
+    }
     func observeText(_ options: NativeTextObservationOptions) throws -> CapturedObservation {
         textObservationCount += 1
         let captured = try observe()
@@ -170,6 +182,25 @@ final class HostTests: XCTestCase {
             XCTAssertEqual(stopped["ok"] as? Bool, true)
             XCTAssertEqual(backend.recordingStops, 1)
         }
+    }
+
+    func testCaretWireOperationsRequireExplicitConfirmationAndConsumeObservation() throws {
+        let backend = ControlledBackend(); backend.nativeTextFixture = true; backend.nativeCaretFixture = true
+        let (paths, session, finished) = try host(timeout:5,backend:backend,native:true)
+        defer { _ = try? call(paths,session:session,op:"disconnect"); wait(for:[finished],timeout:3) }
+        for op in ["type-with-caret", "press-with-caret"] {
+            let observed = try call(paths,session:session,op:"observe")
+            let reference = (observed["result"] as! [String:Any])["observation"] as! String
+            var fields: [String:Any] = ["reference":reference,"mode":"insert","text":"a","key":"left","fieldRect":"18,139,354,160"]
+            let missing = try call(paths,session:session,op:op,fields:fields)
+            XCTAssertEqual((missing["error"] as? [String:Any])?["code"] as? String,"invalid_caret_region")
+            fields["caretRect"] = "49,149,4,22"
+            let accepted = try call(paths,session:session,op:op,fields:fields)
+            XCTAssertEqual(accepted["ok"] as? Bool,true)
+            let stale = try call(paths,session:session,op:op,fields:fields)
+            XCTAssertEqual(stale["outcome"] as? String,"not_dispatched")
+        }
+        XCTAssertEqual(backend.actionCount,2)
     }
 
     func testScopedPreparationSelectsTextObservationAndRejectsMalformedRequestBeforeRegistration() throws {
@@ -388,13 +419,40 @@ final class HostTests: XCTestCase {
             wait(for: [finished], timeout: 3)
         }
         _ = try call(paths, session: session, op: "observe")
-        backend.failObservation = true
+        backend.observationFailure = IPhoneUseError("post_action_capture_timeout", "No valid frame",
+            diagnostics: ["capture": ["failedStage": "checksAfter", "commands": [["command": "device info lockState", "ok": false]]]])
         let response = try call(paths, session: session, op: "tap", fields: ["reference": "o1:e11"])
         XCTAssertEqual(response["outcome"] as? String, "unknown")
         XCTAssertEqual((response["result"] as? [String: Any])?["transportStatus"] as? String, "sent")
         XCTAssertEqual((response["observation"] as? [String: Any])?["ok"] as? Bool, false)
+        let observation = try XCTUnwrap(response["observation"] as? [String: Any])
+        XCTAssertEqual(observation["errorCode"] as? String, "post_action_capture_timeout")
+        let diagnostics = observation["diagnostics"] as? [String: Any]
+        XCTAssertEqual((diagnostics?["capture"] as? [String: Any])?["failedStage"] as? String, "checksAfter")
         XCTAssertEqual(((response["result"] as? [String: Any])?["recovery"] as? [String: Any])?["nextAction"] as? String, "observe")
         XCTAssertEqual(backend.actionCount, 1)
+    }
+
+    func testNativeUnstableObservationPreservesUnknownInputAndNeverReplays() throws {
+        let backend = ControlledBackend(); backend.nativeSend = true; backend.postActionStable = false
+        let (paths, session, finished) = try host(timeout: 5, backend: backend, native: true)
+        defer { _ = try? call(paths, session: session, op: "disconnect"); wait(for: [finished], timeout: 3) }
+        _ = try call(paths, session: session, op: "observe")
+        let response = try call(paths, session: session, op: "tap", fields: ["reference": "o1:e11"])
+        XCTAssertEqual(response["outcome"] as? String, "unknown")
+        XCTAssertEqual((response["result"] as? [String: Any])?["transportStatus"] as? String, "sent")
+        let observation = try XCTUnwrap(response["observation"] as? [String: Any])
+        XCTAssertEqual(observation["ok"] as? Bool, true)
+        XCTAssertEqual((observation["stability"] as? [String: Any])?["stable"] as? Bool, false)
+        XCTAssertNotNil(observation["warning"])
+        let after = try XCTUnwrap(observation["result"] as? [String: Any])
+        XCTAssertEqual(after["observation"] as? String, "o2")
+        let snapshot = try jsonObject(Data(contentsOf: URL(fileURLWithPath: after["snapshot"] as! String)))
+        XCTAssertEqual(((snapshot["metadata"] as? [String: Any])?["postActionStability"] as? [String: Any])?["stable"] as? Bool, false)
+        let summary = AgentOutput.summarize(response)["agentSummary"] as? [String: Any]
+        XCTAssertEqual(summary?["nextStep"] as? String, "inspect_unstable_observation_do_not_replay")
+        XCTAssertEqual(backend.inputCount, 1)
+        XCTAssertEqual(backend.postActionObserveCount, 1)
     }
 
     func testNativePreDispatchFailureDoesNotCaptureOrInvalidateCurrentReference() throws {

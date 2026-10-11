@@ -173,7 +173,9 @@ flowchart LR
     Runner <--> Apps
 ```
 
-`connect` starts the host and fixes the selected mode. Standard connects to Apple native services and owns its media/HID channels; Runner uses Xcode's `test-without-building` to install and launch XCTest. The host retains the connection between CLI calls, serializes requests, caches observations and manages cleanup. It never switches control routes automatically.
+Standard observations and pre-input image checks use Apple CoreDevice PNG exclusively; media starts only for explicit recording, with geometry checks while recording. Screenshot failures never fall back to media pixels.
+
+`connect` starts the host and fixes the selected mode. Standard connects to Apple native services and owns its HID connection and any explicitly requested recording stream; Runner uses Xcode's `test-without-building` to install and launch XCTest. The host retains the connection between CLI calls, serializes requests, caches observations and manages cleanup. It never switches control routes automatically.
 
 Session files default to `/private/tmp/agentsoma-<uid>` with directory permissions `0700`; `IPHONE_USE_STATE_DIR` can select an alternative path. Packaged Runner preparation lives in `~/Library/Application Support/iphone-use`. Signing private keys stay in Keychain; the device token stays in host memory and the XCTest subprocess environment.
 

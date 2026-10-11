@@ -1,5 +1,7 @@
 # 标准模式会话截图来源策略
 
+**2026-10-04 当前实现：** 标准模式已统一为 Apple PNG，媒体不再作为截图来源；下文媒体优先、回退与媒体文字基线是历史记录。见 [Apple PNG 统一来源](native-apple-png-observation.md)。
+
 **2026-10-01 当前策略：** VRA 解码与缺帧方向同步修复后，标准模式已恢复媒体截图优先；动作前固定原观察来源，方向未确认时禁止 Apple 回退。见[恢复实现与真机验收](native-media-first-acceptance.md)。下文保留 9 月 26 日的历史策略和证据，不代表当前全部行为。
 
 日期：2026-09-26。接续[媒体截图性能](native-capture-performance.md)与[方向重新同步](native-rotation-synchronization.md)。范围仅为标准模式；不增加配置项，不改变 Runner 的截图实现。

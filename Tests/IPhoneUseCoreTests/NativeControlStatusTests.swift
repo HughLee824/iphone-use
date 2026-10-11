@@ -2,6 +2,17 @@ import XCTest
 @testable import IPhoneUseCore
 
 final class NativeControlStatusTests: XCTestCase {
+    func testInactiveMediaDoesNotBlockReadyHIDOrHideUncertainInput() {
+        func status(_ hid: NativeHIDAdapter.State) -> NativeControlStatus {
+            NativeControlStatus.resolve(hid: hid, media: ["state": "inactive", "healthy": false], closing: false,
+                                        startupCode: nil, startupError: nil, requiresMedia: false)
+        }
+        XCTAssertTrue(status(.ready).available)
+        XCTAssertEqual(status(.releaseUncertain).code, "native_release_uncertain")
+        XCTAssertEqual(status(.inputUncertain).code, "native_input_uncertain")
+        XCTAssertEqual(status(.cancelled).code, "native_session_closing")
+        XCTAssertEqual(status(.unprepared).code, "native_hid_unavailable")
+    }
     private func control(_ hid: NativeHIDAdapter.State? = .ready, healthy: Bool = true,
                          closing: Bool = false, startup: String? = nil) -> NativeControlStatus {
         NativeControlStatus.resolve(hid: hid, media: ["healthy": healthy], closing: closing,

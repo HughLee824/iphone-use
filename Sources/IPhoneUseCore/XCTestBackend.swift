@@ -4,6 +4,7 @@ import Darwin
 
 // The host depends on these few operations, not XCTest objects or an agent-facing Runner protocol.
 protocol SessionBackend: AnyObject {
+    func setEventDeliveryQueue(_ queue: DispatchQueue)
     func start() throws -> [String: Any]
     func status() throws -> [String: Any]
     func apps() throws -> AppCatalog
@@ -11,6 +12,7 @@ protocol SessionBackend: AnyObject {
     func appLifecycle(bundle: String, relaunch: Bool) throws -> [String: Any]
     func observe() throws -> CapturedObservation
     func observeText(_ options: NativeTextObservationOptions) throws -> CapturedObservation
+    func observeAfterAction(textOptions: NativeTextObservationOptions?, ignoring: ScreenRect?, sourceContext: ScreenContext?) throws -> CapturedObservation
     func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any]
     func stop() -> [String: Any]
     func cancelCurrent()
@@ -21,6 +23,10 @@ protocol SessionBackend: AnyObject {
 }
 
 extension SessionBackend {
+    func setEventDeliveryQueue(_ queue: DispatchQueue) {}
+    func observeAfterAction(textOptions: NativeTextObservationOptions?, ignoring: ScreenRect?, sourceContext: ScreenContext?) throws -> CapturedObservation {
+        throw IPhoneUseError("native_action_unsupported", "Post-action native stability is unavailable in this backend")
+    }
     func observeText(_ options: NativeTextObservationOptions) throws -> CapturedObservation {
         throw IPhoneUseError("native_action_unsupported", "Scoped text observations are unavailable in this backend")
     }

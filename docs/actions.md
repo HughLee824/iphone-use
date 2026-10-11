@@ -4,13 +4,13 @@
 
 ## 实验性原生文字输入
 
-推荐先执行 `iphone-use --session "$SESSION" text-prepare`：显式注册本会话的自有键盘，使旧观察失效并附带新截图。该操作不要求输入框引用、不聚焦、不发送按键、不访问剪贴板。检查新图后，再点击目标字段并用新观察确认焦点。已准备的键盘不会重复创建；每次显式 prepare 仍返回新图。原有 type 的按需准备行为保留，未显式准备时仍可能因软键盘收起而拒绝旧截图。
+推荐先执行 `iphone-use --session "$SESSION" text-prepare`：动态发现设备已有的 CoreDevice 键盘，使旧观察失效并附带新截图。不创建硬件键盘，不改变系统的硬件键盘连接状态；服务不存在或不唯一时明确拒绝，不回退到创建虚拟键盘。该操作不要求输入框引用、不聚焦、不发送按键、不访问剪贴板。检查新图后，按需点击目标字段并确认焦点。`keyboard.serviceSource=coredevice_builtin` 标明此通道；准备结果复用，每次显式 prepare 仍返回新图。type 保留按需发现能力，派发前仍核对原观察。结束会话只释放本次按键，不删除设备内置服务。
 
-已能从当前截图确定完整输入框时，使用 `text-prepare --field-rect x,y,width,height` 建立文字基准；画面中有视频时可同时给出位于字段外、至多占屏幕 25% 的 `--ignore-rect`。返回截图前，在 3 秒媒体采样预算内以原有字段/光标规则确认稳定；不能建立基准时返回一张新的 Apple PNG。必须检查返回的新观察再输入，不会在动作执行时替换旧基准。未提供字段的旧调用仍兼容，但不承诺局部基准稳定性。带字段的 type/press 及其 text-finish 后续观察复用同一准备逻辑；不需要每次输入前重复 prepare。
+已能从当前截图确定完整输入框时，使用 `text-prepare --field-rect x,y,width,height` 建立文字基准；画面中有视频时可同时给出位于字段外、至多占屏幕 25% 的 `--ignore-rect`。准备、输入前校验和后续观察统一采用 Apple PNG，不再采集媒体文字基线。必须检查返回的新观察再输入，不会在动作执行时替换旧基准。未提供字段的旧调用仍兼容。带字段的 type/press 及其 text-finish 后续观察保留字段选项；不需要每次输入前重复 prepare。
 
-作用域准备使用独立协议操作 `text-prepare-scoped`，旧宿主会拒绝而非忽略字段参数。采样预算不包括 Apple 截图和前后锁屏/显示检查；取消、方向恢复和媒体互斥继续遵循原有契约。
+作用域准备使用独立协议操作 `text-prepare-scoped`，旧宿主会拒绝而非忽略字段参数。取消、方向恢复和媒体互斥继续遵循原有契约。Apple PNG 输入前校验的截图、最终设备检查及派发仍受下述输入预算约束。
 
-`text-prepare` 的 `keyboardPrepared` 和 `inputReportsSent=0` 描述服务准备事实，不证明焦点；截图失败时命令返回非零并保留准备结果，需要另行 observe。注册结果不确定时保留键盘状态和清理要求，不自动重复注册。仅适用于 apple-native，旧宿主拒绝未知命令。
+`text-prepare` 的 `keyboardPrepared` 和 `inputReportsSent=0` 描述服务准备事实，不证明焦点；截图失败时命令返回非零并保留准备结果，需要另行 observe。发现失败不会发送按键或创建服务。仅适用于 apple-native，旧宿主拒绝未知命令。
 
 原生 `press oN --key return --field-rect x,y,width,height --observe` 现支持向已确认焦点发送独立 Return。完整字段、当前 observationID、全屏保护、方向、请求受理后的验证预算及完整字段跨帧复核与 type 相同；省略字段矩形时保护整个屏幕。不聚焦、不访问剪贴板、不自动完成待恢复的粘贴事务。调用方先核对输入结果并 text-finish，再决定是否发送 Return。Return 由 App 解释，可能搜索、完成、换行或提交；`keyReportQueued` 仅是本地发送事实，`keyEffectConfirmed=false`，结果仍为 unknown，必须检查新图。原生 type 的 auto/paste 正文允许 LF/CR 换行，作为文本一次粘贴，不转换或隐式附加 Return；keys 及其他控制字符仍拒绝。XCTest 仍使用原有 `press oN:eN --key return`。
 
@@ -69,13 +69,17 @@ iphone-use --session "$SESSION" tap o1:e10 --observe
 iphone-use --session "$SESSION" type o2:e8 --mode replace --text '新内容' --observe
 ```
 
-每条命令只执行一个已选择的动作，再根据回执调用一次既有 `observe`。返回单行 JSON：
+每条命令只执行一个已选择的动作。标准模式在宿主设备队列内完成动作后有界判稳，`--observe` 复用其返回的观察；其他路径根据回执调用既有 `observe`。返回单行 JSON：
 
 ```json
 {"session":"example-session","ok":true,"action":{"id":"action-request","session":"example-session","ok":true,"outcome":"completed","result":{}},"observation":{"id":"capture-request","session":"example-session","ok":true,"result":{"observation":"o2","refs":"current","screenshot":"/example/o2/screen.png","text":"observation=o2 refs=current…"}}}
 ```
 
 - `action` 完整保留原动作回执，包括 `outcome`、错误及可用输入事实；`observation` 独立保留观察回执。CLI 退出码与顶层 `ok` 表示整组是否成功：动作和观察均成功才为 0 / true。
+- 标准模式动作后最多等待 15 秒，以 Apple PNG 连续采样：同一设备、会话、显示方向与尺寸下至少 3 帧满足就绪条件，稳定跨度至少 0.4 秒，总观察跨度至少 1.5 秒。比较固定候选帧，容忍有限色差；另允许每帧至多全屏 0.1% 像素变化，但连续窗口累计差异包围框必须在 320 平方点、任一边 80 点内。此局部容差仅用于动作后就绪，不修改动作前校验或 Runner；详见[动作后判稳](native-post-action-stability.md)。返回最后一张原图，`observationID`、PNG、哈希及 `postActionStability` 元数据保持绑定。该预算独立于派发前的 30/8 秒预算。
+- 视频等持续变化区域仅沿用本动作明确提供的 `--ignore-rect`；方向/坐标空间变化后禁用旧区域。动作后不会沿用输入前的光标位置，不会把整个输入框排除，也不识别光标颜色。小范围闪烁可满足上述就绪条件，超出局部容差的闪烁或加载仍可超时。
+- `observation.ok=true` 仅表示取得有效截图。必须另看 `observation.stability.stable`：判稳超时保留最后有效截图并附 `frame_stability_timeout` 警告；采集失败则 `observation.ok=false`。两者均保留输入的已知/未知结果，绝不重放输入。视觉稳定也不等于业务动作成功，仍须 Agent 判断。
+- 独立 `observe` 保留单次采集语义；`text-finish` 仅恢复剪贴板，不新增动作后判稳。Runner 现有判稳流程不变。有限采样不能保证未来不会出现延迟加载，下一次动作仍执行原有前置校验。
 - `completed`、`unknown` 和需要刷新的拒绝均继续观察。`unknown` 即使观察成功也仍退出 1；观察不能追认动作完成。
 - 会话匹配、`ok=false`、`outcome=not_dispatched` 且 `requiresObservation` 缺省或为 false 时，不刷新，返回 `observation={"skipped":"not_dispatched"}`。这保留了可纠正参数错误后的当前引用。
 - 观察失败时，顶层 `ok=false`，原动作回执不变。依据观察错误恢复，再单独 `observe`；不能重放动作。只有成功的新观察提供新引用，动作自带截图没有 AX 引用。
@@ -198,15 +202,17 @@ Runner append 与 LF 多行的实现取舍、宿主测试和 Probe 精确字节�
 
 详细的原生事实字段、旧宿主兼容保护和限制见[原生后端](apple-native-backend.md#explicit-text-methods-and-clipboard-completion)。
 
-原生输入使用 `field-edge-temporal-caret-v2` 对完整字段按原分辨率比较。保留通道容差 8/255 的严格快速路径，再检查有总量、色差和局部形状上限的媒体边缘噪声；未指定字段时保护整屏。首次匹配立即返回；局部不匹配而全局通过时，在同一阶段最多采样六帧。原生媒体在一次 Apple 锁屏/方向前后检查之间连续取帧，避免每次 Apple CLI 调用使采样总落在相似阶段。快速采样覆盖约两秒；每阶段八秒期限、请求三十秒派发期限及取消检查不变。只重复读取，不重放输入、不替换原观察。Agent 指定的动画排除仍不得覆盖字段。
+原生输入使用 `field-bound-caret-exclusion-v3`。每个动作前校验阶段仅取一张新 Apple PNG，比较完整字段与整屏，不再等待 A–B–A 光标周期。Unicode 剪贴板写入前后仍分别校验，两个阶段使用同一原观察；八秒阶段期限、三十秒请求派发期限、取消及未知结果不重放规则保留。
 
-如果原图抓到不同光标相位，必须在新帧中实际观察到 A–B–A 周期，变化核心仅占同一窄竖条（不超过 4 点宽、8–80 点高）。后端在核心外固定增加两个原生像素处理抗锯齿，且只对这个有界区域应用光标例外；其余完整字段仍与原观察比较。原图在区域内的颜色还必须与观测到的光标／背景范围相容，不能仅因命中矩形就抹除任意内容。不再用单一透明度系数重建整个字段，也不依赖光标颜色。回执区分 `pixels`、`appearance`、`temporal`；时序通过时包含 `caretRect`。规则、噪声预算和可见性限制见[光标处理](native-text-phase-matching.md)。隐藏状态的不可见光标移动、与光标完全同形同周期的动画不能单凭截图识别。
+外部 Agent 可在 `type/press oN --field-rect ...` 上指定 `--caret-rect x,y,width,height`，确认原图中可见光标的固定窄区域。后端只检查完整字段包含关系、宽不超过 4 点、高 8–80 点、纵横比至少 3；按原图像素向外取整，在上下端各增加一个原生像素并裁剪到字段内，不横向扩张；回报确认范围 caretRect 和实际排除范围 caretExclusionRect。不识别颜色、背景、笔画或透明度。框只绑定当前 observationID 的本次动作，不自动移动、扩大或继承。框内像素直接排除，框外完整字段仍按原规则比较；整屏降采样前同样排除这些精确像素，不修改实际截图。Agent 错框覆盖的文字变化也可能被忽略，因此需准确确认光标及其抗锯齿边缘，不能用扩大区域消除失败。
 
-`screenGuard.fieldPixelsMatch` 记录直接像素匹配，`fieldTemporalMatch` 单独记录周期重建匹配；全局保护始终生效。原生输入不再输出 `caretBlinkException`。截图仍无法证明不可见焦点或隐藏光标的位置，也不能从像素中绝对区分形态和周期完全一致的其他窄条动画；`focusConfirmed=false` 不变。Runner 动作后的判稳算法没有随本次变更修改。
+缺少光标确认而遇到可疑竖线差异时，返回 `caret_confirmation_required` 和实际拒绝帧的新观察；其他原因区分 `text_field_changed`、`screen_changed`、`input_preflight_timeout`。不要循环重试原引用。`fieldPixelsMatch`、`fieldAppearanceMatch`、`fieldCaretMatch` 分别表示直接匹配、受限外观匹配、显式光标例外；回执附 `caretRect` 和 `caretObservationID`，不再输出时序匹配证据。
+
+`type-with-caret` / `press-with-caret` 协议操作确保旧宿主拒绝未知功能；状态声明 `textCaretConfirmationSupported=true`。截图无法证明不可见焦点，也不能百分百分辨被 Agent 错认成光标的同形文字笔画。Runner 动作后的判稳算法保持原样。详见[光标处理](native-text-phase-matching.md)。
 
 ## 原生编辑按键与横屏文字
 
-`apple-native` 的 `press oN --key KEY` 支持 `return`、`backspace`、`left`、`right`、`up`、`down`、`tab`、`shift-tab`、`escape`。使用当前截图确认焦点，可通过 `--field-rect x,y,width,height` 保护完整输入框。每次只发送一个按键或明确的 Shift+Tab 组合，包含释放；没有重复次数、任意快捷键或自动补发。Runner 使用元素引用 `press oN:eN`，其实现和验收范围见 [Runner 编辑按键](runner-editing-keys.md)。按键、ASCII 和 Unicode 粘贴共用最多六次只读预检：始终比较原 observation，沿用每阶段 8 秒及请求受理后 30 秒总预算，方向变化立即拒绝；只重取截图，不重发按键。
+`apple-native` 的 `press oN --key KEY` 支持 `return`、`backspace`、`left`、`right`、`up`、`down`、`tab`、`shift-tab`、`escape`。使用当前截图确认焦点，可通过 `--field-rect x,y,width,height` 保护完整输入框。每次只发送一个按键或明确的 Shift+Tab 组合，包含释放；没有重复次数、任意快捷键或自动补发。Runner 使用元素引用 `press oN:eN`，其实现和验收范围见 [Runner 编辑按键](runner-editing-keys.md)。按键、ASCII 每阶段仅一次最终 PNG 校验，Unicode 粘贴在剪贴板前后各一次；始终比较原 observation。方向准备和最多一次自有媒体恢复计入请求受理后 30 秒总预算，每阶段 8 秒从 Apple PNG 请求开始计时，方向变化立即拒绝，不循环截图或重发按键。
 
 这些名称表示 HID 键盘操作，不承诺业务效果：Backspace 的删除单位、方向键的光标位置、Tab 的焦点切换、Escape 的取消行为均由前台 App/IME 决定。回执保留 `key`、`keyReportQueued`、`keyboardReleaseQueued`、`keyEffectConfirmed=false`；本地发送完成仍是 unknown，需检查结果截图。Shift+Tab 先单独按下 Shift，再按 Tab，最后释放全部按键；取消或失败沿用同通道释放和不重放契约。
 
@@ -286,6 +292,6 @@ Home 后 Runner 清除当前 App 目标，观察可能为 `scope=unknown`、截�
 
 Actions, `text-prepare` and `text-finish` accept optional `--agent-output`. Execution, guard thresholds, action outcome, exit status, clipboard ownership and observation references are unchanged. The CLI saves the full JSON response once in a unique private temporary directory (directory `0700`, file `0600`) and returns its absolute `receipt` path. Receipts survive session disconnect and may contain private UI text; retain only as long as the task needs them, then remove the task-owned receipt directory.
 
-The printed response retains errors, recovery, clipboard transaction state and the attached observation, while repeated `preInputChecks` media diagnostics are replaced by one final summary per stage in `agentSummary`. `fieldMatch=pixels` means direct field comparison passed; `temporal` means the bounded phase matcher passed. A missing temporal match is not itself a failure. `mismatches` distinguishes global screen, field, and protected-region changes; deadline/context/transport errors remain separate facts. `nextStep=inspect_attached_observation` never claims visual task success. Do not capture again merely because `requiresObservation` is true when a current observation is already attached.
+The printed response retains errors, recovery, clipboard transaction state and the attached observation, while repeated `preInputChecks` media diagnostics are replaced by one final summary per stage in `agentSummary`. `fieldMatch=pixels` means direct field comparison passed; `caret` means the observation-bound caret exception passed. A missing caret exception is not itself a failure. `mismatches` distinguishes global screen, field, and protected-region changes; deadline/context/transport errors remain separate facts. `nextStep=inspect_attached_observation` never claims visual task success. Do not capture again merely because `requiresObservation` is true when a current observation is already attached.
 
 If saving the receipt fails, the CLI emits the original full response plus `agentOutputError`; it does not replace the execution outcome or retry the action. Without the flag, the existing JSON output is unchanged. See the [native text workflow](../skills/iphone-use/references/native-text.md) and [Codex call template](../skills/iphone-use/references/codex-calls.md).

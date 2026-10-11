@@ -55,7 +55,7 @@ if printf '%s\n' "$tap_help" | grep -q -- '--agent-output'; then
   echo 'Agent output: available. Use --agent-output for actions and native text preparation/finish; full receipt saved locally.'
 fi
 if text_help=$("$cli" text-prepare --help 2>/dev/null) && printf '%s\n' "$text_help" | grep -q -- '--field-rect'; then
-  echo 'Scoped text preparation: available. Use text-prepare --field-rect for a visible complete field; inspect its stable media or Apple PNG baseline before input.'
+  echo 'Scoped text preparation: available. Before the first input, text-prepare once; then inspect the returned screenshot and focus the field if needed.'
 fi
 connect_help=$("$cli" connect --help)
 if printf '%s\n' "$connect_help" | grep -q -- '--mode'; then

@@ -281,6 +281,19 @@ class ActionObservationCLITests(unittest.TestCase):
                 self.assertEqual(requests[0]["reference"], "o2:e8")
                 self.assertNotIn("fieldRect", requests[0])
 
+    def test_explicit_caret_uses_versioned_wire_operations_without_replay(self):
+        for command, flags, operation in [("type", ["--mode", "insert", "--text", "中文", "--method", "paste"], "type-with-caret"),
+                                          ("press", ["--key", "left"], "press-with-caret")]:
+            with self.subTest(command=command):
+                _, _, requests = self.run_cli([command, "o2", *flags, "--field-rect", "18,139,354,160",
+                                              "--caret-rect", "49,149,4,22"], outcome="not_dispatched")
+                self.assertEqual(len(requests), 1)
+                self.assertEqual(requests[0]["op"], operation)
+                self.assertEqual(requests[0]["reference"], "o2")
+                self.assertEqual(requests[0]["caretRect"], "49,149,4,22")
+                if command == "type":
+                    self.assertEqual(requests[0]["textMethod"], "paste")
+
     def test_unknown_and_observation_failure_exit_nonzero_without_replay(self):
         for outcome, capture_ok in [("unknown", True), ("completed", False), ("unknown", False)]:
             with self.subTest(outcome=outcome, capture_ok=capture_ok):

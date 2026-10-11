@@ -12,30 +12,17 @@ final class NativeTextMediaFixtureTests: XCTestCase {
         return try Data(contentsOf: url)
     }
 
-    private func matches(_ name: String, frames: [Data]) throws -> [NativeTextPhaseMatcher.Match] {
+    private func matches(_ name: String, frames: [Data]) throws -> [NativeTextFieldGuard.Match] {
         let guardValue = try NativeTextFieldGuard(png: fixture(name), context: context, field: rect)
-        let matcher = NativeTextPhaseMatcher(field: guardValue)
-        return try frames.map { try matcher.check(png: $0, context: context) }
+        return try frames.map { guardValue.compare(try guardValue.pixels(png: $0, context: context), caret: nil) }
     }
 
-    func testRecordedFieldNoiseAndCaretAreAcceptedWithinSixFreshFrames() throws {
+    func testRecordedNoiseRetainsAppearanceRulesWithoutImplicitCaretMask() throws {
         let encoded = try (0..<6).map { try fixture("encoded-\($0)") }
         XCTAssertTrue(try matches("encoded-source", frames: encoded).contains(.appearance))
+        // Old media fixtures cannot authorize an implicit caret exception.
         let caret = try (1...6).map { try fixture("caret-\($0)") }
-        XCTAssertTrue(try matches("caret-source", frames: caret).contains(.temporal))
-    }
-
-    func testRecordedAppleCaretWithDifferentPixelFadeDirections() throws {
-        let field = ScreenRect(CGRect(x: 0, y: 0, width: 354, height: 160))
-        let context = ScreenContext(screen: field, scope: field, orientation: 1, keyboardCount: 0)
-        let matcher = try NativeTextPhaseMatcher(field: NativeTextFieldGuard(png: fixture("blend-source"), context: context, field: field))
-        // Recorded captures 0, 3, 6 form this cycle. Captures 0 and 6
-        // have identical PNG bytes; store that fixture once (see README).
-        let matches = try [0, 3, 0].map { try matcher.check(png: fixture("blend-\($0)"), context: context) }
-        XCTAssertEqual(matches, [.none, .none, .temporal])
-        let caret = try XCTUnwrap(matcher.caretRect)
-        XCTAssertLessThanOrEqual(caret.width, 4)
-        XCTAssertLessThanOrEqual(caret.height, 21)
+        XCTAssertFalse(try matches("caret-source", frames: caret).contains(.caret))
     }
 
     func testMutationHelperPreservesUneditedPixelGeometry() throws {

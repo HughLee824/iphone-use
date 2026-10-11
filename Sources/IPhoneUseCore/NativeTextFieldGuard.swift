@@ -1,25 +1,17 @@
 import Foundation
-
-// ScreenGuard is also compiled into Runner. Keep the native matcher adapter
-// here so that shared screen comparison does not depend on native-only types.
-extension ScreenGuard.Check {
-    mutating func apply(_ match: NativeTextPhaseMatcher.Match, caret: ScreenRect? = nil) {
-        fieldPixelsMatch = match == .pixels
-        fieldTemporalMatch = match == .temporal
-        fieldAppearanceMatch = match == .appearance
-        caretRect = match == .temporal ? caret : nil
-    }
-}
+import CoreGraphics
 
 // Compare the complete field at native resolution, without OCR, color-specific
 // caret detection or resampling. Keep a strict fast path, then bounded local
-// appearance comparison; temporal caret exclusion is owned by the matcher.
+// appearance comparison; an Agent-confirmed caret is checked separately against the same source.
 struct NativeTextFieldGuard {
     private let context: ScreenContext
     private let field: ScreenRect
-    fileprivate let width: Int
-    fileprivate let height: Int
-    fileprivate let source: Data
+    let width: Int
+    let height: Int
+    let source: Data
+    let scale: Double
+    private let crop: CGRect
 
     init(png: Data, context: ScreenContext, field: ScreenRect) throws {
         guard context.valid, field.valid, context.screen.cgRect.contains(field.cgRect) else { throw ScreenGuard.Failure.invalidGuard }
@@ -30,31 +22,64 @@ struct NativeTextFieldGuard {
         width = Int(crop.width); height = Int(crop.height)
         guard width > 0, height > 0, width * height <= 4_000_000 else { throw ScreenGuard.Failure.invalidGuard }
         source = try image.rgb(rect: field, screen: context.screen, columns: width, rows: height)
-        self.context = context; self.field = field
+        self.context = context; self.field = field; self.scale = scale; self.crop = crop
     }
 
-    fileprivate func pixels(png: Data, context current: ScreenContext) throws -> Data {
+    func validateContext(_ current: ScreenContext) throws {
         guard context.matches(current) else { throw ScreenGuard.Failure.contextChanged }
-        let image = try ScreenImage(png: png)
+    }
+
+    func pixels(png: Data, context current: ScreenContext, decodedImage: ScreenImage? = nil) throws -> Data {
+        try validateContext(current)
+        let image = try decodedImage ?? ScreenImage(png: png)
         try image.validateMapping(to: current.screen)
         return try image.rgb(rect: field, screen: current.screen, columns: width, rows: height)
+    }
+
+    // Neutralize only the confirmed native pixels before the coarse screen/region
+    // grids are reduced. Otherwise interpolation can count the excluded caret in
+    // the global score. The captured PNG and full-field comparison remain untouched.
+    func screenComparisonImage(_ image: ScreenImage, caret: NativeBoundCaretGuard,
+                               context current: ScreenContext) throws -> ScreenImage {
+        try validateContext(current)
+        try image.validateMapping(to: current.screen)
+        let rect = caret.bounds
+        let x = Int(crop.minX + rect.minX), y = Int(crop.minY + rect.minY)
+        let columns = image.image.width, rows = image.image.height
+        guard x >= 0, y >= 0, x + Int(rect.width) <= columns, y + Int(rect.height) <= rows else {
+            throw ScreenGuard.Failure.invalidGuard
+        }
+        var rgb = try image.rgb(rect: current.screen, screen: current.screen, columns: columns, rows: rows)
+        for row in 0..<Int(rect.height) {
+            let sourceOffset = ((Int(rect.minY) + row) * width + Int(rect.minX)) * 3
+            let targetOffset = ((y + row) * columns + x) * 3
+            let count = Int(rect.width) * 3
+            rgb.replaceSubrange(targetOffset..<(targetOffset + count),
+                                with: source[sourceOffset..<(sourceOffset + count)])
+        }
+        guard let provider = CGDataProvider(data: rgb as CFData),
+              let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+              let result = CGImage(width: columns, height: rows, bitsPerComponent: 8, bitsPerPixel: 24,
+                  bytesPerRow: columns * 3, space: colorSpace, bitmapInfo: [], provider: provider,
+                  decode: nil, shouldInterpolate: false, intent: .defaultIntent) else {
+            throw ScreenGuard.Failure.invalidImage
+        }
+        return ScreenImage(image: result)
     }
 
     func matches(png: Data, context current: ScreenContext) throws -> Bool {
         same(source, try pixels(png: png, context: current))
     }
 
-    fileprivate var scale: Double { Double(width) / field.width }
-
-    fileprivate func screenRect(_ rect: CGRect) -> ScreenRect {
-        ScreenRect(CGRect(x: field.x + rect.minX / scale, y: field.y + rect.minY / scale,
+    func screenRect(_ rect: CGRect) -> ScreenRect {
+        ScreenRect(CGRect(x: (crop.minX + rect.minX) / scale, y: (crop.minY + rect.minY) / scale,
                           width: rect.width / scale, height: rect.height / scale))
     }
 
     // Preserve original pixel coordinates. Low-amplitude encoding changes may
     // occur at EXISTING edges, but a new stroke in a flat area is not noise.
     // The area cap is additional protection, never the sole acceptance test.
-    fileprivate func appearance(_ first: Data, _ next: Data, ignoring rect: CGRect? = nil) -> Bool {
+    func appearance(_ first: Data, _ next: Data, ignoring rect: CGRect? = nil) -> Bool {
         guard first.count == next.count else { return false }
         let limit = max(4, min(512, width * height / 1000))
         let noiseLimit = max(4, min(32, width * height / 16384))
@@ -112,7 +137,44 @@ struct NativeTextFieldGuard {
         }
     }
 
-    fileprivate func same(_ first: Data, _ next: Data) -> Bool {
+    enum Match { case none, pixels, appearance, caret }
+
+    func compare(_ current: Data, caret: NativeBoundCaretGuard?) -> Match {
+        if same(source, current) { return .pixels }
+        if appearance(source, current) { return .appearance }
+        if let caret, appearance(source, current, ignoring: caret.bounds) { return .caret }
+        return .none
+    }
+
+    func rejection(_ current: Data, caret: NativeBoundCaretGuard?) -> String {
+        if caret != nil { return "text_field_changed" }
+        var left = width, right = -1, top = height, bottom = -1, count = 0
+        source.withUnsafeBytes { (a: UnsafeRawBufferPointer) in
+            current.withUnsafeBytes { (b: UnsafeRawBufferPointer) in
+                for p in 0..<(width * height) {
+                    let i = p * 3
+                    if (0..<3).map({ abs(Int(a[i + $0]) - Int(b[i + $0])) }).max()! <= 16 { continue }
+                    left = min(left, p % width); right = max(right, p % width)
+                    top = min(top, p / width); bottom = max(bottom, p / width); count += 1
+                }
+            }
+        }
+        let w = right - left + 1, h = bottom - top + 1
+        // A candidate is a reason to ask for visual confirmation, never a mask.
+        return count >= 12 && w > 0 && Double(w) <= 4 * scale && Double(h) >= 8 * scale
+            && Double(h) <= 80 * scale && h >= w * 3 ? "caret_confirmation_required" : "text_field_changed"
+    }
+
+    func nativeRect(_ rect: ScreenRect) throws -> CGRect {
+        guard rect.valid, field.cgRect.contains(rect.cgRect), rect.width <= 4,
+              (8...80).contains(rect.height), rect.height >= rect.width * 3 else {
+            throw IPhoneUseError("invalid_caret_region", "Confirm one narrow vertical caret inside the complete field (width <=4, height 8...80 screen points)")
+        }
+        return CGRect(x: rect.x * scale - crop.minX, y: rect.y * scale - crop.minY,
+                      width: rect.width * scale, height: rect.height * scale).integral
+    }
+
+    func same(_ first: Data, _ next: Data) -> Bool {
         guard first.count == next.count else { return false }
         return first.withUnsafeBytes { (a: UnsafeRawBufferPointer) in
             next.withUnsafeBytes { (b: UnsafeRawBufferPointer) in
@@ -130,131 +192,5 @@ struct NativeTextFieldGuard {
                 return true
             }
         }
-    }
-}
-
-
-// One instance per preflight, never shared across clipboard mutation or actions.
-// A temporal exception requires an observed A-B-A cycle at one fixed narrow
-// stroke. Only that stroke is excluded; the rest of the original field retains
-// its local edge/content comparison. Never reconstruct or replace the baseline.
-final class NativeTextPhaseMatcher {
-    enum Match { case none, pixels, appearance, temporal }
-    private let field: NativeTextFieldGuard
-    private var frames: [Data] = []
-    private var lastPNG: Data?
-    private var lastMatch: Match = .none
-    private(set) var caretRect: ScreenRect?
-
-    init(field: NativeTextFieldGuard) { self.field = field }
-
-    func check(png: Data, context: ScreenContext) throws -> Match {
-        let current = try field.pixels(png: png, context: context)
-        if png == lastPNG { return lastMatch } // outer preflight rechecks the selected actual PNG
-        defer { lastPNG = png }
-        caretRect = nil
-        if field.same(field.source, current) { lastMatch = .pixels; return lastMatch }
-        if field.appearance(field.source, current) { lastMatch = .appearance; return lastMatch }
-        if frames.count >= 2 {
-            for i in 0..<(frames.count - 1) where field.appearance(frames[i], current) {
-                for j in (i + 1)..<frames.count {
-                    if let rect = caret(first: frames[i], other: frames[j]),
-                       field.appearance(field.source, current, ignoring: rect),
-                       sourceFitsCaret(first: frames[i], other: frames[j], rect: rect) {
-                        caretRect = field.screenRect(rect)
-                        lastMatch = .temporal
-                        return lastMatch
-                    }
-                }
-            }
-        }
-        if frames.count < 6 { frames.append(current) }
-        lastMatch = .none
-        return lastMatch
-    }
-
-    private func caret(first: Data, other: Data) -> CGRect? {
-        let a = [UInt8](first), b = [UInt8](other)
-        var minX = field.width, maxX = -1, minY = field.height, maxY = -1, changed = 0
-        var direction: [Int]?
-        var commonDirection = true
-        for pixel in 0..<(field.width * field.height) {
-            let i = pixel * 3
-            let delta = max(abs(Int(a[i]) - Int(b[i])), abs(Int(a[i + 1]) - Int(b[i + 1])), abs(Int(a[i + 2]) - Int(b[i + 2])))
-            if delta <= 16 { continue }
-            let x = pixel % field.width, y = pixel / field.width
-            minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
-            changed += 1
-            let vector = (0..<3).map { Int(b[i + $0]) - Int(a[i + $0]) }
-            if let direction {
-                if zip(direction, vector).reduce(0, { $0 + $1.0 * $1.1 }) <= 0 { commonDirection = false }
-            } else { direction = vector }
-        }
-        // A caret can blend over different background pixels. Its RGB direction
-        // need not agree across the stroke, but each pixel must follow its own
-        // source-relative color ray with the same fade ordering. A translated
-        // stroke gains contrast at one edge and loses it at the other.
-        guard commonDirection || sourceRelativeFade(first: a, other: b) else { return nil }
-        let w = maxX - minX + 1, h = maxY - minY + 1
-        guard changed >= 12, w > 0, h > 0,
-              Double(w) <= 4 * field.scale, Double(h) >= 8 * field.scale,
-              Double(h) <= 80 * field.scale, h >= 3 * w,
-              Double(changed) / Double(w * h) >= 0.3 else { return nil }
-        // Fixed two-native-pixel antialias/chroma rim, never expanded on retry.
-        let rect = CGRect(x: minX, y: minY, width: w, height: h).insetBy(dx: -2, dy: -2)
-            .intersection(CGRect(x: 0, y: 0, width: field.width, height: field.height))
-        guard rect.width <= 4 * field.scale + 4,
-              field.appearance(first, other, ignoring: rect) else { return nil }
-        return rect
-    }
-
-    private func sourceRelativeFade(first: [UInt8], other: [UInt8]) -> Bool {
-        let source = [UInt8](field.source)
-        var ordering: Bool?
-        for pixel in 0..<(field.width * field.height) {
-            let i = pixel * 3
-            let delta = (0..<3).map { abs(Int(first[i + $0]) - Int(other[i + $0])) }.max()!
-            if delta <= 16 { continue }
-            let a = (0..<3).map { Double(Int(first[i + $0]) - Int(source[i + $0])) }
-            let b = (0..<3).map { Double(Int(other[i + $0]) - Int(source[i + $0])) }
-            let aa = a.reduce(0) { $0 + $1 * $1 }, bb = b.reduce(0) { $0 + $1 * $1 }
-            guard aa != bb else { return false }
-            let increasing = bb > aa
-            if let ordering, ordering != increasing { return false }
-            ordering = increasing
-            // Project the shorter vector onto the longer one. The original
-            // pixel tolerance permits rounding, not a new color/area budget.
-            let longer = increasing ? b : a, shorter = increasing ? a : b
-            let norm = max(aa, bb)
-            let factor = zip(longer, shorter).reduce(0) { $0 + $1.0 * $1.1 } / norm
-            guard factor >= 0, factor <= 1,
-                  zip(longer, shorter).allSatisfy({ abs($0.1 - factor * $0.0) <= Double(ScreenGuard.pixelTolerance) }) else { return false }
-        }
-        return ordering != nil
-    }
-
-    private func sourceFitsCaret(first: Data, other: Data, rect: CGRect) -> Bool {
-        // A source selection or unrelated mark must not vanish merely because
-        // it intersects the mask. Each source channel must belong to the
-        // observed fade/background range; no single alpha is imposed.
-        let a = [UInt8](first), b = [UInt8](other), source = [UInt8](field.source)
-        for y in Int(rect.minY)..<Int(rect.maxY) {
-            for x in Int(rect.minX)..<Int(rect.maxX) {
-                let i = (y * field.width + x) * 3
-                for channel in 0..<3 {
-                    var lo = min(Int(a[i + channel]), Int(b[i + channel]))
-                    var hi = max(Int(a[i + channel]), Int(b[i + channel]))
-                    // The fixed rim supplies the local background
-                    // for a hidden source phase not sampled at its exact opacity.
-                    for edgeX in [Int(rect.minX), Int(rect.maxX) - 1] {
-                        let q = (y * field.width + edgeX) * 3 + channel
-                        lo = min(lo, min(Int(a[q]), Int(b[q])))
-                        hi = max(hi, max(Int(a[q]), Int(b[q])))
-                    }
-                    guard (lo - 16...hi + 16).contains(Int(source[i + channel])) else { return false }
-                }
-            }
-        }
-        return true
     }
 }

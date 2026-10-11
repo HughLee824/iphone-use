@@ -170,7 +170,9 @@ flowchart LR
     Runner <--> Apps
 ```
 
-`connect` 启动宿主并固定所选模式。标准模式连接 Apple 原生服务、持有自有媒体/HID 通道；Runner 模式通过 Xcode 的 `test-without-building` 安装并启动 Runner。宿主跨 CLI 调用保持连接、串行请求、缓存观察并管理清理，不自动切换控制路线。
+标准模式的观察和动作前图片校验统一使用 Apple CoreDevice PNG；自有媒体仅在显式录屏时启动，并保留录屏期间的几何校验。截图失败不会回退到媒体像素。
+
+`connect` 启动宿主并固定所选模式。标准模式连接 Apple 原生服务、持有 HID 连接及显式请求的自有录屏流；Runner 模式通过 Xcode 的 `test-without-building` 安装并启动 Runner。宿主跨 CLI 调用保持连接、串行请求、缓存观察并管理清理，不自动切换控制路线。
 
 会话文件默认位于 `/private/tmp/agentsoma-<uid>`，目录权限为 `0700`，可通过 `IPHONE_USE_STATE_DIR` 更换路径。发布包 Runner 的准备状态位于 `~/Library/Application Support/iphone-use`。签名私钥留在 Keychain，设备 token 仅保存在宿主内存和 XCTest 子进程环境中。
 

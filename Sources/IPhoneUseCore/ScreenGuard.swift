@@ -70,27 +70,21 @@ struct ScreenGuard: Codable {
         let regionChanges: [Double]
         let policy: Policy
         var fieldPixelsMatch: Bool? = nil
-        var fieldTemporalMatch = false
+        var fieldCaretMatch = false
+        var caretObservationID: String? = nil
         var fieldAppearanceMatch = false
-        var regionAppearanceMatches: [Bool]? = nil
         var caretRect: ScreenRect? = nil
+        var caretExclusionRect: ScreenRect? = nil
         var ignoredRect: ScreenRect? = nil
         var rawScreenChange: Double? = nil
         var regionsAccepted: Bool {
-            regionChanges.enumerated().allSatisfy { index, change in
-                change <= policy.maxRegionChange || (regionAppearanceMatches?.count == regionChanges.count
-                    && regionAppearanceMatches?[index] == true)
-            }
+            regionChanges.allSatisfy { $0 <= policy.maxRegionChange }
         }
-        var accepted: Bool { screenChange <= policy.maxScreenChange && (regionsAccepted && fieldPixelsMatch != false || fieldTemporalMatch || fieldAppearanceMatch) }
+        var accepted: Bool { screenChange <= policy.maxScreenChange && (regionsAccepted && fieldPixelsMatch != false || fieldCaretMatch || fieldAppearanceMatch) }
         var result: [String: Any] {
             var result: [String: Any] = ["algorithm": ignoredRect == nil ? ScreenGuard.algorithm : ScreenGuard.maskedAlgorithm, "accepted": accepted, "screenChange": screenChange,
              "regionChanges": regionChanges, "maxScreenChange": policy.maxScreenChange,
              "maxRegionChange": policy.maxRegionChange, "pixelTolerance": ScreenGuard.pixelTolerance]
-            if let regionAppearanceMatches {
-                result["regionAppearanceMatches"] = regionAppearanceMatches
-                result["regionAppearanceAlgorithm"] = "native-gesture-edge-v1"
-            }
             if let rect = ignoredRect {
                 result["ignoredRect"] = ["x": rect.x, "y": rect.y, "width": rect.width, "height": rect.height]
                 result["rawScreenChange"] = rawScreenChange
@@ -98,11 +92,15 @@ struct ScreenGuard: Codable {
             }
             if let fieldPixelsMatch {
                 result["fieldPixelsMatch"] = fieldPixelsMatch
-                result["fieldAlgorithm"] = "field-edge-temporal-caret-v2"
-                result["fieldTemporalMatch"] = fieldTemporalMatch
+                result["fieldAlgorithm"] = "field-bound-caret-exclusion-v3"
+                result["fieldCaretMatch"] = fieldCaretMatch
+                result["caretObservationID"] = caretObservationID
                 result["fieldAppearanceMatch"] = fieldAppearanceMatch
                 if let caretRect {
                     result["caretRect"] = ["x": caretRect.x, "y": caretRect.y, "width": caretRect.width, "height": caretRect.height]
+                }
+                if let rect = caretExclusionRect {
+                    result["caretExclusionRect"] = ["x": rect.x, "y": rect.y, "width": rect.width, "height": rect.height]
                 }
             }
             return result
@@ -176,9 +174,12 @@ struct ScreenGuard: Codable {
     }
 
     func check(png: Data, context current: ScreenContext) throws -> Check {
+        try check(image: ScreenImage(png: png), context: current)
+    }
+
+    func check(image: ScreenImage, context current: ScreenContext) throws -> Check {
         try validate()
         guard context.matches(current) else { throw Failure.contextChanged }
-        let image = try ScreenImage(png: png)
         guard image.image.width == pixelWidth, image.image.height == pixelHeight else { throw Failure.contextChanged }
         try image.validateMapping(to: current.screen)
         let global = try image.rgb(rect: context.screen, screen: context.screen, columns: Self.globalColumns, rows: Self.globalRows)
@@ -331,6 +332,8 @@ struct CoordinateGesture: Codable {
 
 struct ScreenImage {
     let image: CGImage
+
+    init(image: CGImage) { self.image = image }
 
     init(png: Data) throws {
         guard let source = CGImageSourceCreateWithData(png as CFData, nil),

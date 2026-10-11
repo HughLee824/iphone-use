@@ -46,13 +46,15 @@ final class NativeStreamRecording {
     private var timer: DispatchSourceTimer?
     private let root: URL
     private let now: () -> Double
+    private let onFinish: (_ recordingID: String, _ mediaID: String) -> Void
     private var current: Job?
     private var jobs: [String: Job] = [:]
     private var closed = false
     private let makeWriter: (URL, Int32, NativeVideoOrientation) -> NativeVideoWriter
     init(root: URL, now: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime },
+         onFinish: @escaping (String, String) -> Void = { _, _ in },
          makeWriter: @escaping (URL, Int32, NativeVideoOrientation) -> NativeVideoWriter = { NativeVideoWriter(url: $0, timescale: $1, orientation: $2) }) {
-        self.root = root; self.now = now; self.makeWriter = makeWriter
+        self.root = root; self.now = now; self.makeWriter = makeWriter; self.onFinish = onFinish
     }
 
     static func supports(_ config: [String: Any]) -> Bool {
@@ -232,5 +234,8 @@ final class NativeStreamRecording {
         }
         job.result = result
         try? saveJSON(result, to: job.directory.appendingPathComponent("result.json"))
+        // Delivery must enqueue onto the owner's serial queue, never reenter
+        // this recorder synchronously while finish holds its queue.
+        onFinish(job.id, job.mediaID)
     }
 }

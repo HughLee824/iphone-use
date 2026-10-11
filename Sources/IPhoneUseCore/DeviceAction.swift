@@ -11,6 +11,7 @@ struct DeviceAction {
     let protectedReferences: [ObservationReference]
     let swipeMotion: SwipeMotion?
     let textRegion: ScreenRect?
+    let caretRegion: ScreenRect?
     let pinchMotion: PinchMotion?
     let ignoredScreenRect: ScreenRect?
 
@@ -150,6 +151,23 @@ struct DeviceAction {
             }
             textRegion = rect
         } else { textRegion = nil }
+        if let raw = request["caretRect"] {
+            guard allowScreenText, ["type", "press"].contains(operation), reference.node == nil,
+                  let field = textRegion, let value = raw as? String else {
+                throw IPhoneUseError("invalid_caret_region", "--caret-rect requires native type/press oN with --field-rect")
+            }
+            let parts = value.split(separator: ",", omittingEmptySubsequences: false)
+            let v = parts.compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            guard parts.count == 4, v.count == 4, v.allSatisfy(\.isFinite), v[2] > 0, v[2] <= 4,
+                  (8...80).contains(v[3]), v[3] >= v[2] * 3 else {
+                throw IPhoneUseError("invalid_caret_region", "Use one narrow caret x,y,width,height (width <=4, height 8...80 screen points)")
+            }
+            let rect = ScreenRect(CGRect(x: v[0], y: v[1], width: v[2], height: v[3]))
+            guard rect.valid, field.cgRect.contains(rect.cgRect) else {
+                throw IPhoneUseError("invalid_caret_region", "Caret must be inside the complete input field")
+            }
+            caretRegion = rect
+        } else { caretRegion = nil }
         if let raw = request["ignoreRect"] {
             let gesture = coordinate && ["tap", "double-tap", "long-press", "pinch", "swipe"].contains(operation)
             let nativeText = allowScreenText && reference.node == nil && ["type", "press"].contains(operation) && textRegion != nil
@@ -205,7 +223,7 @@ struct ObservedTarget {
     var gesture: CoordinateGesture? = nil
     var textGuard: ScreenGuard? = nil
     var textFieldGuard: NativeTextFieldGuard? = nil
-    var gestureAppearanceGuard: NativeGestureAppearanceGuard? = nil
+    var textCaretGuard: NativeBoundCaretGuard? = nil
 }
 
 struct ActionFailure: Error, CustomStringConvertible {

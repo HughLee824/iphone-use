@@ -18,23 +18,34 @@ enum CoreDevice {
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = log
         process.standardError = log
+        let started = ProcessInfo.processInfo.systemUptime
         try process.run()
         let deadline = ProcessInfo.processInfo.systemUptime + Double(timeout) + 5
         while process.isRunning, !cancelled(), ProcessInfo.processInfo.systemUptime < deadline {
             Thread.sleep(forTimeInterval: 0.02)
         }
         if process.isRunning {
+            let wasCancelled = cancelled()
             process.terminate()
             let stopDeadline = ProcessInfo.processInfo.systemUptime + 2
             while process.isRunning, ProcessInfo.processInfo.systemUptime < stopDeadline { Thread.sleep(forTimeInterval: 0.02) }
-            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            let forcedKill = process.isRunning
+            if forcedKill { kill(process.processIdentifier, SIGKILL) }
             process.waitUntilExit()
-            throw IPhoneUseError(cancelled() ? "coredevice_cancelled" : "coredevice_timeout", "CoreDevice process was cancelled or exceeded the host deadline")
+            throw IPhoneUseError(wasCancelled ? "coredevice_cancelled" : "coredevice_timeout", "CoreDevice process was cancelled or exceeded the host deadline",
+                diagnostics: ["process": ["elapsedMs": (ProcessInfo.processInfo.systemUptime - started) * 1000,
+                    "hostDeadlineUptime": deadline, "cancelledByCaller": wasCancelled,
+                    "terminationRequested": true, "forcedKill": forcedKill, "processExited": true,
+                    "exitStatus": process.terminationStatus]])
         }
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
             let detail = (try? String(contentsOf: logURL, encoding: .utf8)) ?? ""
-            throw commandFailure(arguments, exitCode: process.terminationStatus, output: detail)
+            let failure = commandFailure(arguments, exitCode: process.terminationStatus, output: detail)
+            throw IPhoneUseError(failure.code, failure.description, diagnostics: ["process": [
+                "elapsedMs": (ProcessInfo.processInfo.systemUptime - started) * 1000,
+                "terminationRequested": false, "forcedKill": false, "processExited": true,
+                "exitStatus": process.terminationStatus]])
         }
         guard let result = try jsonObject(Data(contentsOf: resultURL))["result"] as? [String: Any] else {
             throw IPhoneUseError("invalid_discovery", "CoreDevice did not return a result object")
@@ -45,7 +56,9 @@ enum CoreDevice {
     // Launch treats everything after the bundle as application arguments. All tool options,
     // including JSON output and device selection, must precede that positional tail.
     static func commandArguments(_ arguments: [String], output: URL, trailingArguments: [String] = [], timeout: Int = 20) -> [String] {
-        ["devicectl"] + arguments + ["--timeout", String(timeout), "--quiet", "--json-output", output.path] + trailingArguments
+        // Apple rejects tool timeouts below five seconds. The independent host
+        // deadline and action preflight deadline still enforce the caller's budget.
+        ["devicectl"] + arguments + ["--timeout", String(max(5, timeout)), "--quiet", "--json-output", output.path] + trailingArguments
     }
 
     static func commandFailure(_ arguments: [String], exitCode: Int32, output: String) -> IPhoneUseError {

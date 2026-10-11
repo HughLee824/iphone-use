@@ -17,6 +17,22 @@ final class AgentOutputTests: XCTestCase {
                 "recovery": ["automaticReplayAllowed": false]]], "observation": observation]
     }
 
+    func testCaptureBudgetDiagnosticsRemainVisibleWithoutRawMediaState() throws {
+        let checks: [[String: Any]] = [["stage": "before_input", "attempt": 1,
+            "preparationMs": 9000.0, "validationAndCheckMs": 2000.0,
+            "orientationRecovery": ["trigger": "stream_quiescent", "triggerState": ["private": true]]],
+            ["stage": "after_clipboard", "captureError": "input_preflight_timeout", "phase": "preparation"]]
+        let compact = AgentOutput.summarize(["result": ["preInputChecks": checks]])
+        let summary = try XCTUnwrap(compact["agentSummary"] as? [String: Any])
+        let stages = try XCTUnwrap(summary["preflightStages"] as? [[String: Any]])
+        XCTAssertEqual(stages[0]["recoveryTrigger"] as? String, "stream_quiescent")
+        XCTAssertEqual(stages[0]["preparationMs"] as? Double, 9000)
+        XCTAssertEqual(stages[0]["validationAndCheckMs"] as? Double, 2000)
+        XCTAssertNil(stages[0]["orientationRecovery"])
+        XCTAssertEqual(stages[1]["captureError"] as? String, "input_preflight_timeout")
+        XCTAssertEqual(stages[1]["phase"] as? String, "preparation")
+    }
+
     func testGlobalRejectionDoesNotTreatUnusedTemporalMatchingAsFailure() throws {
         let source = response()
         let compact = AgentOutput.summarize(source)
@@ -41,6 +57,63 @@ final class AgentOutputTests: XCTestCase {
         XCTAssertEqual((details["pasteboard"] as? [String: Any])?["transactionID"] as? String, "t1")
         XCTAssertNotNil(action["error"])
         XCTAssertNotNil(details["recovery"])
+        XCTAssertNil((compact["agentSummary"] as? [String: Any])?["recoveryHint"])
+    }
+
+    func testChangedScreenRecoveryKeepsNonDispatchAndDoesNotDiagnoseVideo() throws {
+        let compact = AgentOutput.summarize(response())
+        let summary = try XCTUnwrap(compact["agentSummary"] as? [String: Any])
+        let hint = try XCTUnwrap(summary["recoveryHint"] as? String)
+        XCTAssertTrue(hint.contains("screen comparison failed"))
+        XCTAssertTrue(hint.contains("Only for a visually identified video"))
+        XCTAssertTrue(hint.contains("protected neighborhoods"))
+        XCTAssertEqual(summary["outcome"] as? String, "not_dispatched")
+        XCTAssertEqual(summary["automaticReplayAllowed"] as? Bool, false)
+        XCTAssertEqual(summary["nextStep"] as? String, "inspect_attached_observation")
+    }
+
+    func testTimeoutTakesPrecedenceOverSimultaneousPixelMismatch() throws {
+        for explicitDeadline in [false, true] {
+            var source = response()
+            var action = source["action"] as! [String: Any]
+            if explicitDeadline {
+                var details = action["result"] as! [String: Any]
+                details["preInputDeadlineExceeded"] = true
+                action["result"] = details
+            } else {
+                action["error"] = ["code": "input_preflight_timeout"]
+            }
+            source["action"] = action
+            let summary = AgentOutput.summarize(source)["agentSummary"] as! [String: Any]
+            let hint = try XCTUnwrap(summary["recoveryHint"] as? String)
+            XCTAssertTrue(hint.contains("execution-time validation exceeded its budget"))
+            XCTAssertFalse(hint.contains("--ignore-rect"))
+            XCTAssertEqual((summary["comparison"] as? [String: Any])?["mismatches"] as? [String], ["screen_changed"])
+        }
+    }
+
+    func testSpecificCaretRecoveryIsNotReplacedWithVideoAdvice() {
+        var source = response()
+        var action = source["action"] as! [String: Any]
+        action["error"] = ["code": "caret_confirmation_required", "message": "Confirm visible caret"]
+        source["action"] = action
+        let compact = AgentOutput.summarize(source)
+        XCTAssertNil((compact["agentSummary"] as? [String: Any])?["recoveryHint"])
+        XCTAssertEqual(((compact["action"] as? [String: Any])?["error"] as? [String: Any])?["code"] as? String,
+                       "caret_confirmation_required")
+    }
+
+    func testUnstableObservationDoesNotRecommendCaptureLoopOrReplay() throws {
+        var source = response(outcome: "unknown")
+        var frame = observation
+        frame["stability"] = ["stable": false, "reason": "timeout"]
+        source["observation"] = frame
+        let compact = AgentOutput.summarize(source)
+        let summary = compact["agentSummary"] as! [String: Any]
+        XCTAssertEqual(summary["nextStep"] as? String, "inspect_unstable_observation_do_not_replay")
+        XCTAssertTrue(try XCTUnwrap(summary["recoveryHint"] as? String).contains("does not mean input failed"))
+        XCTAssertEqual(summary["outcome"] as? String, "unknown")
+        XCTAssertEqual(try jsonData(compact["observation"] as! [String: Any]), try jsonData(frame))
     }
 
     func testPreparationAndFinishReuseAttachedObservation() throws {
@@ -73,6 +146,20 @@ final class AgentOutputTests: XCTestCase {
             XCTAssertEqual(comparison["fieldMatch"] as? String, temporal ? "temporal" : "different")
             XCTAssertEqual(comparison["mismatches"] as? [String], temporal ? [] : ["field_changed", "protected_region_changed"])
         }
+    }
+
+    func testBoundCaretMatchPreservesOriginalObservationIdentity() {
+        let check: [String:Any] = ["accepted":true,"screenChange":0.0,"maxScreenChange":0.01,
+            "regionChanges":[0.2],"maxRegionChange":0.0,"fieldPixelsMatch":false,"fieldCaretMatch":true,
+            "caretObservationID":"o9", "caretRect":["x":19.0,"y":479.0,"width":2.0,"height":20.0],
+            "caretExclusionRect":["x":19.0,"y":478.6666667,"width":2.0,"height":20.6666667]]
+        let compact = AgentOutput.summarize(["result":["screenGuard":check]])
+        let comparison = (compact["agentSummary"] as! [String:Any])["comparison"] as! [String:Any]
+        XCTAssertEqual(comparison["fieldMatch"] as? String,"caret")
+        XCTAssertEqual(comparison["caretObservationID"] as? String,"o9")
+        XCTAssertEqual((comparison["caretExclusionRect"] as? [String:Double])?["y"],478.6666667)
+        XCTAssertEqual((comparison["caretRect"] as? [String:Double])?["y"],479)
+        XCTAssertEqual(comparison["mismatches"] as? [String],[])
     }
 
     func testAppearanceMatchDoesNotReportProtectedFieldFailure() {

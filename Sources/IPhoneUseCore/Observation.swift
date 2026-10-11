@@ -168,7 +168,8 @@ final class ObservationCache {
                 let context = try JSONDecoder().decode(ScreenContext.self, from: jsonData(raw))
                 let guardValue = try ScreenGuard(png: entry.capture.screenshot, context: context, rects: [action.textRegion ?? context.screen], policy: .init(), ignoring: action.ignoredScreenRect)
                 let fieldGuard = try NativeTextFieldGuard(png: entry.capture.screenshot, context: context, field: action.textRegion ?? context.screen)
-                return ObservedTarget(context: entry.capture.metadata, path: [], textGuard: guardValue, textFieldGuard: fieldGuard)
+                let caret = try action.caretRegion.map { try NativeBoundCaretGuard(field: fieldGuard, caret: $0, observationID: entry.id) }
+                return ObservedTarget(context: entry.capture.metadata, path: [], textGuard: guardValue, textFieldGuard: fieldGuard, textCaretGuard: caret)
             }
             guard ["tap", "double-tap", "long-press", "pinch", "swipe"].contains(action.kind), action.coordinate else {
                 throw IPhoneUseError("native_action_unsupported", "Use tap or swipe oN with native screenshot screen-point coordinates")
@@ -283,10 +284,7 @@ final class ObservationCache {
             throw IPhoneUseError("swipe_duration_exceeded", "Estimated swipe motion exceeds 10 seconds; use a shorter distance, faster velocity or shorter holds")
         }
         try gesture.validate(kind: action.kind)
-        let appearance = capture.metadata["backend"] as? String == "apple-native"
-            && capture.metadata["captureSource"] as? String == "native_media"
-            ? try NativeGestureAppearanceGuard(png: capture.screenshot, guardValue: guardValue) : nil
-        return ObservedTarget(context: capture.metadata, path: [], gesture: gesture, gestureAppearanceGuard: appearance)
+        return ObservedTarget(context: capture.metadata, path: [], gesture: gesture)
     }
 
     func clear() throws {
@@ -318,6 +316,9 @@ final class ObservationCache {
             lines.append("backend=apple-native coordinate_space=screen_points pixels_per_point=\(metadata["pointScale"] ?? "unknown") rotation=\(metadata["displayRotation"] ?? "unknown")")
             lines.append("device=\(quoted(metadata["deviceID"] ?? NSNull())) generation=\(quoted(metadata["sessionGeneration"] ?? NSNull())) capture_started=\(metadata["captureStartedAt"] ?? "unknown") capture_completed=\(metadata["captureCompletedAt"] ?? "unknown")")
             lines.append("foreground=unverified keyboard_state=unknown; locate targets visually in the original screenshot")
+            if let stability = metadata["postActionStability"] as? [String: Any] {
+                lines.append("post_action_stable=\(stability["stable"] ?? false) reason=\(stability["reason"] ?? "unknown"); visual stability does not confirm action success")
+            }
         }
         var body: [String] = []
         var nextOffset: Int?

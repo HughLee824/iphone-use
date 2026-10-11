@@ -89,17 +89,15 @@ final class NativeHIDAdapter {
     private var pinchContacts: [(UInt16, UInt16)]?
     private(set) var releaseUncertain = false
     private var inputUncertain = false
-    private let keyboardID = UInt64(1) << 32 | UInt64.random(in: 1...UInt64(UInt32.max))
-    private let keyboardProduct = "iPhone-use " + UUID().uuidString
-    private var keyboardMayExist = false
+    private var keyboardID: UInt64?
     private var keyboardReady = false
     private var buttonTransport: NativeTransport?
     private var homeDown = false
     private var keysDown = false
     private var keyboardCleanup: [String: Any]?
-    var canType: Bool { isAvailable && (keyboardReady || !keyboardMayExist) }
+    var canType: Bool { isAvailable }
     var keyboardStatus: [String: Any] { ["prepared": keyboardReady, "keysMayBeDown": keysDown,
-        "serviceMayExist": keyboardMayExist, "layout": "US usage mapping; active device layout unverified"] }
+        "serviceMayExist": false, "serviceSource": "coredevice_builtin", "layout": "US usage mapping; active device layout unverified"] }
     var state: State {
         if releaseUncertain { return .releaseUncertain }
         if inputUncertain { return .inputUncertain }
@@ -148,28 +146,19 @@ final class NativeHIDAdapter {
         try cancellation.check()
         guard isAvailable else { throw IPhoneUseError("native_hid_unavailable", "Reconnect and observe before typing") }
         if keyboardReady { return }
-        guard !keyboardMayExist else { throw IPhoneUseError("native_keyboard_ownership_unknown", "Keyboard creation is uncertain; close this owned session before reconnecting") }
-        guard try !keyboardInventory().contains(where: { ($0["_ServiceID"] as? NSNumber)?.uint64Value == keyboardID }) else {
-            throw IPhoneUseError("native_keyboard_ownership_unknown", "Generated keyboard identifier is already present")
-        }
-        keyboardMayExist = true
         do {
-            let reply = try keyboardRequest(["createService": ["_0": NativeKeyboard.properties(id: keyboardID, product: keyboardProduct)]])
-            guard (reply["serviceID"] as? NSNumber)?.uint64Value == keyboardID else {
-                throw IPhoneUseError("native_keyboard_ownership_unknown", "Keyboard creation did not confirm the requested service ID")
-            }
-            let matches = try keyboardInventory().filter { ($0["_ServiceID"] as? NSNumber)?.uint64Value == keyboardID }
-            guard matches.count == 1, matches[0]["Product"] as? String == "CD-" + keyboardProduct else {
-                throw IPhoneUseError("native_keyboard_ownership_unknown", "Created keyboard identity was not confirmed")
-            }
+            // Borrow the advertised CoreDevice keyboard. Registering a new HID keyboard
+            // changes iOS hardware-keyboard state and can hide an app's entire composer.
+            keyboardID = try NativeKeyboard.builtInService(in: keyboardInventory())
             keyboardReady = true
+            keyboardCleanup = nil
         } catch {
-            // No key was sent. Still close this possibly-created service before another workflow.
             throw ActionFailure(code: "native_keyboard_unavailable", description: String(describing: error), possiblyExecuted: false,
                 requiresObservation: true, result: ["recovery": NativeRecovery.resolveError.result])
         }
     }
     private func sendKeys(_ keys: [UInt8]) throws {
+        guard let keyboardID else { throw IPhoneUseError("native_keyboard_unavailable", "CoreDevice keyboard has not been discovered") }
         try transport.send(["featureIdentifier": Self.feature, "messageType": "Request",
             "payload": ["send": ["_0": NativeKeyboard.report(keys, timestamp: clock()), "_1": nativeUInt(keyboardID)]]], timeout: 3)
     }
@@ -268,27 +257,10 @@ final class NativeHIDAdapter {
     }
     func closeKeyboard() -> [String: Any] {
         if let keyboardCleanup { return keyboardCleanup }
-        var result: [String: Any] = ["keyboardRemoveAcknowledged": !keyboardMayExist]
-        if keyboardMayExist {
-            do {
-                let inventory = try keyboardInventory()
-                guard !inventory.contains(where: { $0["Product"] as? String == "CD-" + keyboardProduct && ($0["_ServiceID"] as? NSNumber)?.uint64Value != keyboardID }) else {
-                    throw IPhoneUseError("native_keyboard_ownership_unknown", "Keyboard appears under a different identifier; cleanup is unconfirmed")
-                }
-                let matches = inventory.filter { ($0["_ServiceID"] as? NSNumber)?.uint64Value == keyboardID }
-                if !matches.isEmpty {
-                    guard matches.count == 1, matches[0]["Product"] as? String == "CD-" + keyboardProduct else {
-                        throw IPhoneUseError("native_keyboard_ownership_unknown", "Refusing to remove a keyboard without confirmed ownership")
-                    }
-                    // This void command has no dictionary reply. A local barrier is not
-                    // deletion evidence; the following correlated inventory must show absence.
-                    try transport.send(["featureIdentifier": Self.feature, "messageType": "Request",
-                        "payload": ["removeService": ["_0": nativeUInt(keyboardID)]]], timeout: 3)
-                }
-                result["keyboardRemoveAcknowledged"] = try !keyboardInventory().contains { ($0["_ServiceID"] as? NSNumber)?.uint64Value == keyboardID }
-            } catch { result["keyboardRemoveError"] = String(describing: error) }
-        }
-        if result["keyboardRemoveAcknowledged"] as? Bool == true { keyboardMayExist = false }
+        // This service belongs to iOS, not this session. Never remove it. The caller
+        // releases our pending keys first; retain its ID for uncertain-release cleanup.
+        let result: [String: Any] = ["keyboardRemoveAcknowledged": true,
+            "keyboardRemovalRequired": false, "keyboardServiceSource": "coredevice_builtin"]
         keyboardReady = false; keyboardCleanup = result
         return result
     }

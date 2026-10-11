@@ -2,22 +2,27 @@ import XCTest
 import AppleNativeBridge
 @testable import IPhoneUseCore
 
+private func builtInKeyboard(id: Any = UInt64(761)) -> [String: Any] {
+    ["_ServiceID": id, "PrimaryUsagePage": 0, "PrimaryUsage": 0,
+     "DeviceTypeHint": "Keyboard", "Product": "CoreDevice keyboard",
+     "_CoreDevice_codablePropertyStorage": [
+        "Transport": ["string": "CoreDevice"],
+        "_CoreDevice_originalUsages": ["array": [["dictionary": [
+            "DeviceUsagePage": ["int": 1], "DeviceUsage": ["int": 6]]]]]]]
+}
+
 private final class KeyboardTransport: NativeTransport {
-    var services: [[String: Any]] = [["_ServiceID": 987, "PrimaryUsagePage": 13, "PrimaryUsage": 4, "UniversalControlBuiltIn": true]]
+    var services: [[String: Any]] = [["_ServiceID": 987, "PrimaryUsagePage": 13, "PrimaryUsage": 4, "UniversalControlBuiltIn": true], builtInKeyboard()]
     var reports: [Data] = []
     var removals: [UInt64] = []
-    var failCreationReply = false
+    var destinations: [UInt64] = []
+    var unexpectedRequests = 0
     var failSend = false
     var onSend: (() -> Void)?
     func request(_ message: [String: Any], timeout: TimeInterval) throws -> [String: Any] {
         let payload = message["payload"] as! [String: Any]
         if payload["connectedServices"] != nil { return ["connectedServices": services] }
-        if let create = payload["createService"] as? [String: Any], let properties = create["_0"] as? [String: Any] {
-            let id = (properties["_ServiceID"] as! ASNativeUnsigned).value
-            services.append(["_ServiceID": id, "Product": "CD-" + (properties["Product"] as! String)])
-            if failCreationReply { throw TransportError(description: "Lost creation reply", possiblySent: true) }
-            return ["serviceID": id]
-        }
+        unexpectedRequests += 1
         throw IPhoneUseError("test_request", "Unexpected request")
     }
     func send(_ message: [String: Any], timeout: TimeInterval) throws {
@@ -27,7 +32,9 @@ private final class KeyboardTransport: NativeTransport {
             removals.append(id); services.removeAll { ($0["_ServiceID"] as? NSNumber)?.uint64Value == id }
             return
         }
-        reports.append((payload["send"] as! [String: Any])["_0"] as! Data)
+        let send = payload["send"] as! [String: Any]
+        destinations.append((send["_1"] as! ASNativeUnsigned).value)
+        reports.append(send["_0"] as! Data)
         if failSend { throw TransportError(description: "Keyboard connection lost", possiblySent: true) }
         onSend?()
     }
@@ -49,7 +56,9 @@ final class NativeKeyboardTests: XCTestCase {
         XCTAssertEqual(result["key"] as? String, "return")
         XCTAssertNil(result["charactersQueued"])
         XCTAssertEqual(keyboard.closeKeyboard()["keyboardRemoveAcknowledged"] as? Bool, true)
-        XCTAssertEqual(transport.removals.count, 1)
+        XCTAssertTrue(transport.removals.isEmpty)
+        XCTAssertEqual(transport.unexpectedRequests, 0)
+        XCTAssertTrue(transport.destinations.allSatisfy { $0 == 761 })
     }
 
     func testNativeReturnProtectsCurrentCompleteFieldAndRejectsRunnerScreenReference() throws {
@@ -258,12 +267,8 @@ final class NativeKeyboardTests: XCTestCase {
         XCTAssertEqual(report[1], 16); XCTAssertEqual(report[29], 2)
         XCTAssertEqual(Array(report[31..<37]), [6,5,4,3,2,1])
         XCTAssertTrue(NativeKeyboard.report([], timestamp: 1)[1..<31].allSatisfy { $0 == 0 })
-        let properties = NativeKeyboard.properties(id: 123, product: "iPhone-use test")
-        XCTAssertEqual(properties["VendorID"] as? Int, 0)
-        let storage = properties["_CoreDevice_codablePropertyStorage"] as! [String: Any]
-        XCTAssertEqual((storage["Manufacturer"] as? [String: String])?["string"], "iPhone-use")
     }
-    func testTypingQueuesKeyThenEmptySetAndRemovesOnlyOwnedKeyboard() throws {
+    func testTypingQueuesKeyThenEmptySetAndNeverRemovesBorrowedOrForeignKeyboard() throws {
         let transport = KeyboardTransport()
         transport.services.append(["_ServiceID": UInt64(555), "Product": "Other client's keyboard"])
         var now = 0.0
@@ -279,8 +284,10 @@ final class NativeKeyboardTests: XCTestCase {
         XCTAssertEqual(transport.reports[3][4], 32)
         XCTAssertEqual(hid.closeKeyboard()["keyboardRemoveAcknowledged"] as? Bool, true)
         _ = hid.closeKeyboard()
-        XCTAssertEqual(transport.removals.count, 1)
-        XCTAssertEqual(transport.services.count, 2)
+        XCTAssertTrue(transport.removals.isEmpty)
+        XCTAssertEqual(transport.unexpectedRequests, 0)
+        XCTAssertTrue(transport.destinations.allSatisfy { $0 == 761 })
+        XCTAssertEqual(transport.services.count, 3)
         XCTAssertTrue(transport.services.contains { ($0["_ServiceID"] as? NSNumber)?.intValue == 555 })
     }
     func testCancelAfterModifierKeyReleasesAndDoesNotContinueText() throws {
@@ -301,7 +308,7 @@ final class NativeKeyboardTests: XCTestCase {
         XCTAssertThrowsError(try hid.type([[4]]))
         XCTAssertEqual(transport.reports.count, 2)
     }
-    func testLostKeySendAndReleaseStayUncertainAndOwnershipMismatchIsNotRemoved() throws {
+    func testLostKeySendAndReleaseStayUncertainAndBorrowedServiceIsNotRemoved() throws {
         let transport = KeyboardTransport()
         let hid = NativeHIDAdapter(transport: transport, cancellation: NativeCancellation())
         try hid.prepare(); try hid.prepareKeyboard()
@@ -312,23 +319,42 @@ final class NativeKeyboardTests: XCTestCase {
         XCTAssertEqual(transport.reports.count, 2)
         XCTAssertEqual(hid.state, .releaseUncertain)
         transport.services[1]["Product"] = "Foreign identity"
-        XCTAssertEqual(hid.closeKeyboard()["keyboardRemoveAcknowledged"] as? Bool, false)
+        XCTAssertEqual(hid.closeKeyboard()["keyboardRemovalRequired"] as? Bool, false)
+        XCTAssertEqual(hid.state, .releaseUncertain)
         XCTAssertTrue(transport.removals.isEmpty)
     }
-    func testLostCreationReplyDoesNotSendKeysOrCreateAgainAndCleansOnlyMatchingIdentity() throws {
-        let transport = KeyboardTransport()
-        transport.failCreationReply = true
-        let hid = NativeHIDAdapter(transport: transport, cancellation: NativeCancellation())
-        try hid.prepare()
-        XCTAssertThrowsError(try hid.prepareKeyboard()) {
-            XCTAssertEqual(($0 as? ActionFailure)?.possiblyExecuted, false)
+    func testMissingOrAmbiguousBuiltInKeyboardNeverCreatesServiceOrSendsKeys() throws {
+        for candidates in [[], [builtInKeyboard(), builtInKeyboard(id: 762)],
+                           [builtInKeyboard(), ["_ServiceID": 761, "Product": "Foreign service"]]] {
+            let transport = KeyboardTransport()
+            transport.services = [transport.services[0]] + candidates
+            let hid = NativeHIDAdapter(transport: transport, cancellation: NativeCancellation())
+            try hid.prepare()
+            XCTAssertThrowsError(try hid.prepareKeyboard()) {
+                XCTAssertEqual(($0 as? ActionFailure)?.possiblyExecuted, false)
+            }
+            XCTAssertThrowsError(try hid.type([[4]]))
+            XCTAssertTrue(transport.reports.isEmpty)
+            XCTAssertEqual(hid.closeKeyboard()["keyboardRemovalRequired"] as? Bool, false)
+            XCTAssertTrue(transport.removals.isEmpty)
+            XCTAssertEqual(transport.unexpectedRequests, 0)
         }
-        XCTAssertFalse(hid.canType)
-        XCTAssertTrue(transport.reports.isEmpty)
-        XCTAssertThrowsError(try hid.prepareKeyboard())
-        XCTAssertEqual(transport.services.count, 2)
-        XCTAssertEqual(hid.closeKeyboard()["keyboardRemoveAcknowledged"] as? Bool, true)
-        XCTAssertEqual(transport.removals.count, 1)
+    }
+
+    func testBuiltInSelectionRequiresNativeMetadataAndDynamicPositiveIdentifier() throws {
+        for id: UInt64 in [761, 9821, UInt64(UInt32.max) + 99] {
+            XCTAssertEqual(try NativeKeyboard.builtInService(in: [builtInKeyboard(id: id)]), id)
+        }
+        for invalid: Any in [0, -1, true, 1.25, "761", NSNull()] {
+            XCTAssertThrowsError(try NativeKeyboard.builtInService(in: [builtInKeyboard(id: invalid)]))
+        }
+        for key in ["DeviceTypeHint", "Product", "PrimaryUsagePage", "PrimaryUsage", "_CoreDevice_codablePropertyStorage"] {
+            var service = builtInKeyboard(); service.removeValue(forKey: key)
+            XCTAssertThrowsError(try NativeKeyboard.builtInService(in: [service]))
+        }
+        var service = builtInKeyboard()
+        service["_CoreDevice_codablePropertyStorage"] = ["Transport": ["string": "Virtual"]]
+        XCTAssertThrowsError(try NativeKeyboard.builtInService(in: [service]))
     }
     func testExplicitNativeFieldRegionKeepsStrictLocalAndGlobalProtection() throws {
         let request: [String: Any] = ["reference": "o1", "mode": "insert", "text": "zhongwen", "fieldRect": "18,146,354,36"]

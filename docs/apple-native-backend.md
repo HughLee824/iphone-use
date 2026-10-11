@@ -13,11 +13,15 @@ Earlier discovery experiments found that socket-inventory reads and child `netst
 
 Reproducible host, media/lifecycle, visual-tap and fault-injection procedures: [M2–M3 acceptance](apple-native-acceptance.md).
 
+## Current keyboard channel (2026-10-04)
+
+Native text now borrows the device-advertised CoreDevice keyboard without registering a hardware keyboard. It requires one uniquely advertised service, releases its own keys during cleanup and never removes the built-in service. See [native text commands](actions.md#实验性原生文字输入).
+
 ## Current implementation notes (2026-09-26)
 
 Current native text/press input revalidates the current screenshot under a request-relative deadline; agent thinking time no longer expires the comparison baseline. See [text input revalidation](native-text-revalidation.md).
 
-The dated sections below preserve historical evidence and stage-specific limitations. Current capture uses [Apple PNG while media snapshots remain quarantined](native-snapshot-reliability.md) and [owned-media orientation resynchronization](native-rotation-synchronization.md). Recording is [shared by both control modes](runner-recording.md), with [explicit final-frame hold timing](native-recording-timeline.md) on healthy normal stops. See [actions](actions.md) for the current command contract, including portrait/landscape gestures and text-finish.
+The dated sections below preserve historical evidence and stage-specific limitations. Standard-mode observation and input no longer require a resident media stream: screenshots and pre-input checks use Apple PNG plus current display metadata, while HID is checked independently. The backend reads media ownership before dispatch and refuses when another client owns a stream. Media starts only for explicit native recording and is UUID-scoped and released when recording ends. See [the capture and media contract](native-apple-png-observation.md). Recording is [shared by both control modes](runner-recording.md), with [explicit final-frame hold timing](native-recording-timeline.md) on healthy normal stops. See [actions](actions.md) for the current command contract, including portrait/landscape gestures and text-finish.
 
 ## Run from source
 

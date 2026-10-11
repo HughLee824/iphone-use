@@ -29,7 +29,8 @@ struct NativeInputTiming {
     let observationAgeSeconds: TimeInterval
     let dispatchDeadline: TimeInterval
     let policy: Policy
-    private var finalPreflightDeadline: TimeInterval?
+    private var finalCaptureBudget: NativeCaptureBudget?
+    private var capturePhases = 0
 
     init(captured: TimeInterval, now: TimeInterval, policy: Policy) throws {
         guard captured.isFinite, now.isFinite, captured >= 0, captured <= now,
@@ -40,23 +41,27 @@ struct NativeInputTiming {
         self.policy = policy
         observationAgeSeconds = now - captured
         switch policy {
-        case .coordinateGesture: dispatchDeadline = now + 8
+        case .coordinateGesture: dispatchDeadline = now + 30
         case .keyboard: dispatchDeadline = now + 30
         case .system: dispatchDeadline = captured + 30
         }
     }
 
-    mutating func preflightDeadline(now: TimeInterval) -> TimeInterval {
-        let deadline = min(dispatchDeadline, now + 8)
-        finalPreflightDeadline = deadline
-        return deadline
+    mutating func captureBudget(now: TimeInterval) throws -> NativeCaptureBudget {
+        guard now.isFinite, now < dispatchDeadline, capturePhases < (policy == .keyboard ? 2 : 1) else {
+            throw IPhoneUseError("input_preflight_timeout", "Input preparation expired or exhausted its capture phases")
+        }
+        capturePhases += 1
+        let budget = NativeCaptureBudget(requestDeadline: dispatchDeadline)
+        finalCaptureBudget = budget
+        return budget
     }
 
     func checkBeforeDispatch(now: TimeInterval) throws {
         // Clipboard ownership checks after the last capture share that capture's
         // budget. They cannot leave a matching but now-old frame fit for dispatch.
-        guard let finalPreflightDeadline, now.isFinite,
-              now < min(dispatchDeadline, finalPreflightDeadline) else {
+        guard let budget = finalCaptureBudget, budget.validationStartedAt != nil, now.isFinite,
+              now < budget.deadline else {
             throw ActionFailure(code: "stale_observation", description: "Input validation deadline expired; observe again before input",
                                 possiblyExecuted: false, requiresObservation: true, result: ["inputTiming": result])
         }
@@ -66,46 +71,73 @@ struct NativeInputTiming {
         ["policy": policy == .system ? "observation_expiry" : "current_observation_revalidation",
          "observationAgeAtAdmissionSeconds": observationAgeSeconds,
          "preflightBudgetSeconds": 8,
-         "requestBudgetSeconds": policy == .keyboard ? 30 : (policy == .coordinateGesture ? 8 : 30)]
+         "requestBudgetSeconds": 30,
+         "preflightBudgetStartsAt": "apple_png_request",
+         "capturePhases": capturePhases]
     }
 }
 
-enum NativeTextPhaseSchedule {
-    static func delay(attempt: Int, started: TimeInterval, now: TimeInterval, deadline: TimeInterval) -> TimeInterval {
-        guard attempt > 1 else { return 0 }
-        let offsets = [0.0, 0.19, 0.47, 0.83, 1.31, 1.97]
-        let gaps = [0.0, 0.07, 0.13, 0.19, 0.11, 0.23]
-        return max(0, min(deadline, max(started + offsets[attempt - 1], now + gaps[attempt - 1])) - now)
+// One preparation/capture phase. Apple reads may consult the deadline in parallel;
+// validation starts only after those reads have joined and geometry is verified.
+final class NativeCaptureBudget {
+    enum Purpose { case input, observation }
+    let requestDeadline: TimeInterval
+    let purpose: Purpose
+    private(set) var validationStartedAt: TimeInterval?
+    var deadline: TimeInterval {
+        purpose == .input ? min(requestDeadline, validationStartedAt.map { $0 + 8 } ?? requestDeadline) : requestDeadline
+    }
+
+    init(requestDeadline: TimeInterval, purpose: Purpose = .input) {
+        self.requestDeadline = requestDeadline
+        self.purpose = purpose
+    }
+
+    func check(now: TimeInterval = ProcessInfo.processInfo.systemUptime) throws {
+        guard now.isFinite, requestDeadline.isFinite, now < deadline else {
+            if purpose == .observation {
+                throw IPhoneUseError("capture_timeout", "Observation exceeded its capture deadline")
+            }
+            throw IPhoneUseError("input_preflight_timeout", validationStartedAt == nil
+                ? "Input preparation exceeded the request deadline"
+                : "Apple PNG validation exceeded its dispatch deadline")
+        }
+    }
+
+    @discardableResult
+    func beginValidation(now: TimeInterval = ProcessInfo.processInfo.systemUptime) throws -> TimeInterval {
+        try check(now: now)
+        // A second call can never extend a frame's lifetime.
+        if validationStartedAt == nil { validationStartedAt = now }
+        return deadline
     }
 }
 
-// Retry observations only, never input. Every frame compares with the original
-// guard, with unchanged thresholds and one shared deadline for this preflight.
+// Native text checks one fresh image against the original observation.
 enum NativeInputPreflight {
     static func check(guard screenGuard: ScreenGuard, displayID: UInt64?, displayRotation: String? = nil, captureSource: String? = nil, deadline: TimeInterval, maximumCaptures: Int,
-                      fieldGuard: NativeTextFieldGuard? = nil, phaseMatcher: NativeTextPhaseMatcher? = nil, phaseSampling: Bool = false,
-                      gestureAppearanceGuard: NativeGestureAppearanceGuard? = nil,
-                      wait: (TimeInterval) throws -> Void = { Thread.sleep(forTimeInterval: $0) },
+                      fieldGuard: NativeTextFieldGuard? = nil, caretGuard: NativeBoundCaretGuard? = nil,
+                      budget: NativeCaptureBudget? = nil,
                       now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
                       record: ([String: Any]) -> Void = { _ in },
                       capture: () throws -> CapturedObservation) throws -> (ScreenGuard.Check, Int) {
         guard (1...6).contains(maximumCaptures), deadline.isFinite else { throw ScreenGuard.Failure.invalidGuard }
         let started = now()
-        let matcher = phaseMatcher ?? fieldGuard.map { NativeTextPhaseMatcher(field: $0) }
+        let capturesLimit = fieldGuard == nil ? maximumCaptures : 1
         var actualCaptures = 0
-        for attempt in 1...maximumCaptures {
+        for attempt in 1...capturesLimit {
             guard now() < deadline else { throw IPhoneUseError("stale_observation", "Input observation deadline expired") }
-            if phaseSampling, attempt > 1 {
-                // Cover ~2 seconds with fast capture; stagger slow captures too,
-                // rather than sampling a periodic blink at one fixed phase.
-                try wait(NativeTextPhaseSchedule.delay(attempt: attempt, started: started, now: now(), deadline: deadline))
-                guard now() < deadline else { throw IPhoneUseError("stale_observation", "Input observation deadline expired") }
-            }
             let captureStarted = now()
-            let frame = try capture()
-            let phaseSamples = (frame.metadata["mediaSnapshot"] as? [String: Any])?["textPhaseSamples"] as? [[String: Any]] ?? []
-            let applePhaseSamples = frame.metadata["appleTextPhaseSamples"] as? [[String: Any]] ?? []
-            actualCaptures += max(1, max(phaseSamples.count, applePhaseSamples.count))
+            let frame: CapturedObservation
+            do { frame = try capture() }
+            catch {
+                record(["attempt": attempt, "captureError": (error as? IPhoneUseError)?.code ?? "capture_failed",
+                        "captureDiagnostics": (error as? IPhoneUseError)?.diagnostics ?? [:],
+                        "phase": budget?.validationStartedAt == nil ? "preparation" : "apple_png_validation",
+                        "elapsedMs": (now() - started) * 1000])
+                throw error
+            }
+            actualCaptures += 1
             if frame.metadata["orientationResynchronized"] as? Bool == true {
                 throw ActionFailure(code: "stale_observation", description: "Media orientation was resynchronized; inspect the new observation before choosing coordinates",
                     possiblyExecuted: false, requiresObservation: true,
@@ -122,6 +154,7 @@ enum NativeInputPreflight {
             }
             let context: ScreenContext
             var check: ScreenGuard.Check
+            var fieldRejection: String?
             do {
                 guard frame.metadata["displayID"] as? UInt64 == displayID,
                       let raw = frame.metadata["screenContext"] as? [String: Any] else { throw ScreenGuard.Failure.contextChanged }
@@ -130,7 +163,18 @@ enum NativeInputPreflight {
                           frame.metadata["nativeRotation"] as? String == "rot0" else { throw ScreenGuard.Failure.contextChanged }
                 }
                 context = try JSONDecoder().decode(ScreenContext.self, from: jsonData(raw))
-                check = try screenGuard.check(png: frame.screenshot, context: context)
+                let image = try ScreenImage(png: frame.screenshot)
+                let comparisonImage: ScreenImage
+                if let fieldGuard, let caretGuard {
+                    comparisonImage = try fieldGuard.screenComparisonImage(image, caret: caretGuard, context: context)
+                } else { comparisonImage = image }
+                check = try screenGuard.check(image: comparisonImage, context: context)
+                if let fieldGuard {
+                    let current = try fieldGuard.pixels(png: frame.screenshot, context: context, decodedImage: image)
+                    let match = fieldGuard.compare(current, caret: caretGuard)
+                    check.apply(match, caret: caretGuard)
+                    if match == .none { fieldRejection = fieldGuard.rejection(current, caret: caretGuard) }
+                }
             } catch ScreenGuard.Failure.contextChanged {
                 // An orientation change is never a retryable pixel mismatch. Preserve
                 // this new frame and invalidate the old observation before any input.
@@ -142,28 +186,27 @@ enum NativeInputPreflight {
                     possiblyExecuted: false, requiresObservation: true,
                     result: ["preInputCaptures": actualCaptures, "screenContextChanged": true], rejectedCapture: frame)
             }
-            if captureSource == "native_media", let gestureAppearanceGuard, !check.accepted,
-               check.screenChange <= check.policy.maxScreenChange {
-                check.regionAppearanceMatches = try gestureAppearanceGuard.matches(png: frame.screenshot, context: context,
-                    guardValue: screenGuard, check: check)
-            }
-            if let matcher {
-                let match = try matcher.check(png: frame.screenshot, context: context)
-                check.apply(match, caret: matcher.caretRect)
-            }
             let checkedAt = now()
-            let inTime = checkedAt < deadline
+            let effectiveDeadline = min(deadline, budget?.deadline ?? deadline)
+            let inTime = checkedAt < effectiveDeadline && (budget == nil || budget?.validationStartedAt != nil)
             record(["attempt": attempt, "elapsedMs": (checkedAt - started) * 1000,
                     "captureAndCheckMs": (checkedAt - captureStarted) * 1000,
+                    "preparationMs": budget?.validationStartedAt.map { ($0 - started) * 1000 } as Any? ?? NSNull(),
+                    "validationAndCheckMs": budget?.validationStartedAt.map { (checkedAt - $0) * 1000 } as Any? ?? NSNull(),
                     "captureSource": frame.metadata["captureSource"] ?? "unknown",
                     "captureTimingsMs": frame.metadata["captureTimingsMs"] ?? [:],
                     "orientationRevalidated": frame.metadata["orientationRevalidated"] as? Bool ?? false,
+                    "orientationRecovery": frame.metadata["orientationRecovery"] ?? [:],
                     "screenGuard": check.result, "inTime": inTime,
-                    "phaseSampling": phaseSampling || !phaseSamples.isEmpty || !applePhaseSamples.isEmpty,
-                    "mediaPhaseSamples": phaseSamples, "applePhaseSamples": applePhaseSamples])
+                    "fieldRejection": fieldRejection ?? "none"])
             if check.accepted && inTime { return (check, actualCaptures) }
-            if attempt == maximumCaptures || !inTime || check.screenChange > check.policy.maxScreenChange {
-                throw ActionFailure(code: "stale_observation", description: "Screen guard or deadline rejected input; inspect the attached pre-input image",
+            if attempt == capturesLimit || !inTime || check.screenChange > check.policy.maxScreenChange {
+                let reason = !inTime ? "input_preflight_timeout" : (fieldGuard == nil ? "stale_observation" :
+                    (check.screenChange > check.policy.maxScreenChange ? "screen_changed" : fieldRejection ?? "text_field_changed"))
+                let message = reason == "caret_confirmation_required"
+                    ? "Inspect the attached image and confirm a visible caret with --caret-rect and --field-rect on its new oN; do not retry the old reference"
+                    : "Input was not dispatched: \(reason). Inspect the attached image before choosing another action"
+                throw ActionFailure(code: reason, description: message,
                     possiblyExecuted: false, requiresObservation: true,
                     result: ["screenGuard": check.result, "preInputCaptures": actualCaptures, "preInputDeadlineExceeded": !inTime], rejectedCapture: frame)
             }

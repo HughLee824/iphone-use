@@ -54,10 +54,10 @@ private final class AppProcessFixture {
 }
 
 final class NativeAppLifecycleTests: XCTestCase {
-    func testAppleCLITimeoutUsesIntegerSeconds() {
-        for seconds in [5, 20] {
+    func testAppleCLITimeoutUsesLegalIntegerSecondsWithoutChangingInputBudget() {
+        for seconds in [1, 2, 4, 5, 8, 20] {
             let args = CoreDevice.commandArguments(["list", "devices"], output: URL(fileURLWithPath: "/tmp/result.json"), timeout: seconds)
-            XCTAssertEqual(args[args.firstIndex(of: "--timeout")! + 1], String(seconds))
+            XCTAssertEqual(args[args.firstIndex(of: "--timeout")! + 1], String(max(5, seconds)))
         }
     }
 

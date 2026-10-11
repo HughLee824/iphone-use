@@ -1,8 +1,6 @@
 import Foundation
 import VideoToolbox
 import CoreImage
-import ImageIO
-import UniformTypeIdentifiers
 
 // Keep the validated DisplayService rectangle bound to the decoded pixels.
 // Lossy decoded padding is not a reliable source of crop geometry.
@@ -29,6 +27,7 @@ final class NativeVideoSnapshot {
     private var closed = false
     private var latest: Frame?
     private var decodedFrames = 0
+    private var framesWithoutImage = 0
     private var decodeErrors = 0
     private var queueOverflows = 0
     private var lastError: String?
@@ -45,7 +44,9 @@ final class NativeVideoSnapshot {
     private var lastTimestamp: UInt32?
 
     convenience init() {
-        let decoder = NativeSnapshotDecoder()
+        // Standard observations are Apple PNG. This stream only verifies
+        // dimensions; converting every decoded frame into RGB wastes GPU work.
+        let decoder = NativeSnapshotDecoder(convertToBGRA: false)
         self.init(decode: { try decoder.decode($0) }, resetDecoder: { decoder.resetReferences() })
     }
 
@@ -104,7 +105,7 @@ final class NativeVideoSnapshot {
                 guard let image else {
                     // A decoded reduced-resolution picture updates references,
                     // but must also invalidate a previously cached observation.
-                    if video { condition.lock(); latest = nil; condition.broadcast(); condition.unlock() }
+                    if video { condition.lock(); framesWithoutImage += 1; latest = nil; condition.broadcast(); condition.unlock() }
                     return
                 }
                 let frame = Frame(image: image, firstPacketAt: unitStarted,
@@ -148,12 +149,16 @@ final class NativeVideoSnapshot {
     }
     func status() -> [String: Any] {
         condition.lock(); defer { condition.unlock() }
-        return ["decodedFrames": decodedFrames, "decodeErrors": decodeErrors, "queueOverflows": queueOverflows,
+        let now = ProcessInfo.processInfo.systemUptime
+        return ["decodedFrames": decodedFrames, "framesWithoutImage": framesWithoutImage,
+                "decodeErrors": decodeErrors, "queueOverflows": queueOverflows,
                 "droppedUnits": droppedUnits, "discontinuities": discontinuities, "malformedPackets": malformedPackets,
                 "timestampRejections": timestampRejections, "referenceResets": referenceResets,
                 "waitingForKeyframe": waitingForKeyframe,
                 "pendingBytes": pendingBytes, "closed": closed, "lastError": lastError as Any? ?? NSNull(),
-                "lastFrameAgeSeconds": latest.map { ProcessInfo.processInfo.systemUptime - $0.firstPacketAt } as Any? ?? NSNull()]
+                "lastFrameAgeSeconds": latest.map { now - $0.firstPacketAt } as Any? ?? NSNull(),
+                "lastFrameCompletedAgeSeconds": latest.map { now - $0.completedAt } as Any? ?? NSNull(),
+                "lastFrameDecodeLagSeconds": latest.map { $0.completedAt - $0.firstPacketAt } as Any? ?? NSNull()]
     }
     func close() {
         condition.lock(); closed = true; latest = nil; condition.broadcast(); condition.unlock()
@@ -169,7 +174,12 @@ final class NativeSnapshotDecoder {
     private var session: VTDecompressionSession?
     private var nativeDimensions: (Int, Int)?
     private(set) var withheldResolutionFrames = 0
+    private let convertToBGRA: Bool
     private static let context = CIContext(options: [.cacheIntermediates: false])
+
+    // Recording retains the existing presentation path by default. Geometry
+    // consumers opt out of color conversion, not decoding or frame validation.
+    init(convertToBGRA: Bool = true) { self.convertToBGRA = convertToBGRA }
 
     func decode(_ unit: NativeVideoAccessUnit) throws -> NativeDecodedVideoFrame? {
         // No reference chain survives a failed metadata/configuration/decode step.
@@ -268,6 +278,12 @@ final class NativeSnapshotDecoder {
         // corrupt. Until their output scaling contract is verified, withhold
         // them instead of guessing a coordinate transform or recording gray fill.
         guard metadata.hasFullResolution(canvas: canvas) else { withheldResolutionFrames += 1; return nil }
+        guard CVPixelBufferGetPixelFormatType(pixels) == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange else {
+            throw invalid("Unexpected decoder output pixel format", -1)
+        }
+        if !convertToBGRA {
+            return NativeDecodedVideoFrame(pixels: pixels, nativeWidth: metadata.nativeWidth, nativeHeight: metadata.nativeHeight)
+        }
         var bgra: CVPixelBuffer?
         let created = CVPixelBufferCreate(kCFAllocatorDefault, Int(canvas.width), Int(canvas.height), kCVPixelFormatType_32BGRA,
             [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &bgra)
@@ -294,8 +310,6 @@ final class NativeSnapshotDecoder {
 }
 
 enum NativeSnapshotImage {
-    private static let context = CIContext(options: [.cacheIntermediates: false])
-
     static func validateGeometry(_ frame: NativeVideoSnapshot.Frame?, display: NativeDisplay) throws -> (width: Int, height: Int) {
         guard let frame else {
             throw IPhoneUseError("native_snapshot_freshness_unavailable", "No fresh complete media frame to verify display geometry")
@@ -314,34 +328,9 @@ enum NativeSnapshotImage {
         let encodedWidth = CVPixelBufferGetWidth(pixels), encodedHeight = CVPixelBufferGetHeight(pixels)
         guard image.nativeWidth == width, image.nativeHeight == height,
               width > 0, height > 0, encodedWidth >= width, encodedHeight >= height, encodedWidth - width < 64, encodedHeight - height < 64,
-              CVPixelBufferGetPixelFormatType(pixels) == kCVPixelFormatType_32BGRA else {
+              [kCVPixelFormatType_32BGRA, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange].contains(CVPixelBufferGetPixelFormatType(pixels)) else {
             throw IPhoneUseError("native_snapshot_geometry_unavailable", "Media dimensions do not match native screen axes")
         }
     }
 
-    static func png(_ frame: NativeVideoSnapshot.Frame, display: NativeDisplay) throws -> (Data, [String: Any]) {
-        let (width, height) = try validateGeometry(frame, display: display)
-        let pixels = frame.pixels
-        let encodedWidth = CVPixelBufferGetWidth(pixels), encodedHeight = CVPixelBufferGetHeight(pixels)
-        let orientation = NativeVideoOrientation(rawValue: display.rotation)!
-        var cgImage: CGImage?
-        guard VTCreateCGImageFromCVPixelBuffer(pixels, options: nil, imageOut: &cgImage) == noErr,
-              let crop = cgImage?.cropping(to: CGRect(x: 0, y: 0, width: width, height: height)) else {
-            throw IPhoneUseError("invalid_image", "Cannot crop decoded media")
-        }
-        let image = CIImage(cgImage: crop).oriented(orientation == .portrait ? .up : orientation == .left ? .right : .left)
-        guard let rendered = context.createCGImage(image, from: image.extent) else { throw IPhoneUseError("invalid_image", "Cannot orient decoded media") }
-        let data = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else {
-            throw IPhoneUseError("invalid_image", "Cannot create snapshot PNG")
-        }
-        CGImageDestinationAddImage(destination, rendered, nil)
-        guard CGImageDestinationFinalize(destination) else { throw IPhoneUseError("invalid_image", "Cannot encode snapshot PNG") }
-        return (data as Data, ["encodedWidth": encodedWidth, "encodedHeight": encodedHeight,
-            "geometryValidation": "frame_native_rectangle_matches_display",
-            "cropNativePixels": ["x": 0, "y": 0, "width": width, "height": height],
-            "displayRotation": display.rotation, "firstPacketUptime": frame.firstPacketAt,
-            "decodeCompletedUptime": frame.completedAt, "rtpTimestamp": frame.timestamp,
-            "freshness": "complete_unit_received_after_request", "deviceCaptureTimeKnown": false])
-    }
 }
