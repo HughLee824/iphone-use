@@ -19,7 +19,7 @@ iPhone-use 是一个 macOS CLI，让外部 agent 能够发现 App、读取截图
 
 [网站](https://iphone-use.com) · [首个 iPhone 任务](docs/first-task.md) · [客户端插件](docs/plugins.md) · [命令概览](#命令概览) · [文档导航](#文档导航)
 
-AgentSoma 已更名为 **iPhone-use**。[CLI 0.2.1](https://github.com/HughLee824/iphone-use/releases/tag/v0.2.1)、Homebrew 和官网均已公开；Release 包含正式 Runner Logo 及独立插件 0.1.6。公开插件安装与缓存升级已通过核验，不代表新增真机任务验收。详见[渠道状态与迁移说明](docs/rename-to-iphone-use.md)。
+AgentSoma 已更名为 **iPhone-use**。[CLI 0.2.1](https://github.com/HughLee824/iphone-use/releases/tag/v0.2.1)、Homebrew 和官网均已公开；Release 包含正式 Runner Logo 及独立插件 0.1.6 ZIP；Git marketplace 插件为 0.1.7，已接入正式插件和技能图标。CLI 与插件独立更新。公开插件安装与缓存升级已通过核验，不代表新增真机任务验收。详见[渠道状态与迁移说明](docs/rename-to-iphone-use.md)。
 
 ## 控制模式
 

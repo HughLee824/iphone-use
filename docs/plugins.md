@@ -1,6 +1,6 @@
 # Codex / Claude Code 插件
 
-> CLI 0.2.1、Homebrew 和新名称网站已公开；Release 附带插件 0.1.6，与 Git 来源的版本一致；0.2.0 的既有资产保持不变。两种客户端的公开 Git 安装与 0.1.4 → 0.1.6 缓存升级已验收；本轮未新增真机任务验证，详见[渠道状态](rename-to-iphone-use.md)。
+> CLI 0.2.1、Homebrew 和新名称网站已公开；Release 附带插件 0.1.6 ZIP，Git marketplace 插件为 0.1.7，新增正式插件和技能图标；既有 Release 附件保持不变。两种客户端的公开 Git 插件升级至 0.1.7 已核验，Codex 图标显示已由用户确认；本轮未新增真机任务验证，详见[渠道状态](rename-to-iphone-use.md)。
 
 
 [公开网站](https://iphone-use.com) → [安装 CLI](install.md) → 安装本页插件 → [选择模式并连接](first-task.md#connect-in-standard-mode) → 首个真机任务。完整英文路径见 [First task](first-task.md)。
@@ -65,7 +65,7 @@ claude plugin list --json
 
 ## 升级生效与卸载
 
-新插件身份为 `iphone-use@iphone-use`。启用前停用旧 AgentSoma 插件，避免同一手机任务重复匹配；若曾另行安装 `~/.codex/skills/agentsoma`，还需在 Codex 的技能配置中单独停用这份独立 skill，插件停用不会影响它；确认新插件可用后再按需移除旧插件。CLI 与插件版本号独立：0.2.1 Release 与 Git 来源均为插件 0.1.6；0.2.0 Release 中的插件仍是 0.1.4，安装后应核对缓存版本，不凭仓库版本推断已升级。
+新插件身份为 `iphone-use@iphone-use`。启用前停用旧 AgentSoma 插件，避免同一手机任务重复匹配；若曾另行安装 `~/.codex/skills/agentsoma`，还需在 Codex 的技能配置中单独停用这份独立 skill，插件停用不会影响它；确认新插件可用后再按需移除旧插件。CLI 与插件版本号独立：CLI / Homebrew 为 0.2.1；0.2.1 Release 的插件 ZIP 保持 0.1.6；跟随默认分支的 Git marketplace 插件为 0.1.7。后者仅增加正式图标和展示元数据，不改变设备操作流程，也不要求升级 CLI。要获取插件新图标，请按下方命令更新 marketplace 和插件；只升级 Homebrew 不会更新插件。0.2.0 Release 中的插件仍是 0.1.4，安装后应核对客户端缓存版本。
 
 先断开活跃设备会话，再 `brew update` / `brew upgrade iphone-use`。插件另外更新：
 
