@@ -100,14 +100,20 @@ static BOOL MethodMatches(Class cls, SEL selector, const char *encoding) {
     NSObject *lock = [NSObject new];
     __block BOOL finished = NO, success = NO;
     __block NSError *failure = nil;
+    __block double completedAt = 0;
+    double deadline = NSProcessInfo.processInfo.systemUptime + timeout;
     @try {
         [self.session synthesizeEvent:self.record completion:^(BOOL ok, NSError *problem) {
-            @synchronized (lock) { success = ok; failure = problem; finished = YES; }
+            @synchronized (lock) {
+                completedAt = NSProcessInfo.processInfo.systemUptime;
+                success = ok; failure = problem; finished = YES;
+            }
         }];
-        double deadline = NSProcessInfo.processInfo.systemUptime + timeout;
         for (;;) {
             @synchronized (lock) {
-                if (finished) {
+                // A run-loop iteration may deliver a callback after its requested
+                // wake time. Judge the callback's arrival, not just its presence.
+                if (finished && completedAt <= deadline) {
                     if ((!success || failure) && error) *error = failure ?: Failure(@"XCTest did not confirm pinch completion");
                     return success && !failure;
                 }

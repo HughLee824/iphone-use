@@ -41,6 +41,10 @@ static NSInteger behavior;
     if (behavior == 0) completion(YES, nil);
     if (behavior == 1) completion(NO, [NSError errorWithDomain:@"test" code:1 userInfo:nil]);
     if (behavior == 2) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ completion(YES, nil); });
+    // A delayed synchronous callback deterministically crosses the deadline,
+    // without relying on host run-loop scheduling or timer coalescing.
+    if (behavior == 3) { [NSThread sleepForTimeInterval:0.03]; completion(YES, nil); }
+    if (behavior == 4) { completion(YES, nil); [NSThread sleepForTimeInterval:0.03]; }
     return nil;
 }
 @end
@@ -67,7 +71,11 @@ int main(void) {
             NSUInteger before = submissions;
             NSCAssert(![event sendWithTimeout:0.1 error:&error] && error && submissions == before, @"no resubmission");
         }
-        for (behavior = 1; behavior <= 2; behavior++) {
+        behavior = 4;
+        NSError *timelyError;
+        NSCAssert([Prepare(1) sendWithTimeout:0.01 error:&timelyError] && !timelyError,
+            @"timely callback remains valid when the caller resumes after the deadline");
+        for (behavior = 1; behavior <= 3; behavior++) {
             NSError *error; RunnerPinchEvent *event = Prepare(3);
             NSCAssert(![event sendWithTimeout:0.01 error:&error] && error, @"failed/late callback cannot complete");
             NSUInteger before = submissions;
