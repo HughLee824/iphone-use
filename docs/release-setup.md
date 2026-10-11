@@ -52,7 +52,9 @@ iPhone-use 仍是 macOS CLI。Mac Developer ID 签名、公证是下载渠道与
 
 ## GitHub Releases 与 Homebrew Tap
 
-首次分发只生成已验证的 `macos-arm64` 安装包。CI 和发布工作流使用 GitHub 的 `macos-15` ARM64 runner 和 Xcode 16.4，与镜像预装的 iOS 18.5 simulator runtime 配套；即使构建真机产物，App Icon 的资源编译也需要兼容的 simulator runtime。Intel 发布不在当前矩阵内。构建不需要维护者的 Apple 签名证书、profile 或 iPhone。
+首次分发只生成已验证的 `macos-arm64` 安装包。CI 和发布工作流统一使用 GitHub 的 `xcode-27` ARM64 runner，并固定 `/Applications/Xcode_27.0.app/Contents/Developer`（Xcode 27.0），与镜像预装的 iOS 27 simulator runtime 配套；即使构建真机产物，App Icon 的资源编译也需要兼容的 simulator runtime。Intel 发布不在当前矩阵内。构建不需要维护者的 Apple 签名证书、profile 或 iPhone。
+
+源码构建使用 Xcode 27。录屏解码依赖其 VideoToolbox Swift 接口，旧 Xcode 16.4 无法编译带 `frameOptions` 的调用；不为旧构建工具链删除每帧分辨率参数或添加兼容路线。该工具链选择不修改现有部署下限，也不代表旧系统运行兼容性已验收。GitHub 的 [`xcode-27` 镜像](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md)目前标记为 preview；工作流打印实际 Xcode/Swift 版本，镜像问题按 CI 证据处理。
 
 发布采用 **云端生成草稿 → 本地 Mac + iPhone 验收 → 发布同一安装包 → 更新 Homebrew → 验证公共安装入口**。
 
