@@ -19,7 +19,7 @@ An agent needs local command execution and the ability to read PNG files. The de
 
 [Website](https://iphone-use.com) · [First iPhone task](docs/first-task.md) · [Client plugins](docs/plugins.md) · [Commands](#commands) · [Documentation](#documentation)
 
-AgentSoma is now **iPhone-use**. [CLI 0.2.0](https://github.com/HughLee824/iphone-use/releases/tag/v0.2.0), the Homebrew formula and updated website are public. The release includes plugin 0.1.4; public client installation and upgrade verification remains separate. This checkout uses the approved iphone-use Logo; published Runner packages require a new build to pick it up. See [channel status and migration](docs/rename-to-iphone-use.md).
+AgentSoma is now **iPhone-use**. [CLI 0.2.1](https://github.com/HughLee824/iphone-use/releases/tag/v0.2.1), Homebrew and the website are public. The release includes the approved Runner Logo and separate plugin 0.1.6. Public plugin installation and cache upgrades passed; these checks do not establish a new phone-task acceptance. See [channel status and migration](docs/rename-to-iphone-use.md).
 
 ## Control modes
 

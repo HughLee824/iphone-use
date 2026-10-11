@@ -1,6 +1,6 @@
 # Public access release
 
-The public entry point is [the iPhone-use website](https://iphone-use.com). CLI 0.2.0, the new Homebrew formula, repository marketplace indexes and plugin 0.1.4 ZIP are public. The website uses the new CLI and plugin identity. Public client installation, cache upgrade and device-task verification are still separate outstanding checks; the package checks do not establish them. The source plugin 0.1.6 updates homepage metadata and documentation; this update does not publish a new ZIP or replace existing Release assets. See [channel status and remaining checks](rename-to-iphone-use.md#remaining-external-rollout). The website is static; the plugin packages a skill, not an MCP service.
+The public entry point is [the iPhone-use website](https://iphone-use.com). CLI 0.2.1, its Homebrew formula, repository marketplace indexes and plugin 0.1.6 ZIP are public. Public Git client installation and 0.1.4 → 0.1.6 cache upgrades passed in Codex and Claude Code; new device-task execution remains separate from those checks. The 0.2.1 Runner includes the approved Logo. Existing 0.2.0 assets remain unchanged. See [channel status and remaining checks](rename-to-iphone-use.md#remaining-external-rollout). The website is static; the plugin packages a skill, not an MCP service.
 
 See the [8 September delivery and acceptance record](public-access-acceptance.md) for verified installation, upgrade and build evidence, plus the deferred device tests.
 

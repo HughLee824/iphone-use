@@ -1,6 +1,6 @@
 # Codex / Claude Code 插件
 
-> CLI 0.2.0、Homebrew 和新名称网站已公开；Release 附带插件 0.1.4。源码插件的 0.1.6 是主页与文档修订版，本次不发布新 ZIP 或替换已有资产。两种客户端的公开 Git 安装与 0.1.4 → 0.1.6 缓存升级已验收；本轮未新增真机任务验证，详见[渠道状态](rename-to-iphone-use.md)。
+> CLI 0.2.1、Homebrew 和新名称网站已公开；Release 附带插件 0.1.6，与 Git 来源的版本一致；0.2.0 的既有资产保持不变。两种客户端的公开 Git 安装与 0.1.4 → 0.1.6 缓存升级已验收；本轮未新增真机任务验证，详见[渠道状态](rename-to-iphone-use.md)。
 
 
 [公开网站](https://iphone-use.com) → [安装 CLI](install.md) → 安装本页插件 → [选择模式并连接](first-task.md#connect-in-standard-mode) → 首个真机任务。完整英文路径见 [First task](first-task.md)。
@@ -9,7 +9,7 @@
 
 ## 先检查环境
 
-新安装使用已发布的 CLI 0.2.0。旧 `agentsoma` formula 用户先断开会话、卸载旧 formula，再安装新 formula；遇到 Tap Trust 拒绝时按[单公式信任提示](install.md#homebrew-单公式信任)处理，不默认信任整个 Tap。
+新安装使用已发布的 CLI 0.2.1。旧 `agentsoma` formula 用户先断开会话、卸载旧 formula，再安装新 formula；遇到 Tap Trust 拒绝时按[单公式信任提示](install.md#homebrew-单公式信任)处理，不默认信任整个 Tap。
 
 ```sh
 brew install HughLee824/tap/iphone-use
@@ -19,7 +19,7 @@ iphone-use --version
 
 正式版及开发工作流的环境以 [first-task](first-task.md) 为准：标准模式已验收 Apple Silicon / macOS 27、Xcode 27、iOS 27；需要设备信任、Developer Mode 和解锁。**只有 Runner 模式需要开发签名与 setup**。包内只读 `scripts/preflight.sh` 检查一次 CLI、Xcode 和输出能力，随后复用检测结果。
 
-本地候选包不在 PATH 时，通过 `IPHONE_USE_CLI=/absolute/path/to/bin/iphone-use sh /absolute/path/to/skill/scripts/preflight.sh --candidate` 检查；源码 `development` 版本使用 `--source`。设备调用继续使用同一个可执行文件。不要为了通过版本检查切到另一个已安装版本。preflight 的兼容版本下限仍为 CLI 0.1.0，但新安装应使用已发布的 iPhone-use 0.2.0；旧 AgentSoma 0.1.0 的版本号不能证明它支持标准模式。
+本地候选包不在 PATH 时，通过 `IPHONE_USE_CLI=/absolute/path/to/bin/iphone-use sh /absolute/path/to/skill/scripts/preflight.sh --candidate` 检查；源码 `development` 版本使用 `--source`。设备调用继续使用同一个可执行文件。不要为了通过版本检查切到另一个已安装版本。preflight 的兼容版本下限仍为 CLI 0.1.0，但新安装应使用已发布的 iPhone-use 0.2.1；旧 AgentSoma 0.1.0 的版本号不能证明它支持标准模式。
 
 安装后重启原本已打开的客户端，使其取得更新的 PATH。插件安装成功不等于 signing/setup 成功。免费 Personal Team 和全新 Mac 配置仍未验收；详见[前置条件和签名](first-task.md#before-you-start)。
 
@@ -65,7 +65,7 @@ claude plugin list --json
 
 ## 升级生效与卸载
 
-新插件身份为 `iphone-use@iphone-use`。启用前停用旧 AgentSoma 插件，避免同一手机任务重复匹配；若曾另行安装 `~/.codex/skills/agentsoma`，还需在 Codex 的技能配置中单独停用这份独立 skill，插件停用不会影响它；确认新插件可用后再按需移除旧插件。CLI 与插件版本号独立：0.2.0 Release 中的插件仍是 0.1.4，Git 来源的源码修订版为 0.1.6，安装后应核对缓存版本，不凭仓库版本推断已升级。
+新插件身份为 `iphone-use@iphone-use`。启用前停用旧 AgentSoma 插件，避免同一手机任务重复匹配；若曾另行安装 `~/.codex/skills/agentsoma`，还需在 Codex 的技能配置中单独停用这份独立 skill，插件停用不会影响它；确认新插件可用后再按需移除旧插件。CLI 与插件版本号独立：0.2.1 Release 与 Git 来源均为插件 0.1.6；0.2.0 Release 中的插件仍是 0.1.4，安装后应核对缓存版本，不凭仓库版本推断已升级。
 
 先断开活跃设备会话，再 `brew update` / `brew upgrade iphone-use`。插件另外更新：
 
