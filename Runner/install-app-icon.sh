@@ -49,4 +49,4 @@ if [ "$signed" = YES ]; then
         --preserve-metadata=identifier,entitlements,flags --generate-entitlement-der "$runner_app"
     /usr/bin/codesign --verify --strict "$runner_app"
 fi
-echo "Installed Soma App Icon in $runner_app"
+echo "Installed iphone-use App Icon in $runner_app"
