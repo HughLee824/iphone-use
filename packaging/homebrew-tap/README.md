@@ -1,6 +1,6 @@
 # HughLee824 Homebrew Tap
 
-> iPhone-use is the new local project identity. Its renamed repository/distribution/plugin channel has not been published by this change; the commands below target that upcoming channel. Existing Logo assets remain unchanged.
+> iPhone-use 0.2.0 is published and the public Tap provides the new formula. Repository, Release and plugin versions are updated independently; check the formula version before installing. Existing Logo assets remain unchanged.
 
 
 Homebrew distribution for [iPhone-use](https://github.com/HughLee824/iphone-use).
@@ -23,6 +23,17 @@ brew uninstall iphone-use
 ```
 
 Disconnect active sessions before upgrading. When moving from the old `agentsoma` formula, uninstall it before installing `iphone-use`: both expose the compatibility command and conflict. Local configuration is retained. Renamed Runner deployments require new setup; standard mode does not. Uninstalling the formula leaves local signing state and installed iPhone apps intact.
+
+## Formula-scoped trust
+
+On Homebrew versions enforcing Tap Trust, installation may fail while loading the legacy `agentsoma` formula for the compatibility-command conflict check, even after the old package is uninstalled. Review [that formula](https://github.com/HughLee824/homebrew-tap/blob/main/Formula/agentsoma.rb); if you trust it, explicitly grant trust to that formula only and retry:
+
+```sh
+brew trust --formula HughLee824/tap/agentsoma
+brew install HughLee824/tap/iphone-use
+```
+
+This persistently trusts the one formula; it does not install the old package or require whole-Tap trust. If you do not want to grant it, use the checksum-verified manual Release installation.
 
 ## Maintainers
 

@@ -1,6 +1,6 @@
 # Your first iPhone task
 
-> This guide targets the unreleased iPhone-use checkout and its local candidate packages. The renamed distribution/plugin channel has not been published. Older AgentSoma releases do not gain standard mode from these instructions. Logo assets are unchanged.
+> This guide starts from the published iPhone-use CLI 0.2.0. The Release and Homebrew channels are available; plugin distribution and client verification are tracked separately in [channel status](rename-to-iphone-use.md). Older AgentSoma releases do not gain standard mode from these instructions. Logo assets are unchanged.
 
 Start with **standard mode**: screenshots and native HID, without Runner installation, signing or `setup`. Choose **runner mode** explicitly when you want XCTest and available element references. Both modes use the same CLI and persistent session; they never switch control routes automatically.
 
@@ -15,7 +15,7 @@ Start with **standard mode**: screenshots and native HID, without Runner install
 
 ## Install the CLI
 
-Use the complete locally supplied candidate package, or build this checkout with `swift build`. For a package, retain its `bin` and `libexec` layout and add `bin` to PATH. It can run outside the source repository. See [archive verification and installation](install.md).
+Install the public package with `brew install HughLee824/tap/iphone-use`, or download and verify the 0.2.0 archive from [GitHub Releases](https://github.com/HughLee824/iphone-use/releases/tag/v0.2.0). When migrating from the old `agentsoma` formula, disconnect active sessions and uninstall that formula first because both commands conflict. If Homebrew refuses to read the legacy conflict formula as untrusted, review it and explicitly trust only that formula before retrying; see [Homebrew trust and installation](install.md#homebrew-单公式信任). For a manual package, retain its `bin` and `libexec` layout and add `bin` to PATH. It can run outside the source repository. Local candidate packages and `swift build` remain separate development paths.
 
 ```sh
 command -v iphone-use
@@ -27,7 +27,7 @@ iphone-use config get mode
 iphone-use devices
 ```
 
-Confirm that the executable supports `--mode standard|runner`. Check any `DEVELOPER_DIR` override if the effective tools differ from `xcode-select -p`. These checks do not start a Runner or media session; `config get mode` does not create preferences. A successful version/help command does not prove device connectivity. The future renamed Homebrew channel is documented in the installation guide; this change does not publish it.
+Confirm that the executable supports `--mode standard|runner`. Check any `DEVELOPER_DIR` override if the effective tools differ from `xcode-select -p`. These checks do not start a Runner or media session; `config get mode` does not create preferences. A successful version/help command does not prove device connectivity. The public package and Homebrew installation checks do not establish fresh-Mac or physical-device acceptance for every environment.
 
 ## Connect in standard mode
 
@@ -79,7 +79,7 @@ Runner observations also include available elements; actions can use current ref
 
 ## Optional: external agent
 
-A client with local Mac command execution and PNG-reading tools can perform the same loop. See [client plugins](plugins.md) for the separate plugin workflow. The plugin does not install the CLI or grant device access. This onboarding change does not update or publish client integrations.
+A client with local Mac command execution and PNG-reading tools can perform the same loop. See [client plugins](plugins.md) for the separate plugin workflow. The plugin does not install the CLI or grant device access. Release 0.2.0 includes plugin 0.1.4. Public Git marketplace installation, upgrade pickup and task execution in each client remain distinct from ZIP/preflight checks.
 
 Tell the agent which device and mode to use, and the intended task. It must view the PNG before selecting coordinates, keep the returned session and observation IDs, inspect the actual result, and disconnect its own session. A command tool's background job ID is not an iPhone-use session ID; collect the original command's output instead of starting it again.
 

@@ -1,6 +1,6 @@
 # 首次接入
 
-当前源码和本地候选包默认面向标准模式：截图观察 + 原生 HID，无需 Runner 签名或 setup。新名称分发尚未发布，渠道状态见[安装说明](install.md)。
+iPhone-use 0.2.0 已正式发布，新用户默认使用标准模式：Apple PNG 截图观察 + 原生 HID，无需 Runner 签名或 setup。Release 与 Homebrew 安装、旧版迁移及信任提示见[安装说明](install.md)，验证范围见[渠道状态](rename-to-iphone-use.md)。
 
 ## 标准模式入口
 

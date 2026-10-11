@@ -19,9 +19,9 @@ iPhone-use 是一个 macOS CLI，让外部 agent 能够发现 App、读取截图
 
 [网站](https://agentsoma.dev) · [首个 iPhone 任务](docs/first-task.md) · [客户端插件](docs/plugins.md) · [命令概览](#命令概览) · [文档导航](#文档导航)
 
-当前源码已完成 AgentSoma → iPhone-use 本地改名，远端仓库、Tap、官网和插件发布尚未切换。现有 Logo 按要求保留，详见[改名与升级说明](docs/rename-to-iphone-use.md)。
+AgentSoma 已更名为 **iPhone-use**。[CLI 0.2.0](https://github.com/HughLee824/iphone-use/releases/tag/v0.2.0)、Homebrew formula 和更新后的官网均已公开；Release 附带插件 0.1.4，公开客户端安装与升级仍需单独核验。现有 Logo 保留，详见[渠道状态与迁移说明](docs/rename-to-iphone-use.md)。
 
-## 控制模式（当前源码，尚未发布）
+## 控制模式
 
 当前源码提供 **standard**（截图 + 原生 HID）和 **runner**（XCTest）两种模式。用 `iphone-use config set mode standard` 或 `runner` 设置默认，再运行 `iphone-use connect --device "$DEVICE"`；单次覆盖使用 `--mode standard|runner`。偏好保存在 `~/.iphone-use/config.json`，原有 `--backend` 和签名 `--xctestrun` 用法保持兼容。新用户默认 standard，有效的旧 Runner 配置迁移为 runner；修改偏好不会改变已有会话。
 
@@ -37,7 +37,7 @@ iPhone-use 是一个 macOS CLI，让外部 agent 能够发现 App、读取截图
 
 ## 快速开始
 
-以下对应当前源码和本地候选包，新名称分发尚未发布。标准模式作为首次使用入口，Runner 签名放在独立的可选流程中。完整步骤见[首次任务](docs/first-task.md)和[安装说明](docs/install.md)。
+通过 Homebrew 或 Release 归档安装正式 CLI，然后从标准模式开始；Runner 签名是独立的可选流程。完整步骤、旧 formula 迁移及 Homebrew 单公式信任提示见[首次任务](docs/first-task.md)和[安装说明](docs/install.md)。
 
 ### 1. 准备并连接
 

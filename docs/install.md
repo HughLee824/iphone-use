@@ -1,6 +1,6 @@
 # iPhone-use 发布包安装
 
-> 源码仓库已更名为 [HughLee824/iphone-use](https://github.com/HughLee824/iphone-use)。仓库、Release 安装包、Homebrew 和插件分别更新：请核对实际取得的包和对应渠道版本，不能根据仓库改名推断其他渠道已上线。未发布的 Release 草稿仅供有权限的维护者验证；旧 AgentSoma 安装包不会因改名而获得标准模式。
+> 截至 2026-10-11，[iPhone-use 0.2.0](https://github.com/HughLee824/iphone-use/releases/tag/v0.2.0) 已正式发布，Homebrew formula 与网站已更新。Release 附带插件 0.1.4；各渠道独立更新，具体版本与验证范围见[渠道状态](rename-to-iphone-use.md)。旧 AgentSoma 安装包不会因改名而获得标准模式。本文后续修订不改写已发布安装包内的 README 或任何资产。
 
 
 iPhone-use 为外部 agent 提供真实 iPhone 的观察和操作能力。本包同时提供标准模式（截图 + 原生 HID）与 Runner 模式（XCTest）。普通用户先用标准模式，无需 Runner 签名或 setup；配套预编译 iOS Runner 供选择 Runner 模式的开发者在本机重签，不编译源码。
@@ -138,6 +138,19 @@ iphone-use --version
 [GitHub Releases](https://github.com/HughLee824/iphone-use/releases) 的公开发布状态决定普通用户能否下载；草稿存在不代表已经发布。GitHub 自动生成的源码归档不包含预编译 CLI/Runner，不能替代本指南的安装包。
 
 Homebrew 用户先确认 [Tap](https://github.com/HughLee824/homebrew-tap) 已提供 `iphone-use` formula，且其版本对应实际已发布的稳定版，再运行 `brew install HughLee824/tap/iphone-use`。如果 Tap 仍只有旧 `agentsoma` formula，请使用实际取得的新安装包手动安装，不把旧包视为新版本。迁移旧 formula 时先断开会话，卸载 `agentsoma` formula，再安装 `iphone-use`；二者都提供 `agentsoma` 兼容命令，不能同时安装。卸载旧 formula 不删除模式偏好、签名资料或手机 App。Homebrew 安装不编译源码、不执行 setup、不接触 iPhone。
+
+### Homebrew 单公式信任
+
+启用 Tap Trust 的 Homebrew 可能在检查 `agentsoma` 兼容命令冲突时，因旧 formula 未受信任而拒绝安装；即使旧包已卸载，也需要读取该公式。先查看[旧公式内容](https://github.com/HughLee824/homebrew-tap/blob/main/Formula/agentsoma.rb)，确认信任后仅授权该公式，再重试：
+
+```sh
+brew trust --formula HughLee824/tap/agentsoma
+brew install HughLee824/tap/iphone-use
+```
+
+这会持久信任该单个公式，不安装旧包，也不需要信任整个 Tap。若不愿授予信任，可使用上面的校验后手动安装路径。若 `brew trust` 不存在，不执行此命令；按当前 Homebrew 的实际错误处理。
+
+### 插件渠道
 
 外部 Agent 插件单独分发，版本号与 CLI 不同。使用对应 Release 附带的 `iphone-use-plugin-<version>.zip` 或仓库文档列出的实际可用客户端渠道；插件不包含 CLI，也不证明设备已就绪。新旧插件不要同时启用，避免同一手机任务匹配到两套操作说明。
 
