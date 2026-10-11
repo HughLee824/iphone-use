@@ -1,0 +1,584 @@
+{
+  "appState": 4,
+  "bundleId": "com.apple.springboard",
+  "coordinateSpace": "screen_points",
+  "nodes": [
+    {
+      "enabled": true,
+      "frame": {
+        "height": 214.33333333333331,
+        "width": 320,
+        "x": 35,
+        "y": 321.3333333333333
+      },
+      "identifier": "",
+      "index": 0,
+      "label": "“iPhone-use Probe” Would Like to Send You Notifications",
+      "parent": null,
+      "type": 7,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 214.33333333333331,
+        "width": 320,
+        "x": 35,
+        "y": 321.3333333333333
+      },
+      "identifier": "",
+      "index": 1,
+      "label": "",
+      "parent": 0,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 214.33333333333331,
+        "width": 320,
+        "x": 35,
+        "y": 321.3333333333333
+      },
+      "identifier": "",
+      "index": 2,
+      "label": "",
+      "parent": 1,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 214.33333333333331,
+        "width": 320,
+        "x": 35,
+        "y": 321.3333333333333
+      },
+      "identifier": "",
+      "index": 3,
+      "label": "",
+      "parent": 2,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 214.33333333333331,
+        "width": 320,
+        "x": 35,
+        "y": 321.3333333333333
+      },
+      "identifier": "",
+      "index": 4,
+      "label": "",
+      "parent": 2,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 134.33333333333331,
+        "width": 320,
+        "x": 35,
+        "y": 321.3333333333333
+      },
+      "identifier": "",
+      "index": 5,
+      "label": "",
+      "parent": 4,
+      "type": 46,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 134.33333333333331,
+        "width": 320,
+        "x": 35,
+        "y": 321.3333333333333
+      },
+      "identifier": "",
+      "index": 6,
+      "label": "",
+      "parent": 5,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 42.333333333333314,
+        "width": 260,
+        "x": 65,
+        "y": 343.3333333333333
+      },
+      "identifier": "",
+      "index": 7,
+      "label": "“iPhone-use Probe” Would Like to Send You Notifications",
+      "parent": 6,
+      "type": 48,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 58,
+        "width": 260,
+        "x": 65,
+        "y": 393.3333333333333
+      },
+      "identifier": "",
+      "index": 8,
+      "label": "Notifications may include alerts, sounds, and icon badges. These can be configured in Settings.",
+      "parent": 6,
+      "type": 48,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 134.33333333333331,
+        "width": 30,
+        "x": 322,
+        "y": 321.3333333333333
+      },
+      "identifier": "",
+      "index": 9,
+      "label": "Vertical scroll bar, 1 page",
+      "parent": 5,
+      "type": 1,
+      "value": "0%"
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 36,
+        "width": 3,
+        "x": 349,
+        "y": 282.3333333333333
+      },
+      "identifier": "",
+      "index": 10,
+      "label": "",
+      "parent": 9,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 30,
+        "width": 320,
+        "x": 35,
+        "y": 422.66666666666663
+      },
+      "identifier": "",
+      "index": 11,
+      "label": "Horizontal scroll bar, 1 page",
+      "parent": 5,
+      "type": 1,
+      "value": "0%"
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 3,
+        "width": 36,
+        "x": -4,
+        "y": 449.66666666666663
+      },
+      "identifier": "",
+      "index": 12,
+      "label": "",
+      "parent": 11,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 134.33333333333331,
+        "width": 30,
+        "x": 322,
+        "y": 321.3333333333333
+      },
+      "identifier": "",
+      "index": 13,
+      "label": "Vertical scroll bar, 1 page",
+      "parent": 5,
+      "type": 1,
+      "value": "0%"
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 36,
+        "width": 3,
+        "x": 349,
+        "y": 282.3333333333333
+      },
+      "identifier": "",
+      "index": 14,
+      "label": "",
+      "parent": 13,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 30,
+        "width": 320,
+        "x": 35,
+        "y": 422.66666666666663
+      },
+      "identifier": "",
+      "index": 15,
+      "label": "Horizontal scroll bar, 1 page",
+      "parent": 5,
+      "type": 1,
+      "value": "0%"
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 3,
+        "width": 36,
+        "x": -4,
+        "y": 449.66666666666663
+      },
+      "identifier": "",
+      "index": 16,
+      "label": "",
+      "parent": 15,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 80.00000000000006,
+        "width": 320,
+        "x": 35,
+        "y": 455.6666666666667
+      },
+      "identifier": "",
+      "index": 17,
+      "label": "",
+      "parent": 4,
+      "type": 46,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 80.00000000000006,
+        "width": 320,
+        "x": 35,
+        "y": 455.6666666666667
+      },
+      "identifier": "",
+      "index": 18,
+      "label": "",
+      "parent": 17,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 48.00000000000006,
+        "width": 288,
+        "x": 51,
+        "y": 471.6666666666667
+      },
+      "identifier": "",
+      "index": 19,
+      "label": "",
+      "parent": 18,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 48.00000000000006,
+        "width": 140,
+        "x": 51,
+        "y": 471.6666666666667
+      },
+      "identifier": "",
+      "index": 20,
+      "label": "Don’t Allow",
+      "parent": 19,
+      "type": 9,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 48.00000000000006,
+        "width": 140,
+        "x": 199,
+        "y": 471.6666666666667
+      },
+      "identifier": "",
+      "index": 21,
+      "label": "Allow",
+      "parent": 19,
+      "type": 9,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 80.00000000000006,
+        "width": 30,
+        "x": 322,
+        "y": 455.6666666666667
+      },
+      "identifier": "",
+      "index": 22,
+      "label": "Vertical scroll bar, 1 page",
+      "parent": 17,
+      "type": 1,
+      "value": "0%"
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 7,
+        "width": 3,
+        "x": 349,
+        "y": 545.6666666666667
+      },
+      "identifier": "",
+      "index": 23,
+      "label": "",
+      "parent": 22,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 30.000000000000057,
+        "width": 320,
+        "x": 35,
+        "y": 502.6666666666667
+      },
+      "identifier": "",
+      "index": 24,
+      "label": "Horizontal scroll bar, 1 page",
+      "parent": 17,
+      "type": 1,
+      "value": "0%"
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 3,
+        "width": 7,
+        "x": 125,
+        "y": 529.6666666666667
+      },
+      "identifier": "",
+      "index": 25,
+      "label": "",
+      "parent": 24,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 80.00000000000006,
+        "width": 30,
+        "x": 322,
+        "y": 455.6666666666667
+      },
+      "identifier": "",
+      "index": 26,
+      "label": "Vertical scroll bar, 1 page",
+      "parent": 17,
+      "type": 1,
+      "value": "0%"
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 7,
+        "width": 3,
+        "x": 349,
+        "y": 545.6666666666667
+      },
+      "identifier": "",
+      "index": 27,
+      "label": "",
+      "parent": 26,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 30.000000000000057,
+        "width": 320,
+        "x": 35,
+        "y": 502.6666666666667
+      },
+      "identifier": "",
+      "index": 28,
+      "label": "Horizontal scroll bar, 1 page",
+      "parent": 17,
+      "type": 1,
+      "value": "0%"
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 3,
+        "width": 7,
+        "x": 125,
+        "y": 529.6666666666667
+      },
+      "identifier": "",
+      "index": 29,
+      "label": "",
+      "parent": 28,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 214.33333333333331,
+        "width": 320,
+        "x": 35,
+        "y": 321.3333333333333
+      },
+      "identifier": "",
+      "index": 30,
+      "label": "",
+      "parent": 0,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 214.33333333333331,
+        "width": 320,
+        "x": 35,
+        "y": 321.3333333333333
+      },
+      "identifier": "",
+      "index": 31,
+      "label": "",
+      "parent": 30,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 214.33333333333331,
+        "width": 320,
+        "x": 35,
+        "y": 321.3333333333333
+      },
+      "identifier": "",
+      "index": 32,
+      "label": "",
+      "parent": 31,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 214.33333333333331,
+        "width": 320,
+        "x": 35,
+        "y": 321.3333333333333
+      },
+      "identifier": "",
+      "index": 33,
+      "label": "",
+      "parent": 32,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 214.33333333333331,
+        "width": 320,
+        "x": 35,
+        "y": 321.3333333333333
+      },
+      "identifier": "",
+      "index": 34,
+      "label": "",
+      "parent": 33,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 844,
+        "width": 390,
+        "x": 35,
+        "y": 321.3333333333333
+      },
+      "identifier": "",
+      "index": 35,
+      "label": "",
+      "parent": 34,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 214.33333333333331,
+        "width": 320,
+        "x": 35,
+        "y": 321.3333333333333
+      },
+      "identifier": "",
+      "index": 36,
+      "label": "",
+      "parent": 32,
+      "type": 1,
+      "value": null
+    },
+    {
+      "enabled": true,
+      "frame": {
+        "height": 844,
+        "width": 390,
+        "x": 35,
+        "y": 321.3333333333333
+      },
+      "identifier": "",
+      "index": 37,
+      "label": "",
+      "parent": 36,
+      "type": 1,
+      "value": null
+    }
+  ],
+  "scope": "systemAlert",
+  "screenshotCapturedAt": 1000.1,
+  "screenshotHeight": 2532,
+  "screenshotWidth": 1170,
+  "snapshotStartedAt": 1000.0,
+  "targetBundleId": "com.example.iphone-use.fixture",
+  "truncated": false
+}

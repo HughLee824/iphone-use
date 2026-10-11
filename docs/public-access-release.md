@@ -1,6 +1,6 @@
 # Public access release
 
-The public entry point is [the AgentSoma website](https://agentsoma.dev). Its install flow uses the existing public Homebrew Tap and this repository's two Git marketplaces. The website is static; the plugin packages a skill, not an MCP service.
+The existing public entry point is [the AgentSoma website](https://agentsoma.dev). Its published install flow still uses the AgentSoma Homebrew formula and plugin identity. The iPhone-use repository, formula and plugin rollout is pending; the source paths below describe the new identity prepared in this branch, not an already published installation channel. See [the rename rollout](rename-to-iphone-use.md#remaining-external-rollout). The website is static; the plugin packages a skill, not an MCP service.
 
 See the [8 September delivery and acceptance record](public-access-acceptance.md) for verified installation, upgrade and build evidence, plus the deferred device tests.
 
@@ -9,8 +9,8 @@ See the [8 September delivery and acceptance record](public-access-acceptance.md
 | Source | Purpose |
 | --- | --- |
 | Separate `agentsoma-website` repository | Static site source, reviewed demo media, website CI and Cloudflare deployment. |
-| `skills/agentsoma/` | Canonical shared operation rules, client adapters and preflight. |
-| `plugins/agentsoma/` | Self-contained dual-client distribution; committed copies checked by CI. |
+| `skills/iphone-use/` | Canonical shared operation rules, client adapters and preflight. |
+| `plugins/iphone-use/` | Self-contained dual-client distribution; committed copies checked by CI. |
 | `.agents/plugins/marketplace.json` | Codex repository marketplace. |
 | `.claude-plugin/marketplace.json` | Claude Code repository marketplace. |
 | `docs/first-task.md` / `docs/plugins.md` | English first-task path and Chinese plugin guide. |
@@ -24,7 +24,7 @@ node --test scripts/tests/test_agent_templates.mjs
 python3 scripts/sync-plugin.py --check
 python3 scripts/sync-plugin.py --archive .build/plugins
 xcodebuild build-for-testing \
-  -project Runner/AgentSomaRunner.xcodeproj -scheme AgentSomaRunner \
+  -project Runner/IPhoneUseRunner.xcodeproj -scheme IPhoneUseRunner \
   -configuration Debug -sdk iphoneos -destination 'generic/platform=iOS' \
   -derivedDataPath .build/ci-runner \
   CODE_SIGNING_ALLOWED=NO IPHONEOS_DEPLOYMENT_TARGET=17.0

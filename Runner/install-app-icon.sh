@@ -42,7 +42,7 @@ for key in CFBundleIcons 'CFBundleIcons~ipad'; do
 done
 /usr/libexec/PlistBuddy -c "Merge '$icon_info'" "$runner_info"
 # Match the release package's Home Screen name in source builds as well.
-/usr/bin/plutil -replace CFBundleDisplayName -string "AgentSoma" "$runner_info"
+/usr/bin/plutil -replace CFBundleDisplayName -string "iPhone-use" "$runner_info"
 
 if [ "$signed" = YES ]; then
     /usr/bin/codesign --force --sign "$signing_identity" \

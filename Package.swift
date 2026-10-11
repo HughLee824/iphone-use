@@ -2,17 +2,20 @@
 import PackageDescription
 
 let package = Package(
-    name: "AgentSoma",
+    name: "iphone-use",
     platforms: [.macOS(.v13)],
-    products: [.executable(name: "agentsoma", targets: ["AgentSoma"])],
+    products: [.executable(name: "iphone-use", targets: ["IPhoneUse"]),
+               .executable(name: "agentsoma", targets: ["IPhoneUse"])],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.5.0")
     ],
     targets: [
-        .target(name: "AgentSomaCore"),
-        .executableTarget(name: "AgentSoma", dependencies: [
-            "AgentSomaCore", .product(name: "ArgumentParser", package: "swift-argument-parser")
+        .target(name: "AppleNativeBridge", cSettings: [.unsafeFlags(["-fobjc-arc"])],
+                linkerSettings: [.linkedFramework("Foundation")]),
+        .target(name: "IPhoneUseCore", dependencies: ["AppleNativeBridge"]),
+        .executableTarget(name: "IPhoneUse", dependencies: [
+            "IPhoneUseCore", .product(name: "ArgumentParser", package: "swift-argument-parser")
         ]),
-        .testTarget(name: "AgentSomaCoreTests", dependencies: ["AgentSomaCore"], resources: [.copy("Fixtures")])
+        .testTarget(name: "IPhoneUseCoreTests", dependencies: ["IPhoneUseCore"], resources: [.copy("Fixtures")])
     ]
 )

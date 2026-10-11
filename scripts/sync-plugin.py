@@ -10,17 +10,17 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN = ROOT / "plugins/agentsoma"
+PLUGIN = ROOT / "plugins/iphone-use"
 
 
 def expected_files():
     files = {Path("LICENSE"): (ROOT / "LICENSE").read_bytes()}
-    source = ROOT / "skills/agentsoma"
+    source = ROOT / "skills/iphone-use"
     for path in sorted(source.rglob("*")):
         if path.is_symlink():
             raise ValueError(f"Skill files must be self-contained, not symlinks: {path}")
         if path.is_file():
-            files[Path("skills/agentsoma") / path.relative_to(source)] = path.read_bytes()
+            files[Path("skills/iphone-use") / path.relative_to(source)] = path.read_bytes()
     return files
 
 
@@ -50,7 +50,7 @@ def archive(output):
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version) or version != claude["version"]:
         raise ValueError("Both plugin manifests must have the same stable semantic version")
     output.mkdir(parents=True, exist_ok=True)
-    target = output / f"agentsoma-plugin-{version}.zip"
+    target = output / f"iphone-use-plugin-{version}.zip"
     # Explicit public package roots. Never archive the source checkout or local evidence.
     files = [PLUGIN / path for path in (".codex-plugin/plugin.json", ".claude-plugin/plugin.json", "README.md", "LICENSE")]
     files.extend(sorted(path for path in (PLUGIN / "skills").rglob("*") if path.is_file()))
@@ -58,7 +58,7 @@ def archive(output):
         for path in files:
             if path.is_symlink():
                 raise ValueError(f"Refusing symlink in plugin: {path}")
-            info = zipfile.ZipInfo("agentsoma/" + path.relative_to(PLUGIN).as_posix(), (2026, 1, 1, 0, 0, 0))
+            info = zipfile.ZipInfo("iphone-use/" + path.relative_to(PLUGIN).as_posix(), (2026, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o100644 << 16
             bundle.writestr(info, path.read_bytes())

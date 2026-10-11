@@ -1,10 +1,10 @@
 {
-  "name": "agentsoma",
-  "owner": {"name": "AgentSoma contributors"},
+  "name": "iphone-use",
+  "owner": {"name": "iPhone-use contributors"},
   "plugins": [
     {
-      "name": "agentsoma",
-      "source": "./plugins/agentsoma",
+      "name": "iphone-use",
+      "source": "./plugins/iphone-use",
       "description": "Eyes and hands for agents operating a real iPhone."
     }
   ]

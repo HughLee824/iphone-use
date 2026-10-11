@@ -1,14 +1,14 @@
 {
-  "name": "agentsoma",
+  "name": "iphone-use",
   "interface": {
-    "displayName": "Agentsoma"
+    "displayName": "iPhone-use"
   },
   "plugins": [
     {
-      "name": "agentsoma",
+      "name": "iphone-use",
       "source": {
         "source": "local",
-        "path": "./plugins/agentsoma"
+        "path": "./plugins/iphone-use"
       },
       "policy": {
         "installation": "AVAILABLE",

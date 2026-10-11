@@ -5,12 +5,12 @@
 ## 当前调用
 
 ```sh
-agentsoma --session "$SESSION" observe
-agentsoma --session "$SESSION" inspect o2:e9
-agentsoma --session "$SESSION" inspect o2 --query Calendar
-agentsoma --session "$SESSION" inspect o2:e9 --query scroll_view
-agentsoma --session "$SESSION" inspect o2
-agentsoma --session "$SESSION" inspect o2 --offset 20
+iphone-use --session "$SESSION" observe
+iphone-use --session "$SESSION" inspect o2:e9
+iphone-use --session "$SESSION" inspect o2 --query Calendar
+iphone-use --session "$SESSION" inspect o2:e9 --query scroll_view
+iphone-use --session "$SESSION" inspect o2
+iphone-use --session "$SESSION" inspect o2 --offset 20
 ```
 
 `observe` 成功时直接输出多行文本及 PNG 路径；agent 需要用本地读图能力打开 PNG。`inspect` 成功时输出缓存上下文及按需展开的节点属性。失败仍为单行 JSON，退出码为 1。本地 IPC 保留 JSON 结构，CLI 不把逐节点 JSON 作为默认观察输出。

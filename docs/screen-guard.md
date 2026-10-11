@@ -1,18 +1,30 @@
 # 动作前画面校验与坐标执行
 
-画面校验覆盖 tap/swipe：宿主根据原观察准备坐标和画面指纹，Runner 重新截图并校验，通过后执行坐标手势。type/press 的 AX 目标解析、动作后的精确帧稳定检测、每次派发后重新 observe、unknown 不重发均保持不变。
+画面校验覆盖 tap/swipe：宿主根据原观察准备坐标和画面指纹，Runner 重新截图并校验，通过后执行坐标手势。type/press 的 AX 目标解析、动作后的容差帧稳定检测、每次派发后重新 observe、unknown 不重发均保持不变。
 
-这是启发式的动作前置条件，不是页面 ID、目标身份保证、业务正确性或事务隔离。每次 observe 仍产生新引用；相似画面不延长引用，也不合并观察。
+上述 Runner 路径之外，实验性 apple-native 的 `type oN` 和 `press oN --key return` 都从当前截图生成完整字段保护，并在输入前重新截图校验；完整字段使用原分辨率局部比较与颜色无关的有界光标排除，不读取 AX 或自动聚焦。`text-prepare` 只准备自有键盘，随后使旧引用失效并返回新图。具体约束见[原生文字输入](actions.md#实验性原生文字输入)。
+
+这是启发式的动作前置条件，不是页面 ID、目标身份保证、业务正确性或事务隔离。每次 observe 仍产生新引用；相似画面不恢复失效引用，也不合并观察。
+
+### 标准模式的观察时间与动作前复核
+
+原生坐标 tap、double-tap、long-press、pinch、swipe 只接受本会话的当前 observation，不再因选坐标耗时超过 30 秒而直接拒绝。开始处理动作时建立 30 秒总派发预算，方向/连接准备和最多一次自有媒体恢复计入总预算。方向验证完成、即将请求 Apple PNG 时才建立 8 秒最终校验期限，必须在总期限及最终期限内完成截图、后置状态检查、与原观察比较并进入输入。准备耗时不提前消耗这 8 秒；同一阶段不能重置期限或循环截图，原比较基准不变。预算不包含随后手势本身的执行时长。
+
+新截图完成后，即使像素匹配，若检查已超出预算，坐标手势与文字校验均返回 `input_preflight_timeout`；若已拿到有效截图，附 `preInputDeadlineExceeded=true` 和实际拒绝帧。若 Apple 查询被预算中断且尚无完整有效图，则保留失败阶段，不把未完成截图当作新观察。发生方向恢复时，`orientationRecovery` 记录首次失败检查、恢复、重采集的分段耗时及媒体状态；`captureTimingsMs.total` 包含整个恢复过程，`successfulAttemptTotal` 仅是最终成功截图的内部耗时，不能将两者相加。`orientationRecovery.trigger` 区分静默流、帧交付延迟、方向冲突及连接不可用；分类不替代新鲜方向证据。`preparationMs` / `validationAndCheckMs` 分别记录本阶段准备和最终校验耗时。Apple 查询等待期间检查剩余预算，超时会终止并回收该查询进程，进程清理可有少量额外耗时。
+
+设备和会话绑定、来源、显示器、方向、图像尺寸、整屏和目标/路径保护、取消及媒体健康检查均保留；非法或未来的捕获时间仍拒绝。新观察取代旧观察、动作已派发、连接重建后，旧引用依然无效。结果的 `inputTiming` 记录采用的策略和受理时原观察年龄；它不是页面身份或目标仍存在的确认。
+
+原生文字和按键也以当前观察为比较基准，从请求受理开始设立 30 秒输入派发预算；剪贴板处理前后各自从 Apple PNG 请求起最多 8 秒复核（方向准备仍计入同一个 30 秒总预算），最后阶段的期限同时约束所有权检查和派发。`text-finish` 要求当前、动作后截图及匹配事务，不以截图年龄拒绝恢复；所有权仍在恢复前重新读取。Home、录屏沿用各自现有期限；Runner 时序不变。看到相同画面仍不能排除页面曾变化后恢复，尤其无法保证框外业务状态没有变化；调用方仍需按任务核对重要信息。
 
 ## 调用方式
 
 ```sh
-agentsoma --session "$SESSION" tap o1:e10
-agentsoma --session "$SESSION" tap o2 --x 195 --y 380
-agentsoma --session "$SESSION" swipe o3:e50 --direction up
-agentsoma --session "$SESSION" swipe o4 --from-x 97 --from-y 405 --to-x 97 --to-y 365
-agentsoma --session "$SESSION" tap o5:e10 --protect o5:e20 --protect o5:e21
-agentsoma --session "$SESSION" tap o6:e10 --max-screen-change 0.01 --max-region-change 0
+iphone-use --session "$SESSION" tap o1:e10
+iphone-use --session "$SESSION" tap o2 --x 195 --y 380
+iphone-use --session "$SESSION" swipe o3:e50 --direction up
+iphone-use --session "$SESSION" swipe o4 --from-x 97 --from-y 405 --to-x 97 --to-y 365
+iphone-use --session "$SESSION" tap o5:e10 --protect o5:e20 --protect o5:e21
+iphone-use --session "$SESSION" tap o6:e10 --max-screen-change 0.01 --max-region-change 0
 ```
 
 上面的引用、坐标均为示例，不能直接用于当前设备。`--protect` 可重复最多三次，引用必须属于这次动作的同一观察；适合显式保护要保存的日期、数量、对象名称等。默认不会推断哪些业务字段重要。
@@ -23,6 +35,31 @@ agentsoma --session "$SESSION" tap o6:e10 --max-screen-change 0.01 --max-region-
 - `--max-screen-change` 和 `--max-region-change` 满足 `0 <= region <= screen <= 1`。修改阈值是调用方明确选择，Runner 不会自动放宽阈值、重试或修正坐标。设置为 1 会使对应相似度限制失去拦截能力，上下文检查仍有效。
 
 ## 算法及责任边界
+
+### 页面中的自动播放视频
+
+对当前截图中明确可见、与动作无关的视频或动画，可在**一次坐标动作或原生文字/按键动作**上指定 `--ignore-rect x,y,width,height`，单位是截图的屏幕点。原生 `type` / `press` 必须同时提供完整 `--field-rect`，视频区域不得与字段重叠；Runner 元素输入不使用此参数。例如：
+
+```sh
+iphone-use --session "$SESSION" swipe o7 --from-x 315 --from-y 685 --to-x 315 --to-y 280 \
+  --ignore-rect 70,385,228,171 --observe
+```
+
+此处坐标只演示语法，必须根据当前观察重新选择。Agent 负责视觉识别视频，后端不会自动将画面变化分类为视频，也不把该区域存入会话偏好。每次动作都绑定原 observationID，换页、滚动或获得新观察后不能沿用旧位置。
+
+支持截图坐标的 tap、double-tap、long-press、pinch、swipe，以及指定完整字段的原生 type/press。只允许一个矩形，必须完全位于屏幕内、面积不超过屏幕的 25%，并与全部保护区域不相交：触点周围、滑动走廊、双指路径、完整输入框及额外 `--protect` 都不能被排除。25% 是首版范围限制，不是正确率保证。如果视频挡住了滑动走廊，应基于新图选择视频外路径，不能让后端移除路径保护。
+
+选框应包含截图中动画的实际边缘；媒体图的边缘像素可能超出控件的逻辑边界。Probe 验收中，紧贴控件边界的选框仍留下变化，将显式选框向外包含 1 屏幕点后区域外变化为 0。这是该样本的选框修正，不是通用自动扩框规则；后端不会按差异自动扩大矩形，面积和保护区域限制仍然适用。
+
+未指定时仍使用原 `srgb-grid-v1`。指定时使用 `srgb-area-excluded-rect-v2`：将矩形外画面分成最多四个互不重叠的矩形，各自先裁剪，再对每个网格单元覆盖的全部原生 sRGB 像素取整数平均，按原 32×64 全局网格密度向上取整分配行列；以剩余画面面积加权计算变化比例，分母不含排除区域。网格单元按原生像素整数边界分区，余数像素也被计入；每个裁剪区域最多处理 1600 万像素，超出时拒绝比较。旧版高质量插值会把极窄的残留动画边缘放大成整格变化，新版不会自动扩大排除框。完整整屏比较仍记录为 `rawScreenChange`，实际接纳使用排除后的 `screenChange`。保护区域仍使用原始图及 48×48 网格，默认整屏 0.01、局部 0、颜色容差 8 不变。
+
+结果同时记录 `ignoredRect`、`rawScreenChange` 和 `exclusionScope=global_comparison_only`。标准与新版 Runner 共用此实现；宿主核对 Runner 的算法、矩形及排除范围回执。旧 Runner 不认识新的算法名，会在输入前拒绝，使用此参数前需构建配套 Runner，不能把旧 Runner 的拒绝当作动作执行。未使用参数的旧路径保持兼容。额外指纹仍受原报文预算约束，过大请求明确拒绝。
+
+此选项只排除动画内容，不保证区域内发生的变化无业务意义，也不能识别视觉上相同的页面替换。不要圈住身份、价格、确认对象等决定动作含义的信息；对这些信息应继续保护。局部媒体噪声采用下述独立比较，不据视频样本放宽局部阈值。动作后的 Runner 判稳不因该选项改变，不能据动作前通过保证视频页面在动作后会被判稳。
+
+本轮实现及实际视频帧对照见[动态页面保护验证](dynamic-screen-guard-validation.md)。
+
+### 默认比较
 
 共享的 `ScreenGuard.swift` 是宿主与 Runner 编译使用的无状态比较模块，不拥有 AX 查询、短 ID、缓存或任务策略。
 
@@ -35,7 +72,15 @@ agentsoma --session "$SESSION" tap o6:e10 --max-screen-change 0.01 --max-region-
 
 默认整屏阈值 0.01、局部阈值 0，属于保守工程初值，不是经过多 App 校准的安全值。局部 0 仍允许颜色噪声底限内的变化和降采样无法分辨的变化。
 
-现有归一化像素 SHA-256 保留，用于精确帧身份和动作后稳定证据校验；相似度网格是额外的参考特征，不通过 SHA-256 字符差异衡量画面变化，也不修改动作后的 200ms/3 帧/400ms/5 秒规则。
+### 标准模式的固定截图来源
+
+标准模式观察、文字准备、动作前校验和动作后观察统一使用 Apple CoreDevice PNG，`captureSource=coredevice_screenshot`、`captureSourcePolicy.strategy=coredevice_only`。没有媒体像素后备来源；Apple 截图失败即报告失败，不改用视频帧。每次动作仍比较原 observationID 绑定的截图，真实变化或期限超限返回拒绝及可用的新观察，不自动重放输入。
+
+原生媒体手势专用的 `native-gesture-edge-v1`、`regionAppearanceMatches` 和相关诊断已移除。坐标手势仍要求整屏及每一块保护区域通过上述网格规则；像素底限、全局/局部阈值、显式视频排除范围没有扩大。文字输入保留完整字段和显式观察绑定的光标区域校验，Apple PNG 不会消除实际光标或动画变化。
+
+标准观察和 HID 输入不依赖常驻媒体流；自有媒体只为显式录屏启动，并保留录屏期间的几何校验。方向改变后拒绝旧坐标，录屏方向证据失效时结束片段、确认自有流停止后重取 Apple PNG。详见 [Apple PNG 统一来源](native-apple-png-observation.md)。
+
+现有归一化像素 SHA-256 保留，用于精确帧身份和动作后稳定证据校验；相似度网格是额外的参考特征，不通过 SHA-256 字符差异衡量画面变化，Runner 动作后的判稳规则不变；标准模式使用独立的[15 秒有界判稳](native-post-action-stability.md)。
 
 ## 结果与失败
 
@@ -46,7 +91,7 @@ agentsoma --session "$SESSION" tap o6:e10 --max-screen-change 0.01 --max-region-
 - 参数、坐标、保护引用不合法：宿主或 Runner 拒绝，不发送输入。
 - 输入后的失败、丢失响应、画面不稳定：沿用 unknown 和不重发规则，不把动作前的通过证据当成动作完成。
 
-设备协议现在是 observationVersion=2、actionVersion=5、screenGuardVersion=1、frameStabilityVersion=1。actionVersion=5 增加显式滑动速度与两端停留，见 [可控拖动](actions.md#可控拖动)。旧 Runner 在 connect 时返回 runner_needs_rebuild，发布用户需要安装配套 Runner 并 setup，源码开发者需要重新 build-runner，不静默忽略新参数或回退到无校验坐标输入。
+设备协议现在是 observationVersion=2、actionVersion=9、launchVersion=2、screenGuardVersion=1、frameStabilityVersion=2。actionVersion=9 增加 Runner 编辑按键及 key/keyModifiers 回执核对，见 [Runner 编辑按键](runner-editing-keys.md)。actionVersion=8 增加全屏保护的 Runner Home；Home 确认按键完成，不承诺目的画面判稳。launchVersion=2 增加 Runner terminate/relaunch。actionVersion=7 增加 Runner 长按、双击和双指轨迹；actionVersion=6 增加 Runner append 和 text_view LF 多行检查；此前 actionVersion=5 增加显式滑动速度与两端停留，见 [可控拖动](actions.md#可控拖动)。旧 Runner 在 connect 时返回 runner_needs_rebuild，发布用户需要安装配套 Runner 并 setup，源码开发者需要重新 build-runner，不静默忽略新参数或回退到无校验坐标输入。
 
 ## 验证边界与剩余风险
 
@@ -57,3 +102,7 @@ agentsoma --session "$SESSION" tap o6:e10 --max-screen-change 0.01 --max-region-
 降采样可能遗漏细小文字或局部变化；大区域内的小变化也可能被稀释。不可访问的遮挡、无可见变化的 enabled/focus 更新、相同画面背后的业务状态变化不能仅靠截图保证。坐标 tap 不再承诺旧 AX 路径的 live enabled/isHittable 检查。需要精确命中时使用明确坐标，重要上下文由调用方保护并在动作后检查。
 
 AX 与截图的 observe 采集不是原子的，动作前采样与触摸也不是原子的。此校验不会冻结 App，也不承诺检测所有输入前变化。若后续要为动作后稳定检测加入相似容差，需要独立的固定窗口基准规则，不能把相邻帧小幅变化误判成停止运动。
+
+frameStabilityVersion=2 使用动作后的容差判稳（色差、受限光标例外与最短观察窗口）；输入前 screenGuardVersion=1 的规则不变。见 [执行结果](actions.md#执行结果)。
+
+2026-10-03 的 `.7` 边缘误拒绝及面积平均修正见[动画边缘回归](video-rim-area-validation.md)。

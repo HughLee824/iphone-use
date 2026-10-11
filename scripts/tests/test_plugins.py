@@ -10,7 +10,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PLUGIN = ROOT / "plugins/agentsoma"
+PLUGIN = ROOT / "plugins/iphone-use"
 spec = importlib.util.spec_from_file_location("sync_plugin", ROOT / "scripts/sync-plugin.py")
 sync_plugin = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sync_plugin)
@@ -20,10 +20,10 @@ class PluginPackageTests(unittest.TestCase):
     def test_marketplaces_resolve_the_same_self_contained_plugin(self):
         codex = json.loads((ROOT / ".agents/plugins/marketplace.json").read_text())
         claude = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text())
-        self.assertEqual(codex["name"], "agentsoma")
+        self.assertEqual(codex["name"], "iphone-use")
         self.assertEqual(codex["name"], claude["name"])
-        self.assertEqual(codex["plugins"][0]["source"]["path"], "./plugins/agentsoma")
-        self.assertEqual(claude["plugins"][0]["source"], "./plugins/agentsoma")
+        self.assertEqual(codex["plugins"][0]["source"]["path"], "./plugins/iphone-use")
+        self.assertEqual(claude["plugins"][0]["source"], "./plugins/iphone-use")
         policy = codex["plugins"][0]["policy"]
         self.assertEqual(policy, {"installation": "AVAILABLE", "authentication": "ON_INSTALL"})
         manifests = [json.loads((PLUGIN / directory / "plugin.json").read_text())
@@ -35,7 +35,7 @@ class PluginPackageTests(unittest.TestCase):
             self.assertNotIn("mcpServers", manifest)
             self.assertNotIn("hooks", manifest)
         self.assertIn(f'Workflow version: **{manifests[0]["version"]}**',
-                      (PLUGIN / "skills/agentsoma/SKILL.md").read_text())
+                      (PLUGIN / "skills/iphone-use/SKILL.md").read_text())
         sync_plugin.sync(check=True)
 
     def test_archive_is_reproducible_and_usable_after_relocation(self):
@@ -52,12 +52,12 @@ class PluginPackageTests(unittest.TestCase):
                 self.assertIsNone(bundle.testzip())
                 for entry in bundle.infolist():
                     self.assertNotIn("..", Path(entry.filename).parts)
-                    self.assertTrue(entry.filename.startswith("agentsoma/"))
+                    self.assertTrue(entry.filename.startswith("iphone-use/"))
                     self.assertNotEqual((entry.external_attr >> 16) & 0o170000, 0o120000)
                 bundle.extractall(output / "relocated")
-            relocated = (output / "relocated/agentsoma").resolve()
+            relocated = (output / "relocated/iphone-use").resolve()
             self.assertTrue((relocated / "LICENSE").is_file())
-            self.assertTrue((relocated / "skills/agentsoma/scripts/preflight.sh").is_file())
+            self.assertTrue((relocated / "skills/iphone-use/scripts/preflight.sh").is_file())
             for document in relocated.rglob("*.md"):
                 for link in re.findall(r"\[[^\]]+\]\(([^)]+)\)", document.read_text()):
                     if link.startswith(("https://", "#")):
@@ -70,12 +70,12 @@ class PluginPackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             original = sync_plugin.PLUGIN
             try:
-                sync_plugin.PLUGIN = Path(temporary) / "agentsoma"
+                sync_plugin.PLUGIN = Path(temporary) / "iphone-use"
                 with self.assertRaisesRegex(ValueError, "stale"):
                     sync_plugin.sync(check=True)
                 sync_plugin.sync()
                 sync_plugin.sync(check=True)
-                target = sync_plugin.PLUGIN / "skills/agentsoma/references/claude-code.md"
+                target = sync_plugin.PLUGIN / "skills/iphone-use/references/claude-code.md"
                 target.write_text("Old cached instructions")
                 with self.assertRaisesRegex(ValueError, "stale"):
                     sync_plugin.sync(check=True)
@@ -102,11 +102,11 @@ class PluginPreflightTests(unittest.TestCase):
         path.chmod(0o755)
 
     def write_cli(self, version, observe=True):
-        help_text = "--observe" if observe else "tap REF"
-        self.write_command("agentsoma", f"case \"$1\" in --version) printf '%s\\n' '{version}';; tap) printf '%s\\n' '{help_text}';; *) exit 99;; esac")
+        help_text = "--observe --agent-output" if observe else "tap REF"
+        self.write_command("iphone-use", f"case \"$1\" in --version) printf '%s\\n' '{version}';; tap) printf '%s\\n' '{help_text}';; connect) printf '%s\\n' '--mode';; *) exit 99;; esac")
 
     def run_check(self, *args):
-        return subprocess.run(["/bin/sh", str(ROOT / "skills/agentsoma/scripts/preflight.sh"), *args],
+        return subprocess.run(["/bin/sh", str(ROOT / "skills/iphone-use/scripts/preflight.sh"), *args],
                               env={**os.environ, "PATH": f"{self.bin}:/usr/bin:/bin"},
                               text=True, capture_output=True)
 
@@ -119,8 +119,22 @@ class PluginPreflightTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Use separate action", result.stdout)
 
+    def test_explicit_candidate_path_with_spaces_and_capabilities(self):
+        self.write_cli("0.1.0-dev.firstuse.6")
+        candidate = self.root / "candidate with spaces"
+        (self.bin / "iphone-use").rename(candidate)
+        env = {**os.environ, "PATH": f"{self.bin}:/usr/bin:/bin", "IPHONE_USE_CLI": str(candidate)}
+        command = ["/bin/sh", str(ROOT / "skills/iphone-use/scripts/preflight.sh")]
+        rejected = subprocess.run(command, env=env, text=True, capture_output=True)
+        self.assertNotEqual(rejected.returncode, 0)
+        result = subprocess.run(command + ["--candidate"], env=env, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(str(candidate), result.stdout)
+        self.assertIn("Agent output: available", result.stdout)
+        self.assertIn("Control modes: available", result.stdout)
+
     def test_missing_cli_and_unsupported_versions_fail_with_next_step(self):
-        (self.bin / "agentsoma").unlink()
+        (self.bin / "iphone-use").unlink()
         result = self.run_check()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("brew install", result.stderr)
@@ -145,7 +159,7 @@ class PluginPreflightTests(unittest.TestCase):
         self.assertNotEqual(self.run_check().returncode, 0)
         result = self.run_check("--source")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("supplied signed .xctestrun", result.stdout)
+        self.assertIn("standard needs no Runner", result.stdout)
         self.assertNotEqual(self.run_check("--unknown").returncode, 0)
 
 

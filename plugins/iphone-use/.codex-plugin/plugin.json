@@ -1,0 +1,24 @@
+{
+  "name": "iphone-use",
+  "version": "0.1.4",
+  "description": "Observe and operate a connected physical iPhone with the iPhone-use CLI.",
+  "author": {
+    "name": "iPhone-use contributors",
+    "url": "https://github.com/HughLee824/iphone-use"
+  },
+  "homepage": "https://agentsoma.dev",
+  "repository": "https://github.com/HughLee824/iphone-use",
+  "license": "MIT",
+  "keywords": ["iphone", "ios", "automation", "xctest"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "iPhone-use",
+    "shortDescription": "Eyes and hands for agents on a real iPhone.",
+    "longDescription": "Discover and control iPhone apps through standard screenshot/HID or Runner mode. Requires the iPhone-use CLI and supported Apple toolchain; Runner additionally requires development signing.",
+    "developerName": "iPhone-use contributors",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://agentsoma.dev",
+    "defaultPrompt": ["Open Settings on my iPhone, navigate to General, verify the screen, then disconnect."]
+  }
+}

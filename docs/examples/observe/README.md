@@ -15,4 +15,4 @@
 
 ## 示例与测试数据的区别
 
-公开示例用于解释当前 CLI 格式；回归测试数据位于 [Tests/AgentSomaCoreTests/Fixtures](../../../Tests/AgentSomaCoreTests/Fixtures)，通过 SwiftPM 资源加载。历史格式草稿、原始设备响应和 XCTest 调试转储仅留在本地，不再作为公开文档或测试运行依赖。
+公开示例用于解释当前 CLI 格式；回归测试数据位于 [Tests/IPhoneUseCoreTests/Fixtures](../../../Tests/IPhoneUseCoreTests/Fixtures)，通过 SwiftPM 资源加载。历史格式草稿、原始设备响应和 XCTest 调试转储仅留在本地，不再作为公开文档或测试运行依赖。

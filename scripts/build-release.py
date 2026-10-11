@@ -39,14 +39,14 @@ def package_runner(products, destination):
     if len(manifests) != 1:
         raise RuntimeError("Expected exactly one generated Runner .xctestrun")
     generated = plistlib.loads(manifests[0].read_bytes())
-    target = generated["AgentSomaTests"]
+    target = generated["IPhoneUseTests"]
     host = target["TestHostPath"]
     if not host.startswith("__TESTROOT__/"):
         raise RuntimeError("Unexpected generated Runner host path")
     source = (products / host.removeprefix("__TESTROOT__/")).resolve()
     if not source.is_relative_to(products.resolve()):
         raise RuntimeError("Runner host escapes build products")
-    app = destination / "AgentSomaRunner.app"
+    app = destination / "IPhoneUseRunner.app"
     shutil.copytree(source, app, symlinks=True)
     # iOS 17+ uses XCTest from the device. Do not redistribute Apple's test frameworks.
     shutil.rmtree(app / "Frameworks", ignore_errors=True)
@@ -56,26 +56,26 @@ def package_runner(products, destination):
         path.unlink()
     for path in list(app.rglob("_CodeSignature")):
         shutil.rmtree(path)
-    test = app / "PlugIns/AgentSomaTests.xctest"
-    for bundle, executable in [(test, "AgentSomaTests"), (app, "AgentSomaTests-Runner")]:
+    test = app / "PlugIns/IPhoneUseTests.xctest"
+    for bundle, executable in [(test, "IPhoneUseTests"), (app, "IPhoneUseTests-Runner")]:
         if subprocess.run(["/usr/bin/codesign", "-d", str(bundle)], capture_output=True).returncode == 0:
             run(["/usr/bin/codesign", "--remove-signature", str(bundle / executable)], cwd=destination)
         run(["/usr/bin/strip", "-S", str(bundle / executable)], cwd=destination)
     info = plistlib.loads((app / "Info.plist").read_bytes())
-    info["CFBundleDisplayName"] = "AgentSoma"
+    info["CFBundleDisplayName"] = "iPhone-use"
     write_plist(app / "Info.plist", info)
     # Generate a closed, portable test manifest instead of shipping local build settings.
     write_plist(destination / "Runner.xctestrun", {
         "__xctestrun_metadata__": {"FormatVersion": 1},
-        "AgentSomaTests": {
-            "BlueprintName": "AgentSomaTests", "ProductModuleName": "AgentSomaTests",
+        "IPhoneUseTests": {
+            "BlueprintName": "IPhoneUseTests", "ProductModuleName": "IPhoneUseTests",
             "IsUITestBundle": True, "IsXCTRunnerHostedTestBundle": True,
             "UseUITargetAppProvidedByTests": True, "TestTimeoutsEnabled": False,
             "TestHostBundleIdentifier": info["CFBundleIdentifier"],
-            "TestHostPath": "__TESTROOT__/AgentSomaRunner.app",
-            "TestBundlePath": "__TESTHOST__/PlugIns/AgentSomaTests.xctest",
-            "DependentProductPaths": ["__TESTROOT__/AgentSomaRunner.app",
-                                      "__TESTROOT__/AgentSomaRunner.app/PlugIns/AgentSomaTests.xctest"],
+            "TestHostPath": "__TESTROOT__/IPhoneUseRunner.app",
+            "TestBundlePath": "__TESTHOST__/PlugIns/IPhoneUseTests.xctest",
+            "DependentProductPaths": ["__TESTROOT__/IPhoneUseRunner.app",
+                                      "__TESTROOT__/IPhoneUseRunner.app/PlugIns/IPhoneUseTests.xctest"],
             "SystemAttachmentLifetime": "deleteOnSuccess", "UserAttachmentLifetime": "deleteOnSuccess",
         },
     })
@@ -108,7 +108,7 @@ def main():
         parser.error("The project LICENSE is required in every release")
     output = (args.output_dir or root / ".build/releases").resolve()
     output.mkdir(parents=True, exist_ok=True)
-    name = f"agentsoma-{args.version}-macos-{architecture}"
+    name = f"iphone-use-{args.version}-macos-{architecture}"
     destination = output / name
     archive = output / f"{name}.tar.gz"
     checksum = output / f"{archive.name}.sha256"
@@ -122,27 +122,29 @@ def main():
             tempfile.TemporaryDirectory(prefix="release-runner-", dir=root / ".build") as temporary:
         staged = Path(staging) / name
         runner_log = output / f"{name}-runner-build.log"
-        run(["xcrun", "xcodebuild", "build-for-testing", "-project", "Runner/AgentSomaRunner.xcodeproj",
-             "-scheme", "AgentSomaRunner", "-configuration", "Debug", "-sdk", "iphoneos",
+        run(["xcrun", "xcodebuild", "build-for-testing", "-project", "Runner/IPhoneUseRunner.xcodeproj",
+             "-scheme", "IPhoneUseRunner", "-configuration", "Debug", "-sdk", "iphoneos",
              "-destination", "generic/platform=iOS", "-derivedDataPath", temporary,
              "CODE_SIGNING_ALLOWED=NO", "IPHONEOS_DEPLOYMENT_TARGET=17.0",
              "SWIFT_OPTIMIZATION_LEVEL=-O", "SWIFT_ACTIVE_COMPILATION_CONDITIONS=",
              "DEBUG_INFORMATION_FORMAT=dwarf-with-dsym", "SWIFT_SERIALIZE_DEBUGGING_OPTIONS=NO"],
             cwd=root, log=runner_log)
         (staged / "bin").mkdir(parents=True)
-        shutil.copy2(bin_path / "agentsoma", staged / "bin/agentsoma")
-        run(["/usr/bin/strip", "-S", str(staged / "bin/agentsoma")], cwd=root)
+        shutil.copy2(bin_path / "iphone-use", staged / "bin/iphone-use")
+        run(["/usr/bin/strip", "-S", str(staged / "bin/iphone-use")], cwd=root)
         # Ad-hoc signing keeps the local arm64 binary executable; this is not Developer ID signing.
-        run(["/usr/bin/codesign", "--force", "--sign", "-", "--timestamp=none", str(staged / "bin/agentsoma")], cwd=root)
-        runner = staged / "libexec/agentsoma/runner"
+        run(["/usr/bin/codesign", "--force", "--sign", "-", "--timestamp=none", str(staged / "bin/iphone-use")], cwd=root)
+        # Archive links are forbidden; ship an exact byte copy for the legacy command.
+        shutil.copy2(staged / "bin/iphone-use", staged / "bin/agentsoma")
+        runner = staged / "libexec/iphone-use/runner"
         runner.mkdir(parents=True)
         files, minimum_os = package_runner(Path(temporary) / "Build/Products", runner)
-        for path in [staged / "bin/agentsoma", *(runner / name for name in files)]:
+        for path in [staged / "bin/iphone-use", *(runner / name for name in files)]:
             if str(root).encode() in path.read_bytes():
                 raise RuntimeError(f"Local source path leaked into release payload: {path.relative_to(staged)}")
         runner_version = hashlib.sha256(json.dumps(files, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         (runner / "manifest.json").write_text(json.dumps({
-            "formatVersion": 1, "releaseVersion": args.version, "cliSHA256": digest(staged / "bin/agentsoma"), "runnerVersion": runner_version,
+            "formatVersion": 1, "releaseVersion": args.version, "cliSHA256": digest(staged / "bin/iphone-use"), "runnerVersion": runner_version,
             "minimumOSVersion": minimum_os, "files": files,
         }, indent=2, sort_keys=True) + "\n")
         shutil.copy2(root / "docs/install.md", staged / "README.md")
