@@ -35,8 +35,10 @@ and keeps the gesture continuous at 16 px. Do not use the design kit's unadjuste
 `mark-16.png`, which is retained as a failed small-size sample. The normal master
 has a recommended minimum canvas of 24 px.
 
-These changes update this source repository. Existing release archives and the
-separate website repository/deployment do not automatically consume local assets.
+The approved assets are merged into this repository and deployed by the separate
+[iphone-use-website repository](https://github.com/HughLee824/iphone-use-website).
+Future asset edits still need to be copied and deployed there separately. Published
+0.2.0 release archives retain their original packaged icon.
 Previous AgentSoma assets remain available in [Git history](https://github.com/HughLee824/iphone-use/tree/8410e7d/assets/brand).
 Local design archives and generated preview images are not production inputs.
 

@@ -77,7 +77,7 @@ iPhone-use/
 
 Commit files needed to build, test, distribute, or understand the public project. Keep the Swift lockfile, shared Xcode project/scheme, release scripts, and sanitized test fixtures in Git. Xcode user settings are local; do not ignore all `.xcodeproj` files.
 
-The plugin contains instructions and a preflight script; it does not add another runtime service. Edit `skills/iphone-use/`, then run `python3 scripts/sync-plugin.py` to update the committed distribution. CI rejects drift. The [public website](https://agentsoma.dev) is maintained in the separate [agentsoma-website](https://github.com/HughLee824/agentsoma-website) repository and deployed through Cloudflare Workers Static Assets at `iphone-use.dev`. The public client installation path is documented in [public access release](public-access-release.md).
+The plugin contains instructions and a preflight script; it does not add another runtime service. Edit `skills/iphone-use/`, then run `python3 scripts/sync-plugin.py` to update the committed distribution. CI rejects drift. The [public website](https://agentsoma.dev) is maintained in the separate [iphone-use-website](https://github.com/HughLee824/iphone-use-website) repository and deployed through Cloudflare Workers Static Assets at `agentsoma.dev`. The public client installation path is documented in [public access release](public-access-release.md).
 
 Test inputs belong under `Tests/IPhoneUseCoreTests/Fixtures` and are loaded through SwiftPM's resource bundle. Tests must pass in a fresh checkout without `spikes/`, private device captures, or files under `docs/examples`. Published examples should illustrate the current interface, use placeholder paths and IDs, and identify any omitted media.
 
