@@ -1,49 +1,94 @@
 {
-  "brand": "AgentSoma",
-  "direction": "Soma — embodied S",
-  "date": "2026-09-08",
+  "brand": "iphone-use",
+  "direction": "Phone silhouette + continuous swipe",
+  "date": "2026-10-11",
   "formats": [
     "SVG",
     "PNG",
     "ICO"
   ],
   "provenance": {
-    "raster": "Existing selected logo exports preserved byte for byte; original symbol generated with ImageGen and refined once.",
-    "svg": "Converted and supplied by the project owner; preserved unchanged. Existing raster exports were not regenerated from this SVG.",
-    "wordmark": {
-      "font": "Geist Mono",
-      "weight": 600,
-      "license": "licenses/geist-mono-OFL.txt"
+    "approved_design": "iphone-use-final/",
+    "generator": "scripts/export-brand-assets.cjs",
+    "rasterizer": {
+      "sharp": "0.35.5",
+      "librsvg": "2.63.2",
+      "density": 288
     },
-    "vector_wordmark": {
-      "symbol": "agent-soma.svg",
-      "symbol_sha256": "c2ee7036cdb6811cb627b9d4b0a1ee6695bb1e8d59392281f9bf2db892c706e7",
-      "font_family": "Geist Mono",
-      "font_weight": 600,
-      "font_version": "Version 1.701",
-      "font_sha256": "5f3d6ad60f29d6cb708414ec6887163d63bf197377ef5417d2483ff31ace6c3b",
-      "generator": "scripts/export-brand-wordmark.py",
-      "layout_reference": "agentsoma-wordmark.png"
+    "wordmark": {
+      "font": "Geist",
+      "weight": 500,
+      "license": "licenses/geist-OFL.txt",
+      "outlines": true
+    },
+    "favicon": {
+      "viewBox": [
+        8,
+        8,
+        144,
+        144
+      ],
+      "note": "Same approved path; tighter framing only."
     }
+  },
+  "app_icon": {
+    "path": "Runner/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
+    "source": "iphone-use-app-icon.png",
+    "sha256": "6cbc11e689701c9af098e35c9fa29ebc5ec345d4a1a660d8782d754669594001"
   },
   "files": [
     {
-      "path": "agent-soma.svg",
-      "bytes": 2989,
-      "sha256": "c2ee7036cdb6811cb627b9d4b0a1ee6695bb1e8d59392281f9bf2db892c706e7",
+      "path": "iphone-use-mark.svg",
+      "bytes": 546,
+      "sha256": "68adcfdefaa3e9740679a2cbb8acf0d886fae9fc46eaae9a38fcd114d81729da",
       "format": "SVG",
       "viewBox": [
-        0.0,
-        0.0,
-        1254.0,
-        1254.0
-      ],
-      "source": "Project-owner conversion; supplied SVG preserved unchanged"
+        0,
+        0,
+        160,
+        160
+      ]
     },
     {
-      "path": "soma-mark.png",
-      "bytes": 88744,
-      "sha256": "08e57b16d992709ab4b618aaf6aa5e21a42e1a8ff16a2086b944bc545bd9a212",
+      "path": "iphone-use-mark-dark.svg",
+      "bytes": 549,
+      "sha256": "6d7408d9dd7b18ec48d8f058a8bae8037679743c74fe80fe767b3c765cfb9f10",
+      "format": "SVG",
+      "viewBox": [
+        0,
+        0,
+        160,
+        160
+      ]
+    },
+    {
+      "path": "iphone-use-wordmark.svg",
+      "bytes": 8527,
+      "sha256": "482183c999eb1e41f257739bc11b4bdd29e6cbee72102bab381563ccf27a6d17",
+      "format": "SVG",
+      "viewBox": [
+        0,
+        0,
+        350,
+        112
+      ]
+    },
+    {
+      "path": "iphone-use-wordmark-dark.svg",
+      "bytes": 8527,
+      "sha256": "4d538815be64ffe5a8f817160cc24725535ce02d0da67a2cefaf4da63cfb58ea",
+      "format": "SVG",
+      "viewBox": [
+        0,
+        0,
+        350,
+        112
+      ]
+    },
+    {
+      "path": "iphone-use-mark.png",
+      "bytes": 23587,
+      "sha256": "6a5f35be72612e27a886fbfd913f50b03679a11c189550584bc8e8d7ef3e18b2",
       "format": "PNG",
       "dimensions": [
         1024,
@@ -52,9 +97,9 @@
       "mode": "RGBA"
     },
     {
-      "path": "soma-mark-256.png",
-      "bytes": 7298,
-      "sha256": "05403a240fa0b125d6f6f2e273e5c52b8149f975da3740f83057195b8e7fc22c",
+      "path": "iphone-use-mark-256.png",
+      "bytes": 3569,
+      "sha256": "4518d63afe57843e4e87ff8e8fac04a99a912aed1529434565264b0bdb4a78aa",
       "format": "PNG",
       "dimensions": [
         256,
@@ -63,9 +108,31 @@
       "mode": "RGBA"
     },
     {
-      "path": "soma-github-icon.png",
-      "bytes": 98115,
-      "sha256": "31b8dd5f18dd62a92aa5da507c00530edd5a81166470f5d6308fc3e0803d9fbc",
+      "path": "iphone-use-wordmark.png",
+      "bytes": 21051,
+      "sha256": "d99ecf96195ab7e4f9a958a5e2bf0c70313f124a96d234b0c89137de70a81bd9",
+      "format": "PNG",
+      "dimensions": [
+        1400,
+        448
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "iphone-use-wordmark-dark.png",
+      "bytes": 21742,
+      "sha256": "0c38b14a0b0af3c4cadc59784def69efe469473bf250201ff506a5aab5ad329a",
+      "format": "PNG",
+      "dimensions": [
+        1400,
+        448
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "iphone-use-app-icon.png",
+      "bytes": 19998,
+      "sha256": "6cbc11e689701c9af098e35c9fa29ebc5ec345d4a1a660d8782d754669594001",
       "format": "PNG",
       "dimensions": [
         1024,
@@ -74,42 +141,9 @@
       "mode": "RGB"
     },
     {
-      "path": "agentsoma-wordmark.png",
-      "bytes": 18993,
-      "sha256": "0765c7674bcbabec17edcf4c94bc5f725d7683cdd914757fcad3a626c3fccf75",
-      "format": "PNG",
-      "dimensions": [
-        960,
-        210
-      ],
-      "mode": "RGBA"
-    },
-    {
-      "path": "agentsoma-lockup.png",
-      "bytes": 23434,
-      "sha256": "067ef216cb14cc377a671c9bdba78432e5b0b03e57728b8619c1f6b894e1c73e",
-      "format": "PNG",
-      "dimensions": [
-        1200,
-        240
-      ],
-      "mode": "RGBA"
-    },
-    {
-      "path": "agentsoma-readme.png",
-      "bytes": 30063,
-      "sha256": "34b3e9127b8324e071052f08ecc2f5de57ffce897e895e83372db098871413fb",
-      "format": "PNG",
-      "dimensions": [
-        1200,
-        300
-      ],
-      "mode": "RGB"
-    },
-    {
       "path": "favicon-16.png",
-      "bytes": 408,
-      "sha256": "b08111b9135decf40fe9ce8b80b169973ae57d7129aa1c30f0154cf323fd759c",
+      "bytes": 242,
+      "sha256": "c446040d74abc824561c9f0df83b738a4526581cf50f209c05b66d5db9a1c499",
       "format": "PNG",
       "dimensions": [
         16,
@@ -119,8 +153,8 @@
     },
     {
       "path": "favicon-32.png",
-      "bytes": 900,
-      "sha256": "53434575449002062775af25a1c3724bd2cf7071a106c41473e3cf0d60766b8a",
+      "bytes": 441,
+      "sha256": "ec432966e7cc614059d20970149fb35e34ebe33b682207c4899782be33c628e2",
       "format": "PNG",
       "dimensions": [
         32,
@@ -130,8 +164,8 @@
     },
     {
       "path": "favicon-48.png",
-      "bytes": 1397,
-      "sha256": "0231829b0e0c064de70daf5836ffb4d6a5751e0528a0f7f9fcc8d1bdbded011a",
+      "bytes": 612,
+      "sha256": "b4679b340c01e16c75557ffed5920be0d8a15aecb513a6310b666aabfc8fc902",
       "format": "PNG",
       "dimensions": [
         48,
@@ -141,8 +175,8 @@
     },
     {
       "path": "favicon-64.png",
-      "bytes": 1858,
-      "sha256": "6a2d434e28aeb3705e5e45c9694f54e8459e94244429517f468ea86294aa2734",
+      "bytes": 851,
+      "sha256": "a68b73250a5ea75c55edf5e78877225f3c96aa407cee3082055729fe5e2d00c3",
       "format": "PNG",
       "dimensions": [
         64,
@@ -152,8 +186,8 @@
     },
     {
       "path": "favicon.ico",
-      "bytes": 16733,
-      "sha256": "6f45b7a93663b80c5720c173e41cc24fd860a4085774388f5fc8449c0782c247",
+      "bytes": 6340,
+      "sha256": "af655822e6151cc6bb74d910dc22ce2d974d838c9ed64a918ebf93c38a2a05c1",
       "format": "ICO",
       "dimensions": [
         256,
@@ -184,49 +218,10 @@
       ]
     },
     {
-      "path": "licenses/geist-mono-OFL.txt",
+      "path": "licenses/geist-OFL.txt",
       "bytes": 4387,
       "sha256": "f12f59163d92084b0473315ae4566cde0c1233d940ae464f5225a69c347cc691",
       "format": "text"
-    },
-    {
-      "path": "agentsoma-wordmark.svg",
-      "bytes": 8448,
-      "sha256": "752435acef882e0bf386ceb0f3b539a76e1272dda91204da46c04d8d4a4899b9",
-      "format": "SVG",
-      "viewBox": [
-        0,
-        0,
-        960,
-        210
-      ],
-      "rendering": "Vector paths only; no embedded images, filters, or font dependencies"
-    },
-    {
-      "path": "agentsoma-wordmark-dark.svg",
-      "bytes": 8448,
-      "sha256": "8ad355d3cd4b8b72483f8398bc7fb2b41879bed86d9b8a8bac964fc40266b9d8",
-      "format": "SVG",
-      "viewBox": [
-        0,
-        0,
-        960,
-        210
-      ],
-      "rendering": "Vector paths only; no embedded images, filters, or font dependencies"
-    },
-    {
-      "path": "agentsoma-wordmark-source.svg",
-      "bytes": 3398,
-      "sha256": "fac1ca4d16fca0783d72bd6fedc9b6d3a8d8548dfdd09b66fc24212eeef79bef",
-      "format": "SVG",
-      "viewBox": [
-        0,
-        0,
-        960,
-        210
-      ],
-      "rendering": "Editable text and vector symbol paths; requires Geist Mono"
     }
   ]
 }

@@ -1,6 +1,6 @@
 # Your first iPhone task
 
-> This guide starts from the published iPhone-use CLI 0.2.0. The Release and Homebrew channels are available; plugin distribution and client verification are tracked separately in [channel status](rename-to-iphone-use.md). Older AgentSoma releases do not gain standard mode from these instructions. Logo assets are unchanged.
+> This guide starts from the published iPhone-use CLI 0.2.0. The Release and Homebrew channels are available; plugin distribution and client verification are tracked separately in [channel status](rename-to-iphone-use.md). Older AgentSoma releases do not gain standard mode from these instructions. This checkout uses the approved iphone-use Logo; existing release packages retain their packaged icon.
 
 Start with **standard mode**: screenshots and native HID, without Runner installation, signing or `setup`. Choose **runner mode** explicitly when you want XCTest and available element references. Both modes use the same CLI and persistent session; they never switch control routes automatically.
 
