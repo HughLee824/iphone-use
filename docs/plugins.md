@@ -1,6 +1,6 @@
 # Codex / Claude Code 插件
 
-> CLI 0.2.0、Homebrew 和新名称网站已公开；Release 附带插件 0.1.4。源码插件的 0.1.5 是文档修订版，本次不发布新 ZIP 或替换已有资产。两种客户端的公开安装、缓存升级和真机任务验证仍未在本次发布中补做，详见[渠道状态](rename-to-iphone-use.md)。
+> CLI 0.2.0、Homebrew 和新名称网站已公开；Release 附带插件 0.1.4。源码插件的 0.1.6 是主页与文档修订版，本次不发布新 ZIP 或替换已有资产。两种客户端的公开 Git 安装与 0.1.4 → 0.1.6 缓存升级已验收；本轮未新增真机任务验证，详见[渠道状态](rename-to-iphone-use.md)。
 
 
 [公开网站](https://iphone-use.com) → [安装 CLI](install.md) → 安装本页插件 → [选择模式并连接](first-task.md#connect-in-standard-mode) → 首个真机任务。完整英文路径见 [First task](first-task.md)。
@@ -35,11 +35,11 @@ codex plugin list --marketplace iphone-use --json
 
 确认插件已启用，在 Codex 桌面插件入口选择 iPhone-use 并开始新任务，或在新任务中调用 **`$iphone-use:iphone-use`**。如果桌面列表未刷新，重启客户端。如果 CLI 没有 `plugin add`，使用兼容版本或通过已添加 marketplace 的桌面插件目录安装；不要套用 Claude 的 `plugin install` 命令。
 
-仓库索引位于 `.agents/plugins/marketplace.json`，`source.path` 相对仓库根目录解析到 `./plugins/iphone-use`。插件身份由 `.codex-plugin/plugin.json` 定义。[官方格式与安装说明](https://developers.openai.com/plugins/build/plugins)。
+仓库索引位于 `.agents/plugins/marketplace.json`，`source.path` 相对仓库根目录解析到 `./plugins/iphone-use`。插件身份由 `.codex-plugin/plugin.json` 定义。[官方格式与安装说明](https://developers.openai.com/plugins/build/plugins)及[客户端命令参考](https://learn.chatgpt.com/docs/developer-commands#codex-plugin-marketplace)。
 
 ## Claude Code 安装
 
-在终端执行：
+以下命令已在 Claude Code 2.1.250 上验收。在终端执行：
 
 ```sh
 claude plugin marketplace add HughLee824/iphone-use
@@ -65,7 +65,7 @@ claude plugin list --json
 
 ## 升级生效与卸载
 
-新插件身份为 `iphone-use@iphone-use`。启用前停用旧 AgentSoma 插件，避免同一手机任务重复匹配；确认新插件可用后再按需移除旧插件。CLI 与插件版本号独立：0.2.0 Release 中的插件仍是 0.1.4，Git 来源的源码修订版为 0.1.5，安装后应核对缓存版本，不凭仓库版本推断已升级。
+新插件身份为 `iphone-use@iphone-use`。启用前停用旧 AgentSoma 插件，避免同一手机任务重复匹配；若曾另行安装 `~/.codex/skills/agentsoma`，还需在 Codex 的技能配置中单独停用这份独立 skill，插件停用不会影响它；确认新插件可用后再按需移除旧插件。CLI 与插件版本号独立：0.2.0 Release 中的插件仍是 0.1.4，Git 来源的源码修订版为 0.1.6，安装后应核对缓存版本，不凭仓库版本推断已升级。
 
 先断开活跃设备会话，再 `brew update` / `brew upgrade iphone-use`。插件另外更新：
 
@@ -78,6 +78,8 @@ codex plugin add iphone-use@iphone-use
 claude plugin marketplace update iphone-use
 claude plugin update iphone-use@iphone-use
 ```
+
+以上更新命令适用于跟随默认分支的 Git 来源。若曾固定 `v0.2.0` 标签，更新仍会留在该标签：Codex CLI 0.146.0 需要先 `codex plugin marketplace remove iphone-use`，再 `codex plugin marketplace add HughLee824/iphone-use`；Claude Code 2.1.250 可再次 `claude plugin marketplace add HughLee824/iphone-use` 切回默认分支。然后执行上面的更新命令。此处更换 Codex marketplace 来源会保留已安装插件，不是卸载插件。
 
 重开客户端会话，核对安装缓存中 SKILL.md 的 workflow version，而非只看开发目录。发布方修改 skill/adapter 时必须同步两份清单版本；Claude 的版本缓存尤其需要版本号变化。正式包的 Runner 变化或签名过期时按 CLI 提示重新 setup。
 
