@@ -1,6 +1,6 @@
 # HughLee824 Homebrew Tap
 
-> iPhone-use 0.2.0 is published and the public Tap provides the new formula. Repository, Release and plugin versions are updated independently; check the formula version before installing. The published 0.2.0 archive retains its original Logo; source brand updates require a future package build.
+> iPhone-use 0.2.1 is published and the public Tap provides that version. The package includes the approved Runner Logo; the separate plugin ZIP is version 0.1.6. Repository, Release and plugin versions update independently. Existing 0.2.0 assets remain unchanged.
 
 
 Homebrew distribution for [iPhone-use](https://github.com/HughLee824/iphone-use).

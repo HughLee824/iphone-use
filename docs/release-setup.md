@@ -1,6 +1,6 @@
 # Release 与 setup
 
-[iPhone-use 0.2.0](https://github.com/HughLee824/iphone-use/releases/tag/v0.2.0) 已正式发布，同时包含标准模式 CLI 和可选的预编译 Runner。标准模式无需重签或 setup；Runner 模式保留本机重签部署流程。项目采用 MIT，分发仓库为 `HughLee824/iphone-use`，公开 Tap 为 `HughLee824/homebrew-tap`。当前渠道和实际验收范围见[发布状态](rename-to-iphone-use.md#remaining-external-rollout)，下文保留后续版本的维护流程。
+[iPhone-use 0.2.1](https://github.com/HughLee824/iphone-use/releases/tag/v0.2.1) 已正式发布，同时包含标准模式 CLI 和可选的预编译 Runner。标准模式无需重签或 setup；Runner 模式保留本机重签部署流程。项目采用 MIT，分发仓库为 `HughLee824/iphone-use`，公开 Tap 为 `HughLee824/homebrew-tap`。当前渠道和实际验收范围见[发布状态](rename-to-iphone-use.md#remaining-external-rollout)，下文保留后续版本的维护流程。
 
 两种模式都保留完整 Xcode 前提，用户自己的开发签名仅是 Runner 的前提。日常使用不依赖源码仓库或 `.build` 目录。当前标准模式适配 macOS/iOS 27，不能以旧 Runner 发布包的编译下限推断兼容范围。用户流程见[首次接入](onboarding.md)，发布包附带的独立说明见[安装说明](install.md)。
 
@@ -133,11 +133,19 @@ formula 将原包的 `bin` 与 `libexec` 一起放在 Homebrew keg 的 `libexec`
 
 已有本地开发候选包的验收记录覆盖 Apple Silicon / macOS 15.0.1 / Xcode 16.0 / iPhone 12 Pro / iOS 26.6，以及已有付费开发团队签名条件下的包校验、搬移、重签、重复 setup 和正常连接。这些是路线验证，不自动构成后来 GitHub 构建包的验收结果。每次发布的结果以对应草稿的包摘要和本地验收记录为准。原始设备记录、候选包、签名资料和日志保留在本地。
 
+### 0.2.1 发布核验（2026-10-11）
+
+发布沿用源码 `0d8fe37d74e468165aebf30584c2640e3924b24a` 的已核验本地候选，不重新构建；五个公开附件的匿名下载摘要与草稿一致，公开标签指向该源码。CLI 归档 SHA-256 为 `2bb66dda320f789b27218fd5e7a9d1beea7475603e3a9d0c15b5215b369b64d8`。包内采用正式 Runner Logo，独立插件 ZIP 为 0.1.6。
+
+[Tap 更新](https://github.com/HughLee824/homebrew-tap/actions/runs/38128270181)、本机正式 formula 的 0.2.0 → 0.2.1 升级、`brew test`、CLI 与 12 个 Runner 文件摘要检查通过。此前公开 Git 插件安装与 0.1.4 → 0.1.6 缓存升级已在 Codex CLI 0.146.0 和 Claude Code 2.1.250 核验。这些检查不代表新增真机任务验收；本轮没有连接或操作 iPhone。免费账号、全新 Mac、浏览器首次安装等限制保留。
+
+已发布的 0.2.0 资产保持不变。0.2.1 包内 README 保留构建时的渠道状态，当前发布状态以 Release 说明和在线文档为准。
+
 ### 0.2.0 发布核验（2026-10-11）
 
 发布源码为 `d79263dd58554705924f87459d2840c950c0eee2`。草稿核验后发布同一批资产，匿名下载的 5 个文件摘要与草稿一致，公开 tag 指向该源码。Homebrew 安装、`brew test`、CLI 与 12 个 Runner 文件摘要及新旧命令版本检查通过；Tap Trust 的旧公式读取问题已按用户授权以单公式信任解决，操作说明见[安装指南](install.md#homebrew-单公式信任)。网站中英文渠道说明已部署，后续 Wrangler 安全修复的完整依赖审计为零告警。
 
-这份精确的 0.2.0 归档没有新增真机验收。此前 `.21` 候选的真机证据、Runner 后续修复的宿主覆盖及未测试条件已在 Release 中分别记录。公开 Git marketplace 的客户端安装、缓存升级与任务验证仍待单独完成；插件 ZIP 核验不能代替它们。已发布资产保持不变，文档修订及后续插件补丁不覆盖 0.2.0 归档。
+这份精确的 0.2.0 归档没有新增真机验收。此前 `.21` 候选的真机证据、Runner 后续修复的宿主覆盖及未测试条件已在 Release 中分别记录。该次发布时，公开 Git marketplace 的客户端安装、缓存升级与任务验证仍待单独完成；后续安装与升级结果见上方 0.2.1 记录，真机任务验证仍独立。已发布资产保持不变，文档修订及后续插件补丁不覆盖 0.2.0 归档。
 
 ### 0.1.0 正式发布验收
 

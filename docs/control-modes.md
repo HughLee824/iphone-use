@@ -1,6 +1,6 @@
 # Control modes and user configuration
 
-iPhone-use 0.2.0 provides explicit mode selection. Older AgentSoma CLIs may only support `--backend`; use `--version` and `connect --help` to check the actual executable. See [published channels and migration](rename-to-iphone-use.md).
+iPhone-use 0.2.1 provides explicit mode selection. Older AgentSoma CLIs may only support `--backend`; use `--version` and `connect --help` to check the actual executable. See [published channels and migration](rename-to-iphone-use.md).
 
 ## Choose a mode
 
