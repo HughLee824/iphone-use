@@ -1,0 +1,12 @@
+{
+  "svg_sha256": {
+    "mark.svg": "68adcfdefaa3e9740679a2cbb8acf0d886fae9fc46eaae9a38fcd114d81729da",
+    "inverse.svg": "6d7408d9dd7b18ec48d8f058a8bae8037679743c74fe80fe767b3c765cfb9f10",
+    "wordmark.svg": "482183c999eb1e41f257739bc11b4bdd29e6cbee72102bab381563ccf27a6d17",
+    "wordmark-inverse.svg": "4d538815be64ffe5a8f817160cc24725535ce02d0da67a2cefaf4da63cfb58ea",
+    "preview.svg": "798d2cdeb9654ebf25fa79ccbcdcd3d01f0cd18eddbc536706e55bcfb374a6f8",
+    "construction.svg": "9e48826ac26e32b1e89f43a41eba68addad544c20ee8b3e8496a22c9ae203ba4"
+  },
+  "font": "Retained Geist Medium 500 vector outlines from previous A wordmark",
+  "input_sha256": "2d058fbfed1bccf1f7892a2cab789d8352a09fbe26e6409c5c0a524118aa075d"
+}
