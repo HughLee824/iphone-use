@@ -1,6 +1,6 @@
 # AgentSoma → iPhone-use
 
-This checkout is renamed locally. The GitHub repository has **not** been renamed by this change; no version, Homebrew formula or plugin has been published. New repository URLs in current documentation and release templates target the planned `HughLee824/iphone-use` repository. They are not evidence that the remote switch has happened.
+As of 2026-10-11, the repository is [HughLee824/iphone-use](https://github.com/HughLee824/iphone-use), [CLI 0.2.0](https://github.com/HughLee824/iphone-use/releases/tag/v0.2.0) is public, and the Homebrew formula and website have switched to iPhone-use. Release assets, repository plugin content and client installation are separate channels; see the status and remaining checks below. This documentation update does not rebuild or replace published assets.
 
 ## Names and compatibility
 
@@ -19,20 +19,27 @@ Runner payload names, portable xctestrun entries, file inventories and release c
 
 ## Plugin and assets
 
-The canonical skill is `skills/iphone-use`; the self-contained plugin is `plugins/iphone-use`. Both client manifests and marketplace entries use `iphone-use`. Local plugin version is 0.1.4; it is not published. Install the new plugin identity through the client's normal workflow when available and disable/remove the old AgentSoma plugin with user authorization. Do not enable duplicate skills for the same phone task. The new plugin checks for `iphone-use`; it does not silently fall back to an arbitrary older AgentSoma executable.
+The canonical skill is `skills/iphone-use`; the self-contained plugin is `plugins/iphone-use`. Both client manifests and marketplace entries use `iphone-use`. The 0.2.0 Release includes plugin 0.1.4. The source plugin is versioned 0.1.5 for this documentation-only correction; it does not change device workflow behavior or replace the published ZIP. When installing from Git, check the version in the client cache instead of assuming it matches the Release ZIP. Install the new plugin identity through the client's normal workflow and disable/remove the old AgentSoma plugin with user authorization. Do not enable duplicate skills for the same phone task. The new plugin checks for `iphone-use`; it does not silently fall back to an arbitrary older AgentSoma executable.
 
 All existing Logo/image assets, filenames, brand manifest and the wordmark generator are preserved. README/Runner still show the existing visual mark until the new design is approved. Copyright attribution and historical plans/acceptance evidence retain their original names. The existing website domain and separate website repository remain unchanged.
 
 ## Remaining external rollout
 
-After accepting the local build:
+Status checked on 2026-10-11:
 
-1. Rename the GitHub repository and update local remotes; do not relocate the active working directory mid-session. The local checkout path is still AgentSoma. Updated release workflow repository guards expect the new remote name.
-2. Update the separate Homebrew Tap from the new template and publish the new formula only with a validated public archive. The new formula conflicts with the old formula because both install `agentsoma`; disconnect first, uninstall the old formula, then install the new one. Local configuration is retained. No formula replacement/remote Tap edit has been executed here.
-3. Publish/install the new plugin identity and verify client discovery and the first controlled phone task. Remove the old identity only with user authorization.
-4. Update the independent website, links and later the approved Logo assets. No new domain is assumed.
+| Channel | Published state and evidence | Remaining work |
+| --- | --- | --- |
+| Source repository | Renamed to `HughLee824/iphone-use`; local origin uses the new URL. | The local checkout directory remains AgentSoma intentionally. No move is required. |
+| CLI Release | 0.2.0 is published from `d79263dd58554705924f87459d2840c950c0eee2`; all five anonymous asset downloads matched the verified draft, and the public tag matches that source. | No new physical-device acceptance of these exact archive bytes; prior-candidate results remain explicitly separate. |
+| Homebrew | [Tap update](https://github.com/HughLee824/homebrew-tap/actions/runs/38115023135), public install, `brew test`, CLI/Runner digests and both command versions passed. | Users migrating from the old formula must resolve the command conflict; see below. |
+| Website | [agentsoma.dev](https://agentsoma.dev) serves the new brand and bilingual installation guides. Tests, deployment and public-file checks passed; the [Wrangler security update](https://github.com/HughLee824/agentsoma-website/commit/0dee54496eb824def6a09e30d39df0357b180ce6) also passed a full zero-finding dependency audit. | Domain, Worker identity, website repository name and Logo remain unchanged. |
+| Plugin | The public repository contains both marketplace indexes. Release 0.2.0 includes the verified 0.1.4 ZIP; the source 0.1.5 revision corrects documentation only. | Public Git installation, version pickup after an upgrade, and task execution in Codex and Claude Code have not been reverified in this release. Not listed in either official plugin directory. |
 
-The GitHub/Tap/website and plugin rollout are separate from local code changes. Host tests, unsigned builds and relocatable archive checks do not establish signed installation or real-device control under the new bundle IDs.
+For Homebrew migration, disconnect first, uninstall the old `agentsoma` formula, then install `iphone-use`: both expose the compatibility command. Local configuration and signing material are retained. New Tap Trust enforcement may also require permission to read the old formula for the conflict check; after reviewing it, explicitly trust that one formula if desired. See [formula-scoped trust](install.md#homebrew-单公式信任). Whole-Tap trust is not required; checksum-verified manual installation remains an alternative.
+
+The next client-channel check is to install from the public Git marketplace outside the source checkout, confirm the cached plugin version, disable the old duplicate identity and verify upgrade pickup. Any later controlled phone task must record its own image-reading and cleanup evidence. ZIP/preflight checks and historical phone results do not establish this client-channel acceptance.
+
+Existing signed-device history below remains dated evidence. Free Personal Team onboarding/renewal, fresh-Mac signing and browser/Gatekeeper first-run installation remain unverified; the public package is ad-hoc signed and is not notarized. Logo replacement waits for design approval, independently of CLI and plugin releases.
 
 
 ## Historical physical acceptance (2026-09-22)

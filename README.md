@@ -19,9 +19,9 @@ An agent needs local command execution and the ability to read PNG files. The de
 
 [Website](https://agentsoma.dev) · [First iPhone task](docs/first-task.md) · [Client plugins](docs/plugins.md) · [Commands](#commands) · [Documentation](#documentation)
 
-This checkout implements the local AgentSoma → iPhone-use rename. Remote repository, Tap, website and plugin rollout have not been performed. Existing Logo assets are intentionally unchanged. See [rename and upgrade notes](docs/rename-to-iphone-use.md).
+AgentSoma is now **iPhone-use**. [CLI 0.2.0](https://github.com/HughLee824/iphone-use/releases/tag/v0.2.0), the Homebrew formula and updated website are public. The release includes plugin 0.1.4; public client installation and upgrade verification remains separate. Existing Logo assets are unchanged. See [channel status and migration](docs/rename-to-iphone-use.md).
 
-## Control modes (unreleased checkout)
+## Control modes
 
 This checkout supports **standard** (screenshot + native HID) and **runner** (XCTest). Choose with `iphone-use config set mode standard` or `runner`, then `iphone-use connect --device "$DEVICE"`; override one connection with `--mode standard|runner`. Preferences live in `~/.iphone-use/config.json`. Existing `--backend` and signed `--xctestrun` usage remain compatible. New users default to standard; valid legacy Runner setup migrates to runner. An active session never changes backend when preferences change.
 
@@ -37,7 +37,7 @@ Standard currently requires the documented macOS/Xcode/iOS 27 environment, pairi
 
 ## Quick start
 
-These steps target this checkout and local candidate packages; the renamed distribution has not been published. Start with standard mode. Runner signing is a separate optional path. See [first task](docs/first-task.md) and [installation](docs/install.md).
+Install the published CLI through Homebrew or the Release archive, then start with standard mode. Runner signing is a separate optional path. See [first task](docs/first-task.md) and [installation](docs/install.md), including legacy formula migration and formula-scoped Homebrew trust.
 
 ### 1. Prepare and connect
 

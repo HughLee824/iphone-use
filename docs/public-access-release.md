@@ -1,6 +1,6 @@
 # Public access release
 
-The existing public entry point is [the AgentSoma website](https://agentsoma.dev). Its published install flow still uses the AgentSoma Homebrew formula and plugin identity. The iPhone-use repository, formula and plugin rollout is pending; the source paths below describe the new identity prepared in this branch, not an already published installation channel. See [the rename rollout](rename-to-iphone-use.md#remaining-external-rollout). The website is static; the plugin packages a skill, not an MCP service.
+The public entry point is [the iPhone-use website](https://agentsoma.dev). CLI 0.2.0, the new Homebrew formula, repository marketplace indexes and plugin 0.1.4 ZIP are public. The website uses the new CLI and plugin identity. Public client installation, cache upgrade and device-task verification are still separate outstanding checks; the package checks do not establish them. The source plugin 0.1.5 corrects documentation only; this update does not publish a new ZIP or replace existing Release assets. See [channel status and remaining checks](rename-to-iphone-use.md#remaining-external-rollout). The website is static; the plugin packages a skill, not an MCP service.
 
 See the [8 September delivery and acceptance record](public-access-acceptance.md) for verified installation, upgrade and build evidence, plus the deferred device tests.
 
@@ -37,7 +37,7 @@ The CI workflow runs Swift/Python checks, the unsigned Runner build, Node templa
 1. Update the canonical skill, adapter or preflight. Bump the version in both plugin manifests and the SKILL.md workflow version whenever installed content changes.
 2. Run `python3 scripts/sync-plugin.py` and the checks above. Inspect the diff and relocated ZIP contents, including local reference targets and license.
 3. Publish the reviewed commit to this public repository. Retain the source commit used for acceptance.
-4. From outside the checkout, add the **public repository** as the marketplace, install in each client, and confirm the cached version. Use [the documented commands](first-task.md#install-a-client-plugin).
+4. From outside the checkout, add the **public repository** as the marketplace, install in each client, and confirm the cached version. Use [the documented client commands](plugins.md).
 5. Run the first task sequentially on the phone in each client. Verify a real image read, current references, a real navigation action, final screen state and cleanup. Exercise one safe rejection/refresh path. Record the actual task results, not only tool exit codes.
 6. Update from the previous installed plugin, start a fresh session and confirm the new workflow content is loaded. Keep CLI upgrades distinct from plugin upgrades.
 

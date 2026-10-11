@@ -1,6 +1,6 @@
 # Release 与 setup
 
-当前候选包同时包含标准模式 CLI 和可选的预编译 Runner。标准模式无需重签或 setup；Runner 模式保留本机重签部署流程。项目采用 MIT，计划分发仓库为 `HughLee824/iphone-use`，Tap 为 `HughLee824/homebrew-tap`；本次未发布新名称渠道。
+[iPhone-use 0.2.0](https://github.com/HughLee824/iphone-use/releases/tag/v0.2.0) 已正式发布，同时包含标准模式 CLI 和可选的预编译 Runner。标准模式无需重签或 setup；Runner 模式保留本机重签部署流程。项目采用 MIT，分发仓库为 `HughLee824/iphone-use`，公开 Tap 为 `HughLee824/homebrew-tap`。当前渠道和实际验收范围见[发布状态](rename-to-iphone-use.md#remaining-external-rollout)，下文保留后续版本的维护流程。
 
 两种模式都保留完整 Xcode 前提，用户自己的开发签名仅是 Runner 的前提。日常使用不依赖源码仓库或 `.build` 目录。当前标准模式适配 macOS/iOS 27，不能以旧 Runner 发布包的编译下限推断兼容范围。用户流程见[首次接入](onboarding.md)，发布包附带的独立说明见[安装说明](install.md)。
 
@@ -132,6 +132,12 @@ formula 将原包的 `bin` 与 `libexec` 一起放在 Homebrew keg 的 `libexec`
 当前采用命令行下载的已验证路径，保持 ad-hoc 签名。Developer ID 签名与公证不作为所有渠道统一的发布门槛；浏览器直接下载安装体验仍需解决后单独验收。上述 RC 补测时公共 Tap 尚未上架，已有 CI 中的 Homebrew 安装检查不代表公共 `brew install` 入口已可用；后续上架结果以 Tap 和对应 Release 为准。
 
 已有本地开发候选包的验收记录覆盖 Apple Silicon / macOS 15.0.1 / Xcode 16.0 / iPhone 12 Pro / iOS 26.6，以及已有付费开发团队签名条件下的包校验、搬移、重签、重复 setup 和正常连接。这些是路线验证，不自动构成后来 GitHub 构建包的验收结果。每次发布的结果以对应草稿的包摘要和本地验收记录为准。原始设备记录、候选包、签名资料和日志保留在本地。
+
+### 0.2.0 发布核验（2026-10-11）
+
+发布源码为 `d79263dd58554705924f87459d2840c950c0eee2`。草稿核验后发布同一批资产，匿名下载的 5 个文件摘要与草稿一致，公开 tag 指向该源码。Homebrew 安装、`brew test`、CLI 与 12 个 Runner 文件摘要及新旧命令版本检查通过；Tap Trust 的旧公式读取问题已按用户授权以单公式信任解决，操作说明见[安装指南](install.md#homebrew-单公式信任)。网站中英文渠道说明已部署，后续 Wrangler 安全修复的完整依赖审计为零告警。
+
+这份精确的 0.2.0 归档没有新增真机验收。此前 `.21` 候选的真机证据、Runner 后续修复的宿主覆盖及未测试条件已在 Release 中分别记录。公开 Git marketplace 的客户端安装、缓存升级与任务验证仍待单独完成；插件 ZIP 核验不能代替它们。已发布资产保持不变，文档修订及后续插件补丁不覆盖 0.2.0 归档。
 
 ### 0.1.0 正式发布验收
 
