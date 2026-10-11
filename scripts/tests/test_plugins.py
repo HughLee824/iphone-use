@@ -58,6 +58,19 @@ class PluginPackageTests(unittest.TestCase):
             relocated = (output / "relocated/iphone-use").resolve()
             self.assertTrue((relocated / "LICENSE").is_file())
             self.assertTrue((relocated / "skills/iphone-use/scripts/preflight.sh").is_file())
+            interface = json.loads((relocated / ".codex-plugin/plugin.json").read_text())["interface"]
+            for field in ("logo", "logoDark", "composerIcon", "composerIconDark"):
+                icon = (relocated / interface[field]).resolve()
+                self.assertTrue(icon.is_relative_to(relocated))
+                self.assertEqual(icon.read_bytes(), (ROOT / "assets/brand" / icon.name).read_bytes())
+            skill = relocated / "skills/iphone-use"
+            metadata = (skill / "agents/openai.yaml").read_text()
+            icons = re.findall(r'^\s+icon_(?:small|large): "([^"]+)"$', metadata, re.MULTILINE)
+            self.assertEqual(len(icons), 2)
+            for reference in icons:
+                icon = (skill / reference).resolve()
+                self.assertTrue(icon.is_relative_to(skill))
+                self.assertEqual(icon.read_bytes(), (ROOT / "assets/brand" / icon.name).read_bytes())
             for document in relocated.rglob("*.md"):
                 for link in re.findall(r"\[[^\]]+\]\(([^)]+)\)", document.read_text()):
                     if link.startswith(("https://", "#")):

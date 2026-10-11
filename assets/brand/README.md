@@ -29,6 +29,14 @@ The app icon is copied byte for byte to
 sizes; the existing scheme post-action installs the compiled catalog into the
 Runner host. Build/install a new Runner to update an existing device icon.
 
+The Codex plugin uses the light/dark mark SVGs for its listing and composer icons.
+Its skill uses the opaque app icon for legibility on either theme. Copies in
+`skills/iphone-use/assets/` must match these approved exports byte for byte; run
+`python3 scripts/sync-plugin.py` to update the self-contained plugin copies.
+The plugin archive test verifies that all icon paths survive relocation and
+their contents match the brand originals. Plugin 0.1.7 introduces these metadata
+fields; existing installations need the updated plugin to display them.
+
 Favicon exports retain exactly the same vector path, using `viewBox="8 8 144 144"`
 to reduce empty margins. This leaves 10 design units of top/bottom clear space
 and keeps the gesture continuous at 16 px. Do not use the design kit's unadjusted

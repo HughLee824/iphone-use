@@ -1,9 +1,9 @@
 # iPhone-use plugin
 
-> CLI 0.2.0 and plugin 0.1.4 are available in the public Release. The source plugin is 0.1.6, a homepage/documentation revision; this update does not publish a new ZIP or replace the 0.1.4 Release asset. Public client installation, cache upgrade and device-task verification remain separate from package checks. See [channel status](https://github.com/HughLee824/iphone-use/blob/main/docs/rename-to-iphone-use.md).
+> CLI 0.2.1 and plugin 0.1.6 are available in the public Release. Source plugin 0.1.7 adds the approved iPhone-use icons for Codex plugin and skill displays; device workflow behavior is unchanged. This source update does not replace any published Release assets. See [channel status](https://github.com/HughLee824/iphone-use/blob/main/docs/rename-to-iphone-use.md).
 
 
-Eyes and hands for agents operating a real iPhone. This self-contained package supports **Codex** and **Claude Code** through one skill and two client adapters. For new installations, use the published iPhone-use CLI **0.2.0**, full Xcode on a Mac, and a trusted, unlocked iPhone with Developer Mode. Only Runner mode requires local Apple development signing; standard mode needs no Runner setup. See the first-task guide for the currently validated macOS/iOS environment.
+Eyes and hands for agents operating a real iPhone. This self-contained package supports **Codex** and **Claude Code** through one skill and two client adapters. For new installations, use the published iPhone-use CLI **0.2.1**, full Xcode on a Mac, and a trusted, unlocked iPhone with Developer Mode. Only Runner mode requires local Apple development signing; standard mode needs no Runner setup. See the first-task guide for the currently validated macOS/iOS environment.
 
 [Website](https://iphone-use.com) · [First task](https://github.com/HughLee824/iphone-use/blob/main/docs/first-task.md) · [中文安装指南](https://github.com/HughLee824/iphone-use/blob/main/docs/plugins.md)
 

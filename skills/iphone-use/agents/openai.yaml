@@ -1,0 +1,5 @@
+interface:
+  display_name: "iPhone-use"
+  short_description: "Observe and control apps on a real iPhone."
+  icon_small: "./assets/iphone-use-app-icon.png"
+  icon_large: "./assets/iphone-use-app-icon.png"
