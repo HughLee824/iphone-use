@@ -79,7 +79,7 @@ Runner observations also include available elements; actions can use current ref
 
 ## Optional: external agent
 
-A client with local Mac command execution and PNG-reading tools can perform the same loop. See [client plugins](plugins.md) for the separate plugin workflow. The plugin does not install the CLI or grant device access. Release 0.2.1 includes plugin 0.1.6. Public Git installation and 0.1.4 → 0.1.6 cache upgrades passed in both clients; new phone-task execution remains separate from these installation checks.
+A client with local Mac command execution and PNG-reading tools can perform the same loop. See [client plugins](plugins.md) for the separate plugin workflow. The plugin does not install the CLI or grant device access. Release 0.2.1 retains its plugin 0.1.6 ZIP. The Git marketplace plugin is 0.1.7 with the approved plugin/skill icons; updating it does not require a CLI upgrade. Public Git upgrades to 0.1.7 passed in both clients, and the user confirmed the Codex icons display correctly. New phone-task execution remains separate from these installation checks.
 
 Tell the agent which device and mode to use, and the intended task. It must view the PNG before selecting coordinates, keep the returned session and observation IDs, inspect the actual result, and disconnect its own session. A command tool's background job ID is not an iPhone-use session ID; collect the original command's output instead of starting it again.
 

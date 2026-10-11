@@ -1,6 +1,6 @@
 # iPhone-use 发布包安装
 
-> 截至 2026-10-11，[iPhone-use 0.2.1](https://github.com/HughLee824/iphone-use/releases/tag/v0.2.1) 已正式发布，Homebrew formula 与网站已更新。Release 附带插件 0.1.6；各渠道独立更新，具体版本与验证范围见[渠道状态](rename-to-iphone-use.md)。旧 AgentSoma 安装包不会因改名而获得标准模式。本文后续修订不改写已发布安装包内的 README 或任何资产。
+> 截至 2026-10-11，[iPhone-use 0.2.1](https://github.com/HughLee824/iphone-use/releases/tag/v0.2.1) 已正式发布，Homebrew formula 与网站已更新。Release 附带插件 0.1.6 ZIP，Git marketplace 插件为 0.1.7；CLI 与插件独立更新，具体版本与验证范围见[渠道状态](rename-to-iphone-use.md)。旧 AgentSoma 安装包不会因改名而获得标准模式。本文后续修订不改写已发布安装包内的 README 或任何资产。
 
 
 iPhone-use 为外部 agent 提供真实 iPhone 的观察和操作能力。本包同时提供标准模式（截图 + 原生 HID）与 Runner 模式（XCTest）。普通用户先用标准模式，无需 Runner 签名或 setup；配套预编译 iOS Runner 供选择 Runner 模式的开发者在本机重签，不编译源码。

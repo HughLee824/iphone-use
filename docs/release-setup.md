@@ -139,7 +139,9 @@ formula 将原包的 `bin` 与 `libexec` 一起放在 Homebrew keg 的 `libexec`
 
 [Tap 更新](https://github.com/HughLee824/homebrew-tap/actions/runs/38128270181)、本机正式 formula 的 0.2.0 → 0.2.1 升级、`brew test`、CLI 与 12 个 Runner 文件摘要检查通过。此前公开 Git 插件安装与 0.1.4 → 0.1.6 缓存升级已在 Codex CLI 0.146.0 和 Claude Code 2.1.250 核验。这些检查不代表新增真机任务验收；本轮没有连接或操作 iPhone。免费账号、全新 Mac、浏览器首次安装等限制保留。
 
-已发布的 0.2.0 资产保持不变。0.2.1 包内 README 保留构建时的渠道状态，当前发布状态以 Release 说明和在线文档为准。
+后续 [插件图标 PR #10](https://github.com/HughLee824/iphone-use/pull/10) 将 Git 插件更新为 0.1.7；Codex、Claude Code 的公开 Git 升级及安装文件核验通过，Codex 图标显示由用户确认。这不改变 CLI 0.2.1 或其附带的插件 0.1.6 ZIP，也不构成新的真机任务验收。
+
+已发布的 0.2.0 和 0.2.1 附件保持不变。0.2.1 包内 README 保留构建时的渠道状态，当前发布状态以 Release 说明和在线文档为准。
 
 ### 0.2.0 发布核验（2026-10-11）
 
