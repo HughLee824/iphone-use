@@ -1,0 +1,30 @@
+{
+  "canvas": 160,
+  "module": 9,
+  "phone": {
+    "x": 43,
+    "y": 18,
+    "width": 74,
+    "height": 124,
+    "radius": 17
+  },
+  "speaker": {
+    "x": 71,
+    "y": 29,
+    "width": 18,
+    "height": 6,
+    "radius": 3
+  },
+  "swipe": {
+    "center": [
+      44,
+      64
+    ],
+    "radius": 54,
+    "width": 9,
+    "start_degrees": 0,
+    "end_degrees": 70
+  },
+  "ink": "#171717",
+  "inverse": "#F5F5F2"
+}

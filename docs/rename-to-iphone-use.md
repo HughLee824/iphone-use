@@ -21,7 +21,7 @@ Runner payload names, portable xctestrun entries, file inventories and release c
 
 The canonical skill is `skills/iphone-use`; the self-contained plugin is `plugins/iphone-use`. Both client manifests and marketplace entries use `iphone-use`. The 0.2.0 Release includes plugin 0.1.4. The source plugin is versioned 0.1.5 for this documentation-only correction; it does not change device workflow behavior or replace the published ZIP. When installing from Git, check the version in the client cache instead of assuming it matches the Release ZIP. Install the new plugin identity through the client's normal workflow and disable/remove the old AgentSoma plugin with user authorization. Do not enable duplicate skills for the same phone task. The new plugin checks for `iphone-use`; it does not silently fall back to an arbitrary older AgentSoma executable.
 
-All existing Logo/image assets, filenames, brand manifest and the wordmark generator are preserved. README/Runner still show the existing visual mark until the new design is approved. Copyright attribution and historical plans/acceptance evidence retain their original names. The existing website domain and separate website repository remain unchanged.
+The approved phone/swipe Logo is integrated into both READMEs, the Runner App Icon and favicon exports in this checkout. Production assets and the export script are documented in [the brand guide](../assets/brand/README.md); the previous identity remains available in Git history. Copyright attribution and historical plans/acceptance evidence retain their original names. The existing website domain and separate website repository remain unchanged.
 
 ## Remaining external rollout
 
@@ -39,7 +39,7 @@ For Homebrew migration, disconnect first, uninstall the old `agentsoma` formula,
 
 The next client-channel check is to install from the public Git marketplace outside the source checkout, confirm the cached plugin version, disable the old duplicate identity and verify upgrade pickup. Any later controlled phone task must record its own image-reading and cleanup evidence. ZIP/preflight checks and historical phone results do not establish this client-channel acceptance.
 
-Existing signed-device history below remains dated evidence. Free Personal Team onboarding/renewal, fresh-Mac signing and browser/Gatekeeper first-run installation remain unverified; the public package is ad-hoc signed and is not notarized. Logo replacement waits for design approval, independently of CLI and plugin releases.
+Existing signed-device history below remains dated evidence. Free Personal Team onboarding/renewal, fresh-Mac signing and browser/Gatekeeper first-run installation remain unverified; the public package is ad-hoc signed and is not notarized. The approved Logo is integrated locally; published Runner packages and the separately deployed website require their own rebuild/deployment to pick it up.
 
 
 ## Historical physical acceptance (2026-09-22)
