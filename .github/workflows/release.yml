@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'New version without v (for example, 0.1.0-rc.1)'
+        description: 'New version without v (for example, 0.2.0-rc.1)'
         required: true
         type: string
 
@@ -139,7 +139,8 @@ jobs:
 
           - [ ] Downloaded this draft's archive and matched its version, source commit and SHA-256 above.
           - [ ] Installed the complete package outside the source checkout and used its CLI for all device checks.
-          - [ ] Setup completed without compilation; connect, observe, an input action and disconnect passed.
+          - [ ] Standard mode connected without Runner setup; observe, an input action, visible verification and disconnect passed.
+          - [ ] Explicit Runner mode setup completed without compilation; connect, observe and disconnect passed.
           - [ ] Repeated setup and upgrade from the previous release passed. For the first release, record upgrade as not applicable.
           - [ ] An app task passed by checking the saved result, including explicit non-default values where applicable.
 
@@ -150,7 +151,7 @@ jobs:
 
           Download the tar.gz and its .sha256 file together. Installation and iPhone setup instructions are in the package README and repository docs/install.md. The separate iphone-use-plugin ZIP contains both client manifests and the complete skill; it does not contain the CLI or signed Runner. Follow docs/first-task.md for public marketplace installation and the first iPhone task in each client.
 
-          Device setup requires full Xcode and your own Apple development certificate, private key and matching provisioning profile. Setup re-signs the precompiled Runner locally. Free Personal Team onboarding and renewal are not yet validated. The Mac CLI is ad-hoc signed, without Developer ID signing or notarization.
+          Both modes require full Xcode. Standard mode currently requires macOS/iOS 27 and does not need Runner setup or development signing. Optional Runner mode requires your own Apple development certificate, private key and matching provisioning profile; setup re-signs the precompiled Runner locally. Free Personal Team onboarding and renewal are not yet validated. The Mac CLI is ad-hoc signed, without Developer ID signing or notarization.
 
           Maintainer: publish the exact archive accepted locally. After a stable release is published, run the Homebrew Tap's Update iPhone-use workflow with the same version, then verify installation from the public download URL and Tap. Prereleases use manual installation. The attached iphone-use.rb contains the exact versioned download URL and archive checksum.
           EOF

@@ -37,9 +37,9 @@ setup 将包复制到用户状态目录，改写为保存的 App bundle ID、嵌
 ```sh
 swift test
 python3 -m unittest discover -s scripts/tests -v
-python3 scripts/build-release.py --version 0.1.0-rc.1 --require-clean
-python3 scripts/verify-release.py .build/releases/iphone-use-0.1.0-rc.1-macos-arm64.tar.gz --require-clean
-python3 scripts/generate-homebrew.py .build/releases/iphone-use-0.1.0-rc.1-macos-arm64.tar.gz --output .build/releases/iphone-use.rb
+python3 scripts/build-release.py --version 0.2.0-rc.1 --require-clean
+python3 scripts/verify-release.py .build/releases/iphone-use-0.2.0-rc.1-macos-arm64.tar.gz --require-clean
+python3 scripts/generate-homebrew.py .build/releases/iphone-use-0.2.0-rc.1-macos-arm64.tar.gz --output .build/releases/iphone-use.rb
 ```
 
 脚本构建 release CLI、在隔离目录 `build-for-testing` 构建无开发签名的 Runner，移除二进制调试信息，整理固定相对路径的测试清单，附带许可证及构建记录，然后生成目录、tar.gz 和 SHA-256 文件。CLI 仅作本机运行所需的 ad-hoc 签名。产物默认位于 `.build/releases`，也可用 `--output-dir` 指定；已有同名产物会拒绝覆盖。打包和清单检查在临时目录完成，失败不会留下同名的半成品包。CLI 与 Runner 构建日志分开保存。脚本不创建 tag、不上传文件、不操作 Apple 账号、不使用维护者的 iOS profile。
@@ -85,7 +85,7 @@ formula 将原包的 `bin` 与 `libexec` 一起放在 Homebrew keg 的 `libexec`
 ```sh
 (
   set -e
-  IPHONE_USE_VERSION=0.1.0-rc.1 # 替换为待验草稿版本
+  IPHONE_USE_VERSION=0.2.0-rc.1 # 替换为待验草稿版本
   IPHONE_USE_PACKAGE="iphone-use-${IPHONE_USE_VERSION}-macos-arm64"
   IPHONE_USE_ACCEPTANCE_DIR="$PWD/.local/releases/$IPHONE_USE_VERSION"
   mkdir -p "$PWD/.local/releases"
@@ -117,7 +117,7 @@ formula 将原包的 `bin` 与 `libexec` 一起放在 Homebrew keg 的 `libexec`
 
 ### 版本与失败处理
 
-- RC（例如 `0.1.0-rc.1`）通过后可作为预发布版本公开供测试，使用手动安装。正式版 `0.1.0` 需要生成并验收它自己的包，不能只重命名 RC 资产或修改 Release 标题。
+- RC（例如 `0.2.0-rc.1`）通过后可作为预发布版本公开供测试，使用手动安装。正式版 `0.2.0` 需要生成并验收它自己的包，不能只重命名 RC 资产或修改 Release 标题。
 - 构建或上传失败时保持未发布状态；重试前检查已有草稿和资产，避免把不同提交的包混入同一版本。重新构建后，以新包摘要重新验收。
 - 已公开版本发现问题时发布新版本修复，保留历史安装包供手动回退。Tap 更新失败只重试 Tap，不重建已验收的 Release。
 
@@ -133,13 +133,13 @@ formula 将原包的 `bin` 与 `libexec` 一起放在 Homebrew keg 的 `libexec`
 
 ### 0.1.0 正式发布验收
 
-2026-09-07 已发布 [0.1.0](https://github.com/HughLee824/iphone-use/releases/tag/v0.1.0)，源码提交为 `25bef5092aac42a3f60bf1ec01b7ba79e12bee5d`，安装包 SHA-256 为 `c2eb4f1ee1e2c61cf05bfae46076f38d18c3385a6b0a5ab2c9181ed933fec80d`。本次验收使用从 GitHub 下载并搬移到源码目录外的同一安装包；发布时未重新构建或替换资产。
+2026-09-07 已发布 [0.1.0](https://github.com/HughLee824/AgentSoma/releases/tag/v0.1.0)，源码提交为 `25bef5092aac42a3f60bf1ec01b7ba79e12bee5d`，安装包 SHA-256 为 `c2eb4f1ee1e2c61cf05bfae46076f38d18c3385a6b0a5ab2c9181ed933fec80d`。本次验收使用从 GitHub 下载并搬移到源码目录外的同一安装包；发布时未重新构建或替换资产。
 
 - Apple Silicon / macOS 15.0.1 / Xcode 16.0 / iPhone 12 Pro / iOS 26.6.1，已有付费开发签名。首次 setup 无需编译，重复 setup 复用成功。
 - 连接、应用发现、打开、观察、受保护输入及断开通过。计算器 `125 × 8 = 1,000` 经截图与界面文本核对；断开重连后再次打开历史记录，确认今天的计算仍在。一次屏幕变化拦截未派发输入，刷新观察后恢复。
 - setup 验证会话和业务会话均正常清理；业务会话的 host/xcodebuild 退出及观察缓存删除另行核对。
 - [Tap 更新](https://github.com/HughLee824/homebrew-tap/actions/runs/34123914541)通过，formula 提交为 `ab3cc80fc7af9db4483177f334c9f3cd686e1505`。匿名下载的三个公开资产与验收文件逐字节一致，公开 tag 指向上述源码提交。
-- 实际执行 `brew install HughLee824/tap/iphone-use` 和 `brew test HughLee824/tap/iphone-use` 通过，CLI/Runner 文件摘要与发布清单一致。使用 `/opt/homebrew/bin/iphone-use` 完成真机连接、截图检查、点击和正常断开。
+- 实际执行 `brew install HughLee824/tap/agentsoma` 和 `brew test HughLee824/tap/agentsoma` 通过，CLI/Runner 文件摘要与发布清单一致。使用 `/opt/homebrew/bin/agentsoma` 完成真机连接、截图检查、点击和正常断开。
 
 本次证明现有开发签名条件下的正式包与公共安装入口可用，未扩展免费账号、全新签名环境或浏览器渠道的支持范围。私有设备标识、签名资料、截图与命令原始记录保留在本地。
 

@@ -12,7 +12,7 @@ brew install HughLee824/tap/iphone-use
 iphone-use --version
 ```
 
-The first distribution targets Apple Silicon on macOS 15 or later. The package contains the precompiled CLI and matching iOS Runner. Device setup separately requires full Xcode and the user's own Apple development signing. See [installation and setup](https://github.com/HughLee824/iphone-use/blob/main/docs/install.md).
+The package targets Apple Silicon and contains the precompiled CLI and optional iOS Runner. Both modes require full Xcode. The binary deployment floor is macOS 15, but standard mode currently requires macOS/iOS 27; it connects with `iphone-use connect --device <UDID> --mode standard` without setup or development signing. Only Runner mode requires `iphone-use setup --device <UDID>` and the user's own Apple development signing. See [installation and setup](https://github.com/HughLee824/iphone-use/blob/main/docs/install.md).
 
 To upgrade or uninstall:
 
@@ -22,7 +22,7 @@ brew upgrade iphone-use
 brew uninstall iphone-use
 ```
 
-Disconnect active iPhone-use sessions before upgrading. Run `iphone-use setup --device <UDID>` again if requested. Uninstalling the formula leaves your local signing state and the iPhone Runner intact.
+Disconnect active sessions before upgrading. When moving from the old `agentsoma` formula, uninstall it before installing `iphone-use`: both expose the compatibility command and conflict. Local configuration is retained. Renamed Runner deployments require new setup; standard mode does not. Uninstalling the formula leaves local signing state and installed iPhone apps intact.
 
 ## Maintainers
 

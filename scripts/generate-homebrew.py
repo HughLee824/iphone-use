@@ -43,10 +43,13 @@ class IphoneUse < Formula
 
   def caveats
     <<~EOS
-      Prepare an iPhone with: iphone-use setup --device <UDID>
-      Device setup requires full Xcode and your own Apple development signing.
+      Both modes require full Xcode. Standard mode currently requires macOS/iOS 27.
+      Connect without Runner setup: iphone-use connect --device <UDID> --mode standard
+      Optional Runner mode requires your own Apple development signing:
+        iphone-use setup --device <UDID>
+        iphone-use connect --device <UDID> --mode runner
       Install and upgrade do not compile or sign the Runner, or access your iPhone.
-      After an upgrade, disconnect old sessions and rerun setup if requested.
+      Disconnect active sessions before upgrading; rerun Runner setup if requested.
     EOS
   end
 
