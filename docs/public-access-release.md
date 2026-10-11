@@ -1,6 +1,6 @@
 # Public access release
 
-The public entry point is [the iPhone-use website](https://agentsoma.dev). CLI 0.2.0, the new Homebrew formula, repository marketplace indexes and plugin 0.1.4 ZIP are public. The website uses the new CLI and plugin identity. Public client installation, cache upgrade and device-task verification are still separate outstanding checks; the package checks do not establish them. The source plugin 0.1.5 corrects documentation only; this update does not publish a new ZIP or replace existing Release assets. See [channel status and remaining checks](rename-to-iphone-use.md#remaining-external-rollout). The website is static; the plugin packages a skill, not an MCP service.
+The public entry point is [the iPhone-use website](https://iphone-use.com). CLI 0.2.0, the new Homebrew formula, repository marketplace indexes and plugin 0.1.4 ZIP are public. The website uses the new CLI and plugin identity. Public client installation, cache upgrade and device-task verification are still separate outstanding checks; the package checks do not establish them. The source plugin 0.1.6 updates homepage metadata and documentation; this update does not publish a new ZIP or replace existing Release assets. See [channel status and remaining checks](rename-to-iphone-use.md#remaining-external-rollout). The website is static; the plugin packages a skill, not an MCP service.
 
 See the [8 September delivery and acceptance record](public-access-acceptance.md) for verified installation, upgrade and build evidence, plus the deferred device tests.
 
@@ -45,7 +45,7 @@ Do not silently change content under a published version. For the initial releas
 
 ## Publish the website
 
-Website source and release instructions live in the separate [iphone-use-website repository](https://github.com/HughLee824/iphone-use-website). Its Cloudflare Worker serves the verified public site at `https://agentsoma.dev`. The repository's `wrangler.jsonc` declares the public output, real 404 handling and custom domains. Its `main` branch is connected to Cloudflare Workers Builds using the configuration documented in its README, so website changes validate and deploy independently of CLI and plugin releases.
+Website source and release instructions live in the separate [iphone-use-website repository](https://github.com/HughLee824/iphone-use-website). Its Cloudflare Worker serves the verified public site at `https://iphone-use.com`. The repository's `wrangler.jsonc` declares the public output, real 404 handling and custom domains. Its `main` branch is connected to Cloudflare Workers Builds using the configuration documented in its README, so website changes validate and deploy independently of CLI and plugin releases.
 
 After deployment, verify the exact HTTPS URL without an authenticated session. Check installation anchors, client selection, clipboard success/failure, keyboard navigation, and narrow layouts (320, 375, 414 and 768 CSS pixels) as well as desktop. Keep the deployed website commit in the acceptance record. The website's GitHub Actions artifact is a review/build artifact. Production pushes run the tests, documentation-link checks and static build before Workers Builds deploys the result. Manual Wrangler deployment remains available through the website README.
 
