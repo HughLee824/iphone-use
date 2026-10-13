@@ -20,9 +20,15 @@ protocol SessionBackend: AnyObject {
     func prepareText() throws -> [String: Any]
     func startRecording(duration: Double) throws -> [String: Any]
     func stopRecording(id: String) throws -> [String: Any]
+    func startPreview() throws -> [String: Any]
+    func stopPreview() throws -> [String: Any]
+    func previewTick() -> Bool
 }
 
 extension SessionBackend {
+    func startPreview() throws -> [String: Any] { throw IPhoneUseError("preview_unsupported", "Preview is unavailable") }
+    func stopPreview() throws -> [String: Any] { ["state": "stopped"] }
+    func previewTick() -> Bool { false }
     func setEventDeliveryQueue(_ queue: DispatchQueue) {}
     func observeAfterAction(textOptions: NativeTextObservationOptions?, ignoring: ScreenRect?, sourceContext: ScreenContext?) throws -> CapturedObservation {
         throw IPhoneUseError("native_action_unsupported", "Post-action native stability is unavailable in this backend")
@@ -164,8 +170,9 @@ final class XCTestBackend: SessionBackend {
         result["sequence"] = response["sequence"]
         let recordingStatus = recording?.status() ?? ["state": "idle"]
         result["recording"] = recordingStatus
+        result["preview"] = recording?.previewStatus ?? ["state": "stopped"]
         result["recordingSupport"] = ["supported": recordingPlatformSupported, "method": "native_rtp", "source": "owned_native_rtp", "codec": "hevc",
-                                      "connectionPolicy": "on_explicit_record_start", "hidServiceOpened": false,
+                                      "connectionPolicy": "on_explicit_record_or_preview_start", "hidServiceOpened": false,
                                       "availability": !recordingPlatformSupported ? "unsupported_platform" :
                                         (recordingStatus["reconnectRequired"] as? Bool == true ? "reconnect_required" :
                                          (recordingStatus["mediaConnectionOpen"] as? Bool == true ? "prepared" : "not_checked"))]
@@ -285,6 +292,12 @@ final class XCTestBackend: SessionBackend {
         return try recording.stop(id: id)
     }
 
+    func startPreview() throws -> [String: Any] {
+        guard let recording else { throw IPhoneUseError("backend_unavailable", "Runner is not connected") }
+        return try recording.startPreview()
+    }
+    func stopPreview() throws -> [String: Any] { try recording?.stopPreview() ?? ["state": "stopped"] }
+    func previewTick() -> Bool { recording?.previewTick() ?? false }
     func cancelCurrent() { recordingCancellation.cancel() }
 
     func stop() -> [String: Any] {

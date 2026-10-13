@@ -113,6 +113,24 @@ iphone-use connect --device "$IOS_UDID" --mode runner
 
 坐标单位为**屏幕点**，不是截图像素。滑动方向表示手指移动方向。文本输入不会自动提交，需要时单独调用 `press`。文本限制、拖动参数与示例见[动作接口](docs/actions.md)。
 
+## 本地实时预览（源码实验功能）
+
+当前源码的 standard 和 runner 均支持共享原生视频流的只读浏览器预览，无需 Device Hub。请使用包含 `preview` 命令的源码构建，不代表已发布 CLI 包已经包含此能力。
+
+预览按 `productType` 精确匹配外观：保留 iPhone 11–16 系列 23 个机型的官方素材；已覆盖的 17 / Air、18 Pro / Pro Max 等机型使用独立绘制的参数化外框。缺失素材和未知机型使用自绘外框，已删除纯画面切换；保留横竖屏和全屏观看。有可用官方素材时，临时验收按钮可在官方外观与自绘外观间切换；页面跟随系统明暗模式，切换外观时保持视频尺寸与中心不变。已支持的 32 个精确标识均有自绘开孔参数，按对应官方 PNG 或公开尺寸图校准，详见[逐机型校准清单](docs/preview-hardware-calibration.md)。新版受限 Apple 素材不随包分发。素材来源与独立许可见 [Product Bezels](assets/preview/README.md)。
+
+```sh
+iphone-use --session "$SESSION" preview            # 打开浏览器
+iphone-use --session "$SESSION" preview --no-open  # 只返回本地 URL
+iphone-use --session "$SESSION" record-start --duration 60
+export RECORDING_ID="RECORDING_ID_FROM_RESULT"
+# 保存返回的 recordingID；重新 observe 后再执行控制。
+iphone-use --session "$SESSION" record-stop "$RECORDING_ID"
+iphone-use --session "$SESSION" preview --stop
+```
+
+目标上限为 30 fps、最长边 960 像素；稳定 30 fps 尚未通过验收，资源紧张时可能卡顿。旋转会结束录屏片段，方向恢复可能延迟；无音频和网页触控。关闭标签页不等于停止预览，浏览器请求也不续期会话。避免与 Device Hub 同时连接/预览同一手机。完整使用步骤、实现与限制见[本地浏览器预览](docs/local-preview-prototype.md)，成功和失败记录见[验收历史](docs/local-preview-validation.md)。
+
 ## Agent 接入约定
 
 推荐从项目自有公开 Git marketplace 安装自包含 [iPhone-use 插件](plugins/iphone-use/README.md)：
@@ -170,9 +188,9 @@ flowchart LR
     Runner <--> Apps
 ```
 
-标准模式的观察和动作前图片校验统一使用 Apple CoreDevice PNG；自有媒体仅在显式录屏时启动，并保留录屏期间的几何校验。截图失败不会回退到媒体像素。
+标准模式的观察和动作前图片校验统一使用 Apple CoreDevice PNG；自有媒体在显式录屏或预览请求时启动，并保留媒体使用期间的几何校验。截图失败不会回退到媒体像素。
 
-`connect` 启动宿主并固定所选模式。标准模式连接 Apple 原生服务、持有 HID 连接及显式请求的自有录屏流；Runner 模式通过 Xcode 的 `test-without-building` 安装并启动 Runner。宿主跨 CLI 调用保持连接、串行请求、缓存观察并管理清理，不自动切换控制路线。
+`connect` 启动宿主并固定所选模式。标准模式连接 Apple 原生服务、持有 HID 连接及显式请求的自有录屏/预览流；Runner 模式通过 Xcode 的 `test-without-building` 安装并启动 Runner。宿主跨 CLI 调用保持连接、串行请求、缓存观察并管理清理，不自动切换控制路线。
 
 会话文件默认位于 `/private/tmp/agentsoma-<uid>`，目录权限为 `0700`，可通过 `IPHONE_USE_STATE_DIR` 更换路径。发布包 Runner 的准备状态位于 `~/Library/Application Support/iphone-use`。签名私钥留在 Keychain，设备 token 仅保存在宿主内存和 XCTest 子进程环境中。
 
@@ -207,6 +225,7 @@ iPhone-use 处于早期开发阶段。真机验收覆盖上述实测环境，不
 | [设备与 App 发现](docs/discovery.md) | 发现命令、分页与 CoreDevice 诊断。 |
 | [观察契约](docs/observations.md) · [输出样例](docs/examples/observe/README.md) | 截图、AX 文本、缓存查询、引用及示例。 |
 | [动作接口](docs/actions.md) · [画面校验](docs/screen-guard.md) | 输入语义、可控拖动、稳定检测与派发前检查。 |
+| [本地浏览器预览](docs/local-preview-prototype.md) · [验收历史](docs/local-preview-validation.md) | 两种模式的源码预览、录屏共存、性能与旋转限制。 |
 | [架构与仓库布局](docs/architecture.md) | 模块职责、会话生命周期，以及公共文件与本地文件的边界。 |
 | [发布流程](docs/release-setup.md) | CLI 与 Runner 的构建、校验及分发。 |
 

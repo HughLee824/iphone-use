@@ -18,6 +18,7 @@ final class NativeDisplayMediaSession {
     private let startSession: (NativeMediaSession, NativeDisplay) throws -> Void
     private var session: NativeMediaSession?
     private var geometry: Geometry?
+    private(set) var boundDisplay: NativeDisplay?
     private var failure: String?
     private var closed = false
     private var refreshCount = 0
@@ -67,7 +68,7 @@ final class NativeDisplayMediaSession {
             guard cleanup["mediaStopAcknowledged"] as? Bool == true else {
                 throw IPhoneUseError("native_orientation_unverified", "Owned media stop was not confirmed; no replacement was started")
             }
-            session = nil; geometry = nil
+            session = nil; geometry = nil; boundDisplay = nil
             try check()
             let display = try readDisplay()
             let readAt = ProcessInfo.processInfo.systemUptime
@@ -122,7 +123,7 @@ final class NativeDisplayMediaSession {
             guard fresh.health()["healthy"] as? Bool == true else {
                 throw IPhoneUseError("native_media_unhealthy", "Replacement media has no healthy RTP/RTCP flow")
             }
-            geometry = next
+            geometry = next; boundDisplay = display
             if replacing {
                 if forRecording { recordingRefreshCount += 1 }
                 else { refreshCount += 1 }

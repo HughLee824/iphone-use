@@ -54,13 +54,13 @@ enum NativeCaptureChecks {
         }
     }
     static func needsOrientationRecovery(_ error: IPhoneUseError) -> Bool {
-        ["native_snapshot_geometry_unavailable", "native_snapshot_freshness_unavailable"].contains(error.code)
+        ["native_snapshot_geometry_unavailable", "native_snapshot_freshness_unavailable", "native_screenshot_geometry_conflict"].contains(error.code)
     }
 
     // Classification is diagnostic, never positive proof of current orientation.
     // In particular, a quiet stream and a live peer heartbeat cannot replace a frame.
     static func recoveryTrigger(error: String, state: [String: Any]) -> String {
-        if error == "native_snapshot_geometry_unavailable" { return "geometry_conflict" }
+        if ["native_snapshot_geometry_unavailable", "native_screenshot_geometry_conflict"].contains(error) { return "geometry_conflict" }
         if state["healthy"] as? Bool == false || state["peerEnded"] as? Bool == true {
             return "connection_unavailable"
         }

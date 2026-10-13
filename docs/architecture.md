@@ -2,7 +2,7 @@
 
 iPhone-use provides observations and actions for an external agent operating a physical iPhone. The calling agent owns task planning, image interpretation, and judging outcomes. iPhone-use owns device access, reference validity, execution facts, and session cleanup.
 
-The opt-in [Apple native backend](apple-native-backend.md) adds native screenshots and an experimental media/HID adapter. The controlled portrait screenshot/tap loop has device acceptance through native CoreDevice service sockets; the default release path below remains XCTest.
+The current source supports explicit [standard and runner modes](control-modes.md). Standard uses the [Apple native backend](apple-native-backend.md) for CoreDevice screenshots and HID; runner uses XCTest. Both can own a native media connection for recording and experimental local preview. An active session never switches its control backend automatically.
 
 ## Runtime components
 
@@ -10,11 +10,18 @@ The opt-in [Apple native backend](apple-native-backend.md) adds native screensho
 flowchart LR
     Agent[External agent] --> CLI[iphone-use CLI]
     CLI <-->|Unix socket / JSON| Host[Swift session host]
-    Host <-->|CoreDevice IPv6| Runner[XCTest Runner]
-    Runner <--> Apps[iPhone apps]
+    Host <-->|standard control| Native[CoreDevice PNG / HID]
+    Host <-->|runner control| Runner[XCTest Runner]
+    Native <--> Apps[iPhone apps]
+    Runner <--> Apps
+    Host <-->|explicit recording / preview| Media[Owned native media stream]
+    Media --> Decode[Shared decoded frames]
+    Decode --> Preview[Latest JPEG / loopback HTTP]
+    Preview --> Browser[Read-only local browser]
+    Decode --> Recording[Recording pixel subscriber / MP4]
 ```
 
-The CLI and host are two process roles of the same executable. A connection starts a host for that session; the host launches the Runner with Xcode's `test-without-building`. Subsequent CLI calls reuse that host and XCTest session.
+The CLI and host are two process roles of the same executable. A connection starts a host for that session and the selected control backend; runner mode launches XCTest with Xcode's `test-without-building`. Subsequent CLI calls reuse the host and its control connection. The diagram shows the shared recording path when preview is already active; recording without preview retains its independent decoder.
 
 | Component | Owns |
 | --- | --- |
@@ -44,6 +51,14 @@ The idle timeout defaults to 30 minutes and accepts `s`, `m`, or `h` units throu
 The host does not automatically replay unknown actions or restore old references after restarting. See [observations](observations.md), [actions](actions.md), and [screen guards](screen-guard.md) for detailed contracts.
 
 The CLI's optional action `--observe` composes two existing host requests and returns their responses separately. It needs no new host or Runner protocol and does not reserve the serial queue between requests. Observation failure cannot overwrite action facts, and neither operation is replayed. See the [combined response contract](actions.md#动作后观察).
+
+## Shared native preview and recording
+
+An explicit `preview` request starts a read-only HTTP listener on loopback and acquires the session-owned media stream if needed. Control stays on HID or XCTest. A recording started while preview is active subscribes to the same decoded pixels, rather than restarting the stream; stopping one consumer retains media for the other. Disconnect and idle expiry clean up both. Browser HTTP requests do not renew the session or produce observations.
+
+`NativePreview` keeps only the latest JPEG and uses two bounded CPU conversion slots; superseded results are discarded. The source target is 30 fps, a 960-pixel longest edge and JPEG quality 0.7. Receiver and snapshot decode queues use `userInitiated` QoS, with separate queue-wait/decode and conversion/compression timing. The recording writer releases encoder resources before complete file validation. Resource pressure can still cause stalls or recording backpressure; stable 30 fps has not passed acceptance.
+
+Periodic orientation checks use system metadata and low-frequency PNG negative evidence. They do not supply action pixels or coordinates. Rotation ends the current recording segment and rebinds preview after owned-stream cleanup; recovery can be delayed. The experimental CPU orientation-probe change was reverted; the probe retains its default CIContext. See [local preview](local-preview-prototype.md) for the current implementation, lifecycle, usage and limitations, and [acceptance history](local-preview-validation.md) for version-specific evidence.
 
 ## Repository layout
 

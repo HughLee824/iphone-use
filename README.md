@@ -116,6 +116,24 @@ Use `iphone-use --help` or `iphone-use <command> --help` for all options. Sessio
 
 Coordinates use **screen points**, not screenshot pixels. Swipe direction describes finger movement. Text input does not submit automatically; use a separate `press` when appropriate. See [actions](docs/actions.md) for text limits, dragging, and examples.
 
+## Local live preview (source experiment)
+
+The current source supports a read-only browser view in both standard and runner modes, sharing the owned native video stream without Device Hub. Use a source build that includes `preview`; this does not establish availability in published CLI packages.
+
+The viewer selects the device appearance by exact `productType`: retained official artwork for 23 iPhone 11–16 models, and independently drawn parameterized frames for covered newer models including 17 / Air and 18 Pro / Pro Max. Missing assets or unknown models use a drawn frame; the plain-view toggle has been removed. Portrait, both landscape directions, and fullscreen remain supported. When official artwork is available, a temporary review button switches between official and drawn appearances. The page follows the system color scheme and keeps the video size and centre unchanged when switching appearances. All 32 supported identifiers have model-specific opening geometry calibrated against the corresponding retained PNG or public dimensional drawing; see the [calibration inventory](docs/preview-hardware-calibration.md). Restricted newer Apple artwork is not included. See [Product Bezels provenance and separate license](assets/preview/README.md).
+
+```sh
+iphone-use --session "$SESSION" preview            # Open the browser
+iphone-use --session "$SESSION" preview --no-open  # Return only the local URL
+iphone-use --session "$SESSION" record-start --duration 60
+export RECORDING_ID="RECORDING_ID_FROM_RESULT"
+# Save the returned recordingID; observe again before controlling the device.
+iphone-use --session "$SESSION" record-stop "$RECORDING_ID"
+iphone-use --session "$SESSION" preview --stop
+```
+
+The target ceiling is 30 fps with a 960-pixel longest edge; stable 30 fps has not passed acceptance, and resource pressure can cause stalls. Rotation ends the recording segment and may take time to display correctly. There is no audio or browser input control. Closing the tab does not stop preview, and browser requests do not renew the session. Avoid connecting/previewing the same phone in Device Hub concurrently. See [usage, implementation and limitations](docs/local-preview-prototype.md) and [acceptance history](docs/local-preview-validation.md), including failed experiments.
+
 ## Agent integration
 
 Install the self-contained [iPhone-use plugin](plugins/iphone-use/README.md) from this repository's public Git marketplace:
@@ -173,9 +191,9 @@ flowchart LR
     Runner <--> Apps
 ```
 
-Standard observations and pre-input image checks use Apple CoreDevice PNG exclusively; media starts only for explicit recording, with geometry checks while recording. Screenshot failures never fall back to media pixels.
+Standard observations and pre-input image checks use Apple CoreDevice PNG exclusively; media starts for explicit recording or preview requests, with geometry checks while in use. Screenshot failures never fall back to media pixels.
 
-`connect` starts the host and fixes the selected mode. Standard connects to Apple native services and owns its HID connection and any explicitly requested recording stream; Runner uses Xcode's `test-without-building` to install and launch XCTest. The host retains the connection between CLI calls, serializes requests, caches observations and manages cleanup. It never switches control routes automatically.
+`connect` starts the host and fixes the selected mode. Standard connects to Apple native services and owns its HID connection and any explicitly requested recording/preview stream; Runner uses Xcode's `test-without-building` to install and launch XCTest. The host retains the connection between CLI calls, serializes requests, caches observations and manages cleanup. It never switches control routes automatically.
 
 Session files default to `/private/tmp/agentsoma-<uid>` with directory permissions `0700`; `IPHONE_USE_STATE_DIR` can select an alternative path. Packaged Runner preparation lives in `~/Library/Application Support/iphone-use`. Signing private keys stay in Keychain; the device token stays in host memory and the XCTest subprocess environment.
 
@@ -210,6 +228,7 @@ The complete first-task and architecture guides are in English; detailed command
 | [Device and app discovery](docs/discovery.md) | Discovery commands, pagination, and CoreDevice diagnostics. |
 | [Observations](docs/observations.md) · [Sample output](docs/examples/observe/README.md) | Screenshots, AX text, cached queries, references, and examples. |
 | [Actions](docs/actions.md) · [Screen guard](docs/screen-guard.md) | Input semantics, controlled dragging, stability, and pre-dispatch checks. |
+| [Local browser preview](docs/local-preview-prototype.md) · [Acceptance history](docs/local-preview-validation.md) | Source preview in both modes, recording coexistence, performance and rotation limits. |
 | [Architecture and repository layout](docs/architecture.md) | Component responsibilities, session lifecycle, and tracked versus local files. |
 | [Release workflow](docs/release-setup.md) | Building, verifying, and distributing the CLI and Runner. |
 

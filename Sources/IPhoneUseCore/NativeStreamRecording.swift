@@ -1,4 +1,5 @@
 import Foundation
+import CoreVideo
 
 protocol NativeRecordingSource: AnyObject {
     func recordingConfiguration() -> [String: Any]
@@ -24,6 +25,11 @@ final class NativeStreamRecording {
         weak var receiver: NativeRecordingSource?
         var parser = NativeHEVCDepacketizer()
         let writer: NativeVideoWriter
+        weak var snapshots: NativeVideoSnapshot?
+        var snapshotBaseline: [String: Any] = [:]
+        var decodedSeedAge: Double?
+        var sharedTimestamp: UInt32?
+        var sharedTicks: Int64 = 0
         var result: [String: Any]?
         var packets = 0
         var lastPLI = 0.0
@@ -64,7 +70,7 @@ final class NativeStreamRecording {
     var isActive: Bool { queue.sync { current != nil && current?.result == nil } }
     func status() -> [String: Any] { queue.sync { current.map(facts) ?? ["state": "idle", "method": "native_rtp"] } }
 
-    func start(duration: Double, receiver: NativeRecordingSource, mediaID: String, rotation: String) throws -> [String: Any] {
+    func start(duration: Double, receiver: NativeRecordingSource, mediaID: String, rotation: String, snapshots: NativeVideoSnapshot? = nil) throws -> [String: Any] {
         try queue.sync {
             guard !closed else { throw IPhoneUseError("recording_closed", "Recording owner closed") }
             guard current == nil || current?.result != nil else { throw IPhoneUseError("recording_busy", "A recording is already active") }
@@ -80,17 +86,71 @@ final class NativeStreamRecording {
             try SessionPaths.secureDirectory(root); try SessionPaths.secureDirectory(job.directory)
             jobs[job.id] = job; current = job
             pendingLock.lock(); overflow = false; pendingLock.unlock()
-            receiver.setVideoHandler { [weak self, weak job] data in
+            job.snapshots = snapshots; job.snapshotBaseline = snapshots?.status() ?? [:]
+            if let snapshots {
+                snapshots.setRecordingHandler { [weak self, weak job] frame in
+                    guard let self, let job else { return }
+                    self.enqueue(frame, job: job)
+                }
+            } else { receiver.setVideoHandler { [weak self, weak job] data in
                 guard let self, let job else { return }
                 self.enqueue(data, job: job)
             }
-            receiver.requestKeyframe(); job.lastPLI = job.started
+            }
+            if snapshots == nil { receiver.requestKeyframe() }; job.lastPLI = job.started
             let timer = DispatchSource.makeTimerSource(queue: queue)
             timer.schedule(deadline: .now() + 0.1, repeating: 0.1)
             timer.setEventHandler { [weak self] in self?.tick() }
             self.timer = timer; timer.resume()
             return facts(job)
         }
+    }
+
+    private func enqueue(_ frame: NativeVideoSnapshot.Frame, job: Job) {
+        // Retained full-resolution pixel buffers are expensive. Fail explicitly
+        // at a bounded backlog instead of blocking the shared decoder/preview.
+        let bytes = CVPixelBufferGetDataSize(frame.pixels)
+        pendingLock.lock()
+        guard pendingBytes + bytes <= 64 * 1024 * 1024 else { overflow = true; pendingLock.unlock(); return }
+        pendingBytes += bytes; pendingLock.unlock()
+        queue.async { [self] in
+            defer { pendingLock.lock(); pendingBytes -= bytes; pendingLock.unlock() }
+            guard job.result == nil, job === current else { return }
+            do {
+                if job.firstFrameAt == nil {
+                    job.decodedSeedAge = max(0, job.started - frame.firstPacketAt)
+                    try job.writer.appendDecoded(frame.pixels, seconds: max(0, frame.firstPacketAt - job.started), receivedAt: max(job.started, frame.firstPacketAt))
+                    job.firstFrameAt = max(job.started, frame.firstPacketAt)
+                    if frame.firstPacketAt > job.started {
+                        job.sharedTimestamp = frame.timestamp
+                        job.sharedTicks = Int64(((frame.firstPacketAt - job.started) * Double(job.writer.timescale)).rounded())
+                    }
+                } else if frame.firstPacketAt > job.started {
+                    // Burst delivery can assign multiple frames the same host
+                    // tick. Keep the source RTP spacing after the start anchor.
+                    if let previous = job.sharedTimestamp {
+                        let delta = Int32(bitPattern: frame.timestamp &- previous)
+                        guard delta > 0, Int64(delta) < Int64(job.writer.timescale) * 330 else {
+                            throw IPhoneUseError("recording_timestamp_invalid", "Shared RTP timestamp is discontinuous")
+                        }
+                        job.sharedTicks += Int64(delta)
+                    } else {
+                        job.sharedTicks = max(1, Int64(((frame.firstPacketAt - job.started) * Double(job.writer.timescale)).rounded()))
+                    }
+                    job.sharedTimestamp = frame.timestamp
+                    try job.writer.appendDecoded(frame.pixels, seconds: Double(job.sharedTicks) / Double(job.writer.timescale), receivedAt: frame.firstPacketAt)
+                }
+            } catch { job.failure = error; finish(job, reason: "video_error") }
+        }
+    }
+
+    private func sharedDecoderIntact(_ job: Job) -> Bool {
+        guard let snapshots = job.snapshots else { return true }
+        let status = snapshots.status()
+        return status["closed"] as? Bool != true &&
+            ["decodeErrors", "queueOverflows", "droppedUnits", "discontinuities", "malformedPackets", "timestampRejections"].allSatisfy {
+                status[$0] as? Int == job.snapshotBaseline[$0] as? Int
+            }
     }
 
     private func enqueue(_ data: Data, job: Job) {
@@ -129,8 +189,12 @@ final class NativeStreamRecording {
             job.failure = IPhoneUseError("recording_media_lost", "Owned media lost health during recording")
             finish(job, reason: "media_lost"); return
         }
+        if !sharedDecoderIntact(job) {
+            job.failure = IPhoneUseError("recording_incomplete", "Shared decoder lost continuity during recording")
+            finish(job, reason: "video_error"); return
+        }
         if now - job.started >= job.duration { finish(job, reason: "duration"); return }
-        if !job.writer.hasFrame || job.parser.waitingForKeyframe, now - job.lastPLI >= 1 {
+        if job.snapshots == nil, !job.writer.hasFrame || job.parser.waitingForKeyframe, now - job.lastPLI >= 1 {
             job.receiver?.requestKeyframe(); job.lastPLI = now
         }
         if job.firstFrameAt == nil, now - job.started >= min(8, job.duration) {
@@ -159,12 +223,13 @@ final class NativeStreamRecording {
     }
     private func facts(_ job: Job) -> [String: Any] {
         if let result = job.result { return result }
-        return ["recordingID": job.id, "state": job.firstFrameAt == nil ? "waiting_for_keyframe" : "recording",
+        return ["recordingID": job.id, "state": job.firstFrameAt == nil ? (job.snapshots == nil ? "waiting_for_keyframe" : "waiting_for_frame") : "recording",
                 "method": "native_rtp", "codec": "hevc", "path": job.directory.appendingPathComponent("screen.mp4").path,
                 "requestedDurationSeconds": job.duration, "startedAt": job.startedAt, "mediaSessionID": job.mediaID,
-                "displayRotation": job.rotation, "rtpClockRate": job.writer.timescale, "clockSource": "rtcp_sender_reports",
+                "displayRotation": job.rotation, "rtpClockRate": job.writer.timescale, "clockSource": job.snapshots == nil ? "rtcp_sender_reports" : "rtcp_sender_reports_with_host_start_anchor",
                 "rtpPackets": job.packets, "writtenFrames": job.writer.frames,
-                "encoding": "apple_vra_decode_then_hevc_encode",
+                "encoding": job.snapshots == nil ? "apple_vra_decode_then_hevc_encode" : "shared_decoded_pixels_then_hevc_encode",
+                "initialCachedFrameAgeSeconds": job.decodedSeedAge as Any? ?? NSNull(),
                 "withheldResolutionFrames": job.writer.withheldResolutionFrames,
                 "reducedResolutionPolicy": "decode_references_hold_previous_presented_frame",
                 "droppedAccessUnits": job.parser.droppedUnits,
@@ -173,7 +238,7 @@ final class NativeStreamRecording {
                 "fileValidated": false, "processStarted": false]
     }
     private func finish(_ job: Job, reason: String) {
-        job.receiver?.setVideoHandler(nil); timer?.cancel(); timer = nil
+        if let snapshots = job.snapshots { snapshots.setRecordingHandler(nil) } else { job.receiver?.setVideoHandler(nil) }; timer?.cancel(); timer = nil
         let stopped = now()
         let health = job.receiver?.health() ?? [:]
         var result = facts(job)
@@ -197,7 +262,7 @@ final class NativeStreamRecording {
         if normalStop, health["healthy"] as? Bool != true, job.failure == nil {
             job.failure = IPhoneUseError("recording_media_lost", "Owned media lost health before recording stopped")
         }
-        let intact = job.parser.malformedPackets == 0 && job.parser.discontinuities == 0
+        let intact = sharedDecoderIntact(job) && job.parser.malformedPackets == 0 && job.parser.discontinuities == 0
             && job.parser.droppedUnits == job.startupDroppedUnits
         var lastFrameDuration = 1.0 / 60
         var tailTimingSource = "nominal_frame_duration"
@@ -211,8 +276,13 @@ final class NativeStreamRecording {
         result["lastFrameDurationSeconds"] = lastFrameDuration
         result["tailTimingSource"] = tailTimingSource
         do {
+            result["finalizationStartedAt"] = Date().timeIntervalSince1970
             try job.writer.finish(lastFrameDurationSeconds: lastFrameDuration)
+            result["finalizationFinishedAt"] = Date().timeIntervalSince1970
             result["writtenFrames"] = job.writer.frames
+            result["encoderSetupMilliseconds"] = job.writer.encoderSetupMilliseconds
+            result["maximumAppendMilliseconds"] = job.writer.maximumAppendMilliseconds
+            result["validationStartedAt"] = Date().timeIntervalSince1970
             let video = try NativeRecordingValidation.inspect(job.directory.appendingPathComponent("screen.mp4"))
             result["video"] = video
             guard video["decodedFrames"] as? Int == job.writer.frames else {
@@ -232,6 +302,7 @@ final class NativeStreamRecording {
             job.writer.cancel(); result["state"] = "failed"; result["fileValidated"] = false
             result["error"] = ["code": (error as? IPhoneUseError)?.code ?? "recording_invalid", "message": String(describing: error)]
         }
+        if result["validationStartedAt"] != nil { result["validationFinishedAt"] = Date().timeIntervalSince1970 }
         job.result = result
         try? saveJSON(result, to: job.directory.appendingPathComponent("result.json"))
         // Delivery must enqueue onto the owner's serial queue, never reenter

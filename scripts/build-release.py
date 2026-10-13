@@ -13,7 +13,7 @@ import tarfile
 import tempfile
 from pathlib import Path
 
-from release_artifact import VERSION_PATTERN, inspect_archive
+from release_artifact import PREVIEW, preview_asset_files, VERSION_PATTERN, inspect_archive
 
 
 def run(arguments, *, cwd, log=None):
@@ -136,6 +136,11 @@ def main():
         run(["/usr/bin/codesign", "--force", "--sign", "-", "--timestamp=none", str(staged / "bin/iphone-use")], cwd=root)
         # Archive links are forbidden; ship an exact byte copy for the legacy command.
         shutil.copy2(staged / "bin/iphone-use", staged / "bin/agentsoma")
+        preview = staged / PREVIEW
+        preview.mkdir(parents=True)
+        preview_files = preview_asset_files((root / "assets/preview/catalog.json").read_bytes())
+        for asset_name in preview_files:
+            shutil.copy2(root / "assets/preview" / asset_name, preview / asset_name)
         runner = staged / "libexec/iphone-use/runner"
         runner.mkdir(parents=True)
         files, minimum_os = package_runner(Path(temporary) / "Build/Products", runner)
@@ -154,6 +159,7 @@ def main():
         (staged / "build-info.json").write_text(json.dumps({
             "version": args.version, "architecture": architecture, "license": "MIT",
             "sourceCommit": commit, "sourceDirty": dirty,
+            "previewAssets": {name: digest(preview / name) for name in preview_files},
             "xcode": run(["xcodebuild", "-version"], cwd=root),
             "swift": run(["swift", "--version"], cwd=root),
         }, indent=2, sort_keys=True) + "\n")

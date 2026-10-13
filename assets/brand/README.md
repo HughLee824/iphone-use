@@ -43,6 +43,10 @@ and keeps the gesture continuous at 16 px. Do not use the design kit's unadjuste
 `mark-16.png`, which is retained as a failed small-size sample. The normal master
 has a recommended minimum canvas of 24 px.
 
+The local browser preview embeds `favicon-64.png` in `NativePreviewPage.faviconPNG`
+and serves it locally. When changing this export, update that base64 copy too;
+`NativePreviewTests` checks the served bytes against the approved PNG.
+
 The approved assets are merged into this repository and deployed by the separate
 [iphone-use-website repository](https://github.com/HughLee824/iphone-use-website).
 Future asset edits still need to be copied and deployed there separately. Published

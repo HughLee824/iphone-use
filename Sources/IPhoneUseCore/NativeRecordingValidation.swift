@@ -41,7 +41,12 @@ enum NativeRecordingValidation {
         guard reader.startReading() else { throw reader.error ?? IPhoneUseError("recording_invalid", "Cannot start video decoder") }
         defer { reader.cancelReading() }
         var count = 0, first = 0.0, last = -Double.infinity, width = 0, height = 0
-        let deadline = ProcessInfo.processInfo.systemUptime + 15
+        // A five-minute phone recording can contain thousands of full-size
+        // frames. Keep full decoding, but scale its budget within the host's
+        // 75-second command timeout (also allowing 10 seconds to finalize).
+        let validationBudget = max(15, min(45, seconds / 5))
+        let validationStarted = ProcessInfo.processInfo.systemUptime
+        let deadline = validationStarted + validationBudget
         while let sample = output.copyNextSampleBuffer() {
             guard ProcessInfo.processInfo.systemUptime < deadline,
                   let pixels = CMSampleBufferGetImageBuffer(sample) else {
@@ -58,6 +63,8 @@ enum NativeRecordingValidation {
         let transform = track.preferredTransform
         let presented = CGRect(x: 0, y: 0, width: width, height: height).applying(transform)
         return ["durationSeconds": seconds, "decodedFrames": count, "firstFrameSeconds": first,
+                "validationBudgetSeconds": validationBudget,
+                "validationElapsedSeconds": ProcessInfo.processInfo.systemUptime - validationStarted,
                 "lastFrameSeconds": last, "width": width, "height": height, "bytes": bytes,
                 "displayWidth": Int(presented.width.rounded()), "displayHeight": Int(presented.height.rounded()),
                 "trackTransform": [transform.a, transform.b, transform.c, transform.d, transform.tx, transform.ty]]

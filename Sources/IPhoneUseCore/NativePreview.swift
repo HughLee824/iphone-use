@@ -1,0 +1,285 @@
+import Foundation
+import Network
+import CoreImage
+import ImageIO
+
+// Read-only, session-owned browser preview. The browser waits for a single latest
+// JPEG, not device screenshots. Encoding and HTTP never run on the device queue.
+final class NativePreview {
+    struct EncodedJPEG {
+        let data: Data
+        var conversionMs = 0.0
+        var compressionMs = 0.0
+    }
+    private let queue = DispatchQueue(label: "iphone-use.preview", qos: .userInitiated)
+    private let encoderQueue = DispatchQueue(label: "iphone-use.preview.encode", qos: .userInitiated, attributes: .concurrent)
+    private let encodeFrame: (NativeVideoSnapshot.Frame, NativeDisplay, CIContext) throws -> EncodedJPEG
+    private var lastSubmittedFrameAt: Double?
+    private var discardedEncodes = 0
+    private var bindingGeneration = 0
+    private let listener: NWListener
+    private let token = UUID().uuidString
+    // This is a small JPEG, not a full-size video encode. CPU rendering avoids
+    // queueing its resize/color conversion behind live video and file decoding.
+    private var contexts = (0..<2).map { _ in CIContext(options: [.cacheIntermediates: false, .useSoftwareRenderer: true]) }
+    private var timer: DispatchSourceTimer?
+    private var waiting: [ObjectIdentifier: (sequence: Int, deadline: Double)] = [:]
+    private var connections: [ObjectIdentifier: NWConnection] = [:]
+    private var receiver: NativeRTPReceiver?
+    private var display: NativeDisplay?
+    private let device: NativePreviewDevice
+    private let bezel: NativePreviewBezel?
+    private var jpegRotation = "rot0"
+    private var jpeg: Data?
+    private var frameAt: Double?
+    private var encodedFrames = 0
+    private var lastTick: Double?
+    private var lastEncodeMs = 0.0
+    private var maxEncodeMs = 0.0
+    private var maxConversionMs = 0.0
+    private var maxCompressionMs = 0.0
+    private var maxTickGapMs = 0.0
+    private var slowFrames: [[String: Double]] = []
+    private var error: String?
+    private var closed = false
+    private(set) var url = ""
+
+    init(device: NativePreviewDevice = .unknown, encodeFrame: @escaping (NativeVideoSnapshot.Frame, NativeDisplay, CIContext) throws -> EncodedJPEG = { try NativePreview.encodeMeasured($0, display: $1, context: $2) }) throws {
+        self.device = device; self.bezel = NativePreviewBezel.load(device: device)
+        self.encodeFrame = encodeFrame
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+        listener = try NWListener(using: parameters)
+        let ready = DispatchSemaphore(value: 0)
+        listener.stateUpdateHandler = { [weak self] state in
+            guard let self else { return }
+            switch state {
+            case .ready:
+                if let port = self.listener.port { self.url = "http://127.0.0.1:\(port)/\(self.token)/" }
+                ready.signal()
+            case .failed(let failure): self.error = String(describing: failure); ready.signal()
+            default: break
+            }
+        }
+        listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
+        listener.start(queue: queue)
+        guard ready.wait(timeout: .now() + 5) == .success,
+              queue.sync(execute: { !url.isEmpty && error == nil }) else {
+            listener.cancel()
+            throw IPhoneUseError("preview_listen_failed", "Cannot open the loopback preview listener")
+        }
+        queue.sync {
+            let timer = DispatchSource.makeTimerSource(queue: queue)
+            timer.schedule(deadline: .now(), repeating: 1.0 / 30)
+            timer.setEventHandler { [weak self] in self?.encodeLatest(); self?.flushWaiting() }
+            timer.resume(); self.timer = timer
+        }
+    }
+
+    func attach(_ receiver: NativeRTPReceiver, display: NativeDisplay) {
+        queue.sync {
+            guard !closed else { return }
+            if self.receiver !== receiver || self.display != display {
+                jpeg = nil; frameAt = nil; lastSubmittedFrameAt = nil; bindingGeneration += 1
+            }
+            self.receiver = receiver; self.display = display; error = nil
+        }
+    }
+
+    func suspend(_ reason: String) {
+        queue.sync { bindingGeneration += 1; receiver = nil; display = nil; jpeg = nil; frameAt = nil; lastSubmittedFrameAt = nil; error = reason }
+    }
+
+    func status() -> [String: Any] { queue.sync { facts() } }
+
+    private func facts() -> [String: Any] {
+        let health = receiver?.health() ?? [:]
+        let healthy = health["healthy"] as? Bool == true
+        return ["state": closed ? "stopped" : (error != nil ? "unavailable" : (healthy && jpeg != nil ? "streaming" : "waiting")),
+                "device": device.facts, "bezel": bezel?.profile.facts as Any? ?? NSNull(),
+                "url": url, "readOnly": true, "source": "owned_native_rtp", "maxFPS": 30,
+                "encodedFrames": encodedFrames, "encodingInFlight": contexts.count < 2, "inFlightEncodes": 2 - contexts.count, "discardedEncodes": discardedEncodes, "frameAgeSeconds": frameAt.map { ProcessInfo.processInfo.systemUptime - $0 } as Any? ?? NSNull(),
+                "timing": ["lastEncodeMs": lastEncodeMs, "maxEncodeMs": maxEncodeMs,
+                           "maxConversionMs": maxConversionMs, "maxCompressionMs": maxCompressionMs,
+                           "maxTickGapMs": maxTickGapMs, "slowFrames": slowFrames],
+                "mediaHealthy": healthy, "rotation": display?.rotation as Any? ?? NSNull(),
+                "error": error as Any? ?? NSNull(), "media": health]
+    }
+
+    private func encodeLatest() {
+        let started = ProcessInfo.processInfo.systemUptime
+        let tickGap = lastTick.map { (started - $0) * 1000 } ?? 0
+        lastTick = started; maxTickGapMs = max(maxTickGapMs, tickGap)
+        guard !closed, !contexts.isEmpty, let receiver, let display, receiver.health()["healthy"] as? Bool == true else { return }
+        guard let frame = receiver.snapshots?.previewFrame() else {
+            if let failure = receiver.snapshots?.status()["lastError"] as? String { error = failure; jpeg = nil }
+            return
+        }
+        guard frame.completedAt != lastSubmittedFrameAt else { return }
+        let admittedAt = ProcessInfo.processInfo.systemUptime
+        let sourceReadMs = (admittedAt - started) * 1000
+        let generation = bindingGeneration
+        let context = contexts.removeLast()
+        lastSubmittedFrameAt = frame.completedAt
+        // Two bounded slots let a fresh frame bypass one slow conversion.
+        // Timer ticks while both are busy are skipped, never queued.
+        encoderQueue.async { [self] in
+            let encodingStarted = ProcessInfo.processInfo.systemUptime
+            let result = Result { try autoreleasepool { try encodeFrame(frame, display, context) } }
+            let encodeMs = (ProcessInfo.processInfo.systemUptime - encodingStarted) * 1000
+            let workerWaitMs = (encodingStarted - admittedAt) * 1000
+            queue.async { [self] in
+                contexts.append(context)
+                guard !closed, bindingGeneration == generation else { return }
+                maxEncodeMs = max(maxEncodeMs, encodeMs)
+                let measured = try? result.get()
+                maxConversionMs = max(maxConversionMs, measured?.conversionMs ?? 0)
+                maxCompressionMs = max(maxCompressionMs, measured?.compressionMs ?? 0)
+                if tickGap > 100 || encodeMs > 100 || sourceReadMs > 100 || workerWaitMs > 100 {
+                    slowFrames.append(["wallTime": Date().timeIntervalSince1970, "tickGapMs": tickGap,
+                                       "encodeMs": encodeMs, "sourceReadMs": sourceReadMs, "workerWaitMs": workerWaitMs,
+                                       "conversionMs": measured?.conversionMs ?? 0, "compressionMs": measured?.compressionMs ?? 0,
+                                       "sourceAgeMs": (encodingStarted - frame.completedAt) * 1000])
+                    if slowFrames.count > 120 { slowFrames.removeFirst() }
+                }
+                if let frameAt, frame.completedAt <= frameAt { discardedEncodes += 1; return }
+                switch result {
+                case .success(let encoded):
+                    jpeg = encoded.data; jpegRotation = display.rotation; frameAt = frame.completedAt; lastEncodeMs = encodeMs; encodedFrames += 1; error = nil
+                case .failure(let failure):
+                    error = String(describing: failure); jpeg = nil
+                    if lastSubmittedFrameAt == frame.completedAt { lastSubmittedFrameAt = nil }
+                }
+                // Publish before another encode; HTTP and health never wait
+                // behind image conversion or a file decoder's GPU workload.
+                flushWaiting()
+            }
+        }
+    }
+
+    static func encode(_ frame: NativeVideoSnapshot.Frame, display: NativeDisplay, context: CIContext = CIContext()) throws -> Data {
+        try encodeMeasured(frame, display: display, context: context).data
+    }
+
+    private static func encodeMeasured(_ frame: NativeVideoSnapshot.Frame, display: NativeDisplay, context: CIContext) throws -> EncodedJPEG {
+        let started = ProcessInfo.processInfo.systemUptime
+        _ = try NativeSnapshotImage.validateGeometry(frame, display: display)
+        let pixels = frame.pixels
+        // CI coordinates start at the bottom; Apple's padding is right/bottom.
+        var image = CIImage(cvPixelBuffer: pixels).cropped(to: CGRect(x: 0,
+            y: CVPixelBufferGetHeight(pixels) - frame.image.nativeHeight,
+            width: frame.image.nativeWidth, height: frame.image.nativeHeight))
+        image = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
+        if display.rotation == "rot90" { image = image.oriented(.right) }
+        if display.rotation == "rot270" { image = image.oriented(.left) }
+        let scale = min(1, 960 / max(image.extent.width, image.extent.height))
+        let output = CGRect(x: 0, y: 0, width: min(960, ceil(image.extent.width * scale)),
+                            height: min(960, ceil(image.extent.height * scale)))
+        // The short edge is often fractional (1170 × 960 / 2532 = 443.60).
+        // Extend the validated native edge, not the decoder padding, before
+        // resampling. Otherwise the last JPEG column composites partial alpha
+        // against white, leaving a visible gray seam even on a black screen.
+        image = image.clampedToExtent().transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+            .cropped(to: output)
+        // Materialize the resized RGB pixels here, not lazily during ImageIO
+        // compression, so conversion and JPEG latency can be distinguished.
+        guard let rendered = context.createCGImage(image, from: image.extent, format: .RGBA8,
+                                                   colorSpace: CGColorSpaceCreateDeviceRGB(), deferred: false) else {
+            throw IPhoneUseError("preview_encoding_failed", "Preview pixel conversion failed")
+        }
+        let converted = ProcessInfo.processInfo.systemUptime
+        let bytes = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(bytes, "public.jpeg" as CFString, 1, nil) else {
+            throw IPhoneUseError("preview_encoding_failed", "Cannot create JPEG encoder")
+        }
+        CGImageDestinationAddImage(destination, rendered, [kCGImageDestinationLossyCompressionQuality: 0.7] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else {
+            throw IPhoneUseError("preview_encoding_failed", "JPEG encoding failed")
+        }
+        return EncodedJPEG(data: bytes as Data, conversionMs: (converted - started) * 1000,
+                           compressionMs: (ProcessInfo.processInfo.systemUptime - converted) * 1000)
+    }
+
+    private func accept(_ connection: NWConnection) {
+        guard !closed, connections.count < 8 else { connection.cancel(); return }
+        let id = ObjectIdentifier(connection)
+        connections[id] = connection
+        connection.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .failed, .cancelled: self?.connections.removeValue(forKey: id); self?.waiting.removeValue(forKey: id)
+            default: break
+            }
+        }
+        connection.start(queue: queue)
+        receive(connection, buffer: Data())
+        queue.asyncAfter(deadline: .now() + 3) { [weak connection] in connection?.cancel() }
+    }
+
+    private func receive(_ connection: NWConnection, buffer: Data) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, complete, failure in
+            guard let self, !self.closed else { connection.cancel(); return }
+            var buffer = buffer; buffer.append(data ?? Data())
+            guard buffer.count <= 8192, failure == nil else { connection.cancel(); return }
+            guard let request = String(data: buffer, encoding: .utf8), request.contains("\r\n\r\n") else {
+                if complete { connection.cancel() } else { self.receive(connection, buffer: buffer) }
+                return
+            }
+            let lines = request.components(separatedBy: "\r\n")
+            let parts = (lines.first ?? "").split(separator: " ")
+            let host = URL(string: self.url)!.host! + ":" + String(self.listener.port!.rawValue)
+            guard parts.count == 3, parts[0] == "GET",
+                  lines.contains(where: { $0.lowercased() == "host: \(host)" }),
+                  !lines.contains(where: { $0.lowercased().hasPrefix("origin:") && $0 != "Origin: http://\(host)" }) else {
+                self.send(connection, code: "403 Forbidden", type: "text/plain", data: Data()); return
+            }
+            let path = String(parts[1]).components(separatedBy: "?")[0]
+            switch path {
+            case "/\(self.token)/": self.send(connection, type: "text/html; charset=utf-8", data: Data(NativePreviewPage.html.utf8))
+            case "/\(self.token)/favicon.png":
+                self.send(connection, type: "image/png", data: NativePreviewPage.faviconPNG, cache: "private, max-age=86400")
+            case "/\(self.token)/bezel":
+                if let data = self.bezel?.png {
+                    self.send(connection, type: "image/png", data: data, cache: "private, max-age=86400")
+                } else { self.send(connection, code: "404 Not Found", type: "text/plain", data: Data()) }
+            case "/\(self.token)/state": self.send(connection, type: "application/json", data: (try? jsonData(self.facts())) ?? Data())
+            case "/\(self.token)/frame":
+                let query = URLComponents(string: "http://localhost" + String(parts[1]))?.queryItems
+                if let after = query?.first(where: { $0.name == "after" })?.value.flatMap(Int.init),
+                   after == self.encodedFrames, self.error == nil {
+                    self.waiting[ObjectIdentifier(connection)] = (after, ProcessInfo.processInfo.systemUptime + 1)
+                } else { self.sendFrame(connection) }
+            default: self.send(connection, code: "404 Not Found", type: "text/plain", data: Data())
+            }
+        }
+    }
+
+    private func sendFrame(_ connection: NWConnection) {
+        if let jpeg, error == nil, receiver?.health()["healthy"] as? Bool == true {
+            send(connection, type: "image/jpeg", data: jpeg,
+                 headers: "X-Preview-Rotation: \(jpegRotation)\r\nX-Preview-Sequence: \(encodedFrames)\r\nX-Preview-Frame-Age-Ms: \((ProcessInfo.processInfo.systemUptime - (frameAt ?? 0)) * 1000)\r\nX-Preview-Encode-Ms: \(lastEncodeMs)\r\n")
+        } else { send(connection, code: "503 Service Unavailable", type: "text/plain", data: Data()) }
+    }
+
+    private func flushWaiting() {
+        let now = ProcessInfo.processInfo.systemUptime
+        for (id, request) in waiting where request.sequence != encodedFrames || request.deadline <= now || error != nil {
+            waiting.removeValue(forKey: id)
+            if let connection = connections[id] { sendFrame(connection) }
+        }
+    }
+
+    private func send(_ connection: NWConnection, code: String = "200 OK", type: String, data: Data, headers: String = "", cache: String = "no-store") {
+        var response = Data("HTTP/1.1 \(code)\r\nContent-Type: \(type)\r\nContent-Length: \(data.count)\r\n\(headers)Cache-Control: \(cache)\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'none'; img-src 'self' blob:; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'\r\nConnection: close\r\n\r\n".utf8)
+        response.append(data)
+        connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
+    }
+
+    func close() {
+        queue.sync {
+            guard !closed else { return }
+            closed = true; bindingGeneration += 1; timer?.cancel(); timer = nil; receiver = nil; jpeg = nil
+            listener.cancel(); connections.values.forEach { $0.cancel() }; connections.removeAll(); waiting.removeAll()
+        }
+    }
+
+}

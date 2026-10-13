@@ -1,0 +1,192 @@
+# 本地浏览器预览
+
+状态：**保留当前源码实验方案，停止本轮性能定位与复测**（2026-10-13）。standard 和 runner 共用“自有原生视频流 → 本地浏览器”的只读画面入口，无需通过 Device Hub 观看手机。目标刷新上限为 30 fps，**不保证稳定 30 fps、无卡顿或跨方向无缝录屏**。本页描述保留版本；验收结论见[验收记录](local-preview-validation.md)。
+
+## 使用前提
+
+- 使用包含 `preview` 命令的当前源码构建；不能据此认定已发布的 CLI 包包含此功能。用 `preview --help` 核对实际可执行文件。
+- 当前实测环境为 Apple Silicon Mac、完整 Xcode 27、macOS/iOS 27，USB 连接 iPhone 12 Pro / iOS 27.0.1。需要配对、Developer Mode、设备解锁。兼容性不由二进制编译下限推导。
+- standard 不需要 Runner 签名；runner 需要已签名并可用的 XCTest Runner。手机要求 XCTest 自动化密码授权时，由用户在手机上亲自完成。
+- 不要同时让 Device Hub 或其他设备客户端连接/预览同一手机，可能争用 CoreDevice 服务或原生媒体。先正常释放其他客户端的设备连接；本实现不会抢占其媒体流。
+
+## 快速使用
+
+在仓库根目录构建并固定本次使用的 CLI 路径：
+
+```sh
+swift build -c release
+export IPHONE_USE_CLI="$PWD/.build/release/iphone-use"
+"$IPHONE_USE_CLI" preview --help
+"$IPHONE_USE_CLI" devices
+export IOS_UDID="DEVICE_ID_FROM_DEVICES"
+```
+
+选择一种模式建立会话。standard 示例：
+
+```sh
+"$IPHONE_USE_CLI" connect --device "$IOS_UDID" --mode standard --idle-timeout 60m
+```
+
+runner 使用已有签名产物的示例：
+
+```sh
+export XCTESTRUN="ABSOLUTE_PATH_TO_SIGNED_RUNNER.xctestrun"
+"$IPHONE_USE_CLI" connect --device "$IOS_UDID" --mode runner \
+  --xctestrun "$XCTESTRUN" --idle-timeout 60m
+```
+
+同一手机只运行一个 iPhone-use 会话。选择其中一个命令，不要同时执行两种连接；切换模式前先 `disconnect`。Runner 准备方式见 [Runner 准备与签名](onboarding.md)。standard 输入前检查 `result.controlAvailable=true`，不能只看 `ok:true`。
+
+从 connect 返回值复制 `session`，然后打开预览：
+
+```sh
+export SESSION="SESSION_FROM_CONNECT"
+"$IPHONE_USE_CLI" --session "$SESSION" preview
+```
+
+默认打开本地浏览器。若希望自行选择浏览器：
+
+```sh
+"$IPHONE_USE_CLI" --session "$SESSION" preview --no-open
+```
+
+更新源码并重新构建后，旧会话仍使用启动时的宿主程序。先正常 `disconnect`，再用新构建 `connect` 和 `preview`；仅刷新旧页面不会切换到新实现。
+
+打开返回的 `result.url` 即可；每次新建预览的端口和随机路径可能不同。页面只保留机型名称（品牌保留在浏览器标题和 favicon）；顶部手机图标以绿色、黄色和红色分别表示实时、等待和断开，详情可悬停查看，外观切换与全屏使用图标按钮。悬停提示、读屏标签、页面标题及诊断说明按浏览器首选语言显示：中文（`zh` / `zh-*`）使用简体中文，其他语言或缺失语言信息时使用英文；刷新页面后重新选择语言，底层错误详情保留原文。点击页面不会触控手机。控制仍通过 CLI，在开始/停止预览或录屏后重新 `observe`，使用本次观察的截图、屏幕点坐标或 runner 元素引用操作。不要将浏览器缩放坐标直接用作输入，也不要放宽常规输入守卫来适应动效。
+
+端口由操作系统分配空闲端口（`NWEndpoint.Port.any`），用于避免固定端口冲突；不是每次必须不同，已释放的端口可能被复用。同一预览实例的地址保持不变，刷新网页或重复执行启动命令会沿用当前实例；停止后再启动或重连会话时应使用新返回的 URL。页面 favicon 使用项目官网同款 `assets/brand/favicon-64.png`，字节嵌入 CLI，通过当前随机路径下的本地接口提供，无需联网或依赖工作目录。
+
+### 设备外观与观看方式
+
+会话从已有 CoreDevice 设备详情读取 `hardwareProperties.productType`，standard 和 runner 共用浏览器布局。外观按精确标识选择：已有目录中的 23 个 iPhone 11–16 机型继续优先使用官方 PNG；17 / Air、18 Pro / Pro Max 等已登记机型使用内置的自绘参数。纯画面按钮和模式已删除，全屏与连接状态保留。
+
+当前提供临时外观验收按钮：有可用官方素材时，可点击叠层图标对比（悬停提示下一种外观）；只改本页装饰，不重启视频流，刷新恢复默认。页面自动跟随系统 light/dark，主题切换不影响视频像素或媒体连接；两种外观共用屏幕缩放基准，切换时画面不再放大或偏移。
+
+- 不按名称或屏幕比例猜机型。自绘参数及精确映射见[外框说明](preview-drawn-frames.md)；未登记机型使用按实际画面比例生成的通用外框，不冒充已适配型号。
+- 竖屏和左右横屏自动适配窗口。方向来自每张 JPEG 的 `X-Preview-Rotation`；网页只旋转外框，不再次旋转已校正的画面。原生通道重新绑定期间仍可能停顿或方向尚未同步；2026-10-13 实测一次左右横屏切换持续倒置，需要停止并重启预览恢复。
+- 官方素材缺失、损坏、加载失败或画面比例不适配时，改用自绘外框；对应自绘参数也不适配时用通用外框。不会在线下载素材。通用外框不添加推测的刘海、开孔或按键。
+- 自绘包含静态金属边缘、玻璃接缝、按键、天线和逐机型校准的硬件开孔（见[校准清单](preview-hardware-calibration.md)）；配色、反光、侧键等仍是展示近似，不识别手机实际颜色，不保证逐像素匹配。刘海、开孔与圆角会遮挡相应边缘；完整像素请通过 CLI `observe` 的原始截图检查。截图观察与 MP4 不包含外框。
+- 自绘 DOM 数量固定，无持续动画、Canvas、模糊滤镜、第三方库或纹理下载。相同尺寸与方向的连续帧不会重复写入外框样式；只有机型/资源状态、尺寸或方向变化时重新布局。性能效果仍受浏览器和主机资源影响。
+- 现有官方 PNG 仍保存在 [assets/preview](../assets/preview/README.md)，从 `.build` 所在仓库或安装包的 `libexec/iphone-use/preview` 读取。独立协议、完整性校验和随包分发保持不变；保留素材是本次明确要求，不等于已确认该工具用途得到 Apple 授权。
+
+这次更新只改善观看界面；JPEG 传输、30 fps 目标、录屏和控制通道沿用原实现，不意味着剩余卡顿已解决。
+
+### 悬浮控件与材质
+
+左上角为机型与变色手机状态图标，右上角为外观对比、全屏图标。两个胶囊采用轻量 CSS 毛玻璃和静态边缘高光，不是 Apple 原生 Liquid Glass API；画布及视频不使用模糊、折射或持续动画。控件与设备外框可能相交时，布局会给画面预留顶部空间，避免控件遮挡视频。横竖屏和官方/自绘共用相同的避让及缩放基准。
+
+仅两个胶囊使用 `12px` 背景模糊；浏览器不支持时回退实色。`prefers-reduced-transparency` 或更高对比度偏好会禁用模糊；减少动态效果时禁用按压缩放。没有增加字体、图标库脚本或运行时网络请求。图标来自 Heroicons 2.2.0 的 MIT 授权 outline 集，路径和许可嵌入页面，保持离线和随二进制分发。
+
+### 预览与录屏共存
+
+先打开预览，再启动录屏可使用共享解码路径：
+
+```sh
+"$IPHONE_USE_CLI" --session "$SESSION" record-start --duration 60
+export RECORDING_ID="RECORDING_ID_FROM_RESULT"
+"$IPHONE_USE_CLI" --session "$SESSION" observe
+# 如需控制，根据这次观察执行 CLI 动作；预览保持打开。
+"$IPHONE_USE_CLI" --session "$SESSION" status
+# 可提前结束；若已自动到时结束，则读取该录制的最终结果。
+"$IPHONE_USE_CLI" --session "$SESSION" record-stop "$RECORDING_ID"
+```
+
+录屏时长为 1–300 秒。`record-start` 返回 ID 或 `waiting_for_frame` 不代表整段录制成功；后续可能因背压、方向改变等提前结束。检查 `state`、`error`、`stopReason`、`writtenFrames`、`fileValidated` 和 `path`；完整校验通过仍需查看 MP4，确认画面是目标场景。文件保存在会话目录的 `recordings/<UUID>/screen.mp4`，以响应中的实际路径为准。
+
+### 停止与清理
+
+```sh
+"$IPHONE_USE_CLI" --session "$SESSION" preview --stop
+# 活动录屏仍需按其 ID 停止或等待到时结束。
+"$IPHONE_USE_CLI" --session "$SESSION" disconnect
+```
+
+| 操作 | 行为 |
+| --- | --- |
+| 停止录屏，预览仍开着 | 保留共享媒体供预览使用；结果报告 `mediaRetainedForPreview`。 |
+| `preview --stop`，录屏仍活动 | 停止浏览器服务，保留录屏与控制；结果报告 `mediaRetainedForRecording`。 |
+| 只关闭浏览器标签页 | 不等于停止预览，宿主仍保留预览服务和媒体消费者。 |
+| `disconnect` 或会话到期 | 结束活动录屏并清理预览、控制及自有媒体资源，检查清理结果。 |
+
+浏览器 HTTP 请求不续期会话；默认 idle timeout 为 30 分钟，`status` 也不续期。长时间观看应在 connect 时指定足够的 `--idle-timeout`。会话结束后旧 URL 不再可用。
+
+## 保留的实现
+
+| 部分 | 当前行为 / 主要源码 |
+| --- | --- |
+| 控制与所有权 | `SessionHost` 持有设备会话；standard 继续使用原生 HID，runner 继续使用 XCTest，不为预览切换控制后端或增加 runner HID。 |
+| 原生接收与解码 | `NativeMediaSession.swift` / `NativeVideoSnapshot.swift` 接收自有 HEVC/RTP 流并连续解码依赖帧；接收与解码队列使用 `userInitiated` QoS。 |
+| 浏览器画面 | `NativePreview.swift` 读取最新已解码帧，裁剪原生填充并校正方向，以最长边 960、JPEG 质量 0.7、目标上限 30 fps 发布。 |
+| 浏览器界面 | `NativePreviewPage.swift` 提供官方设备外观、自绘外框、全屏及连接状态；已校验的对应机型 PNG 只经同一随机路径下的 `/bezel` 只读路由返回，不访问外网。 |
+| 转换与发送 | 两个有界 CPU CIContext 槽，显式像素转换后用 ImageIO 压缩；慢转换可被另一槽绕过，过期结果丢弃，两槽都忙时不继续排队。HTTP 服务独立于转换工作。 |
+| 录屏共享 | `NativeStreamRecording.swift` 在预览已开启时原子订阅同一解码器，以最新缓存帧起步，独立编码 MP4；不重启共享流、不覆盖 RTP handler。不带预览启动的录屏沿用独立解码路径。 |
+| 文件结束 | `NativeVideoWriter.swift` 完成写入后释放编码器及像素池，再执行完整文件解码校验；不以抽样检查代替完整校验。 |
+| 方向同步 | `NativePreviewOrientation.swift` 与媒体绑定逻辑执行有界检查和重绑。方向探测保留默认 CIContext；改为 CPU 的实验已撤回。 |
+
+浏览器顺序请求 `frame?after=序号`，最多保持一个画面请求，服务端等待新 JPEG（最长一秒）；只保留最新画面，慢客户端不积压所有视频帧。静态源不制造新画面。本方案不直接向浏览器透传 Apple 私有 VRA HEVC，也不依赖循环截屏生成预览。
+
+方向/锁屏检查在设备串行队列上约每两秒调度，最多一个检查等待执行。方向元数据可能滞后，因此低频 Apple PNG 仅用作方向冲突的负面证据；同宽高半圈旋转需两次连续比较支持才重绑。对称或变化剧烈的画面可能延迟检测。确认停止自有流、重新读取系统方向后再绑定，旧方向的编码结果不能覆盖新绑定。临时 PNG 位于私有目录并在检查后删除。
+
+预览和录屏缓存不构成 observation，也不满足输入的新鲜度要求。standard 的观察和动作前图片校验仍使用 CoreDevice PNG，失败不回退到媒体像素。结果未知的输入不会自动重放。
+
+## 已知限制与验收结论
+
+| 范围 | 已知行为或限制 |
+| --- | --- |
+| 流畅度 | 目标上限 30 fps，平均接近 30 不代表每帧 33.3 ms。低资源或高负载下仍有明显停顿；稳定 30 fps 未通过验收。 |
+| 录屏启动与校验 | 已取消预览开启时为新录屏重启流的行为，但仍可能被编码器初始化、转换、文件校验和系统调度影响，不承诺零停顿。 |
+| 过载 | 录屏像素队列上限 64 MiB，无法跟上时明确返回 `recording_backpressure`，不扩大缓冲或静默丢帧；预览连接健康不能证明录屏仍在工作。 |
+| 旋转 | 支持 rot0 / rot90 / rot270，不支持倒置竖屏 rot180。检测和重绑有延迟，可能倒置或出现 503，且不保证自动恢复，必要时停止并重启预览；录屏以 `display_changed` 结束当前片段，不自动续录。 |
+| 页面能力 | 只读、无音频、无网页触控；未验收在线缓冲、受保护视频或端到端延迟。 |
+| 恢复与兼容性 | 锁屏、拔插、服务占用和未知启停结果不保证自动恢复；不保证跨设备、跨系统版本或数小时/全天连续运行。 |
+
+当前保留版本在同一台 iPhone 12 Pro 上的结果如下。宿主各采样 480 秒，浏览器累计窗口略长；两轮主机负载未固定，**不是严格 A/B，也不是性能上界承诺**。
+
+| 指标 | standard | runner |
+| --- | ---: | ---: |
+| 浏览器累计 fps | 29.88 | 29.27 |
+| 最大新帧间隔 | 167 ms | 701 ms |
+| >250 ms 次数 | 0 | 12 |
+| 首次 / 重复录屏启动最大间隔 | 50 / 68 ms | 42 / 71 ms |
+| 长 / 短文件校验期最大间隔 | 134 / 117 ms | 样本不完整 / 350 ms |
+| 长 / 短录屏有效帧数（均完整校验通过） | 17,675 / 3,541 | 17,941 / 3,588 |
+
+runner 长文件校验窗口的原始逐帧采样有缺口，不能给出完整上界。保留版本的 standard 已验证计数控制、左右横屏及竖屏恢复，旋转片段 932 帧校验通过；runner 方向共存有先前版本证据，但本轮不能宣称保留版本全部无回归。
+
+后续已撤回的 CPU 旋转探测候选出现最大 1,098 ms 停顿、一次录屏启动背压失败，以及右横屏恢复异常；相关失败结论保留在验收记录，不能归为当前版本的新验收成功。系统内存压力级别 2、swap 使用，以及独立计时进程约 299 ms 的唤醒间隔，支持主机资源压力是重要因素，**尚未证明是唯一原因，也未排除代码侧放大因素**。
+
+最终决定是保留现有方案并停止本轮定位，不再等待资源释放后自动继续复测。功能可用于本地观看，但不将当前结果标记为“稳定 30 fps”或“全部无回归”。
+
+## 常见情况
+
+| 现象 | 处理方式 |
+| --- | --- |
+| `native_media_busy` 或连接失败 | 检查是否有 Device Hub 等客户端占用同一手机；正常释放其连接，确认本会话清理后显式重连，不停止未知所有者的流。 |
+| 锁屏或 XCTest 自动化授权超时 | 用户解锁；若出现自动化授权，在手机上完成。解锁与 XCTest 授权是不同步骤。 |
+| “连接正常 · 暂无新帧” | 静态画面可能保留末帧；检查 `mediaHealthy`、帧龄及手机实际场景，不能仅凭标签判断卡死。 |
+| 方向短时错误 / 503 | 等待方向检测与自有流重绑；持续错误时检查会话状态，必要时显式停止/重开预览，不按错误方向画面发送坐标。 |
+| 录屏返回错误，但页面仍刷新 | 查看对应 recording ID 的最终结果；未 `fileValidated=true` 的文件不能算录屏成功。不要自动重放未知启动。 |
+| 动效中输入返回 unknown / 稳定帧超时 | 重新 observe 并核对实际变化，不自动重复输入。 |
+
+## 诊断与开发验证
+
+预览 URL 追加 `?diagnostics=1` 可展开浏览器统计：累计 fps、最大间隔、>100/250 ms 次数、最近 1,800 个新帧及请求失败。页面可见性变化会重置统计。`#metrics` 的 `data-samples` 属性保存有界原始样本；要验证某个阶段，必须及时导出覆盖该阶段的窗口。
+
+测量以 JPEG 序号去重，在 image.onload 后的 requestAnimationFrame 回调采样，衡量浏览器绘制机会，**不是物理屏幕实际显示时间或手机到电脑的端到端延迟**。`frameAgeSeconds` 同样只是宿主解码帧龄。
+
+服务端预览状态的 `timing` 区分转换、压缩、工作队列等待与定时器间隔；`media.snapshots.timing` 区分解码队列等待和 `decode(unit)` 执行时间。慢事件最多保留 120 条。`inputToDecodeMs` 包含组包、解析和等待；这些都是墙钟耗时，可能包含系统调度，不能直接解释为纯 CPU 工作量。
+
+需要复现时，可从预览响应取 URL、从 connect 取 `hostPid`，显式运行：
+
+```sh
+python3 scripts/preview-soak.py --url "$PREVIEW_URL" --pid "$HOST_PID" \
+  --seconds 480 --interval 1 --output .local/preview-soak
+```
+
+该探针只采样预览状态、JPEG 摘要及宿主 RSS/CPU；不含浏览器、系统服务和子进程资源，不控制手机、不续期、不验证录屏是否成功。输出包含首末屏幕图像，留在 `.local/`，不要提交。旋转窗口与固定方向窗口分别分析，并读取实际录屏结果。动效/转场/本地视频的开发夹具和复现步骤见[验收记录](local-preview-validation.md)。以上命令供后续显式开发使用，不是后台运行计划。
+
+自动化检查覆盖 HTTP 访问边界、JPEG 边缘、录屏共享与清理、外框几何及发布包完整性；运行方式见[验收记录](local-preview-validation.md)。自动化通过不能替代真机性能和长时间稳定性验收。
+
+## 本地访问边界
+
+HTTP 仅监听 `127.0.0.1` 随机端口，使用每次预览的随机路径并校验 Host/Origin；最多 8 个连接，请求有大小和时间限制。没有 CORS 或写接口，返回 no-store/no-referrer，页面不保存画面文件。随机 URL 不是用户身份认证，其他本地进程仍可能访问；不要分享有效 URL 或自行转发到外网。显式录屏和诊断探针会写文件，需按屏幕内容的敏感程度自行管理。

@@ -92,6 +92,8 @@ private final class ControlledBackend: SessionBackend {
         finishCount += 1
         return ["pasteboardRestoreAcknowledged": finishAcknowledged, "transactionID": transaction]
     }
+    func startPreview() throws -> [String: Any] { ["state": "waiting", "url": "http://127.0.0.1:1234/token/"] }
+    func stopPreview() throws -> [String: Any] { ["state": "stopped"] }
     func startRecording(duration: Double) throws -> [String: Any] {
         recordingStarts += 1
         return ["state": "starting_or_recording", "recordingID": "00000000-0000-0000-0000-000000000001"]
@@ -156,6 +158,26 @@ final class HostTests: XCTestCase {
             XCTAssertEqual((uncertain["result"] as? [String: Any])?["terminationAcknowledged"] as? Bool, true)
             if native { XCTAssertEqual((uncertain["observation"] as? [String: Any])?["ok"] as? Bool, false) }
             XCTAssertEqual(backend.appLifecycleCount, 3)
+        }
+    }
+
+    func testPreviewChangesInvalidateReferencesButDoNotCaptureOrSendInput() throws {
+        for native in [false, true] {
+            let backend = ControlledBackend()
+            let (paths, session, finished) = try host(timeout: 5, backend: backend, native: native)
+            defer { _ = try? call(paths, session: session, op: "disconnect"); wait(for: [finished], timeout: 3) }
+            for operation in ["preview-start", "preview-stop"] {
+                let observed = try call(paths, session: session, op: "observe")
+                let ref = (observed["result"] as! [String: Any])["observation"] as! String
+                let count = backend.observeCount
+                let result = try call(paths, session: session, op: operation)
+                XCTAssertEqual(result["ok"] as? Bool, true)
+                XCTAssertEqual(result["requiresObservation"] as? Bool, true)
+                XCTAssertEqual(backend.observeCount, count)
+                let stale = try call(paths, session: session, op: "tap", fields: ["reference": ref + ":e11"])
+                XCTAssertEqual(stale["outcome"] as? String, "not_dispatched")
+                XCTAssertEqual(backend.inputCount, 0)
+            }
         }
     }
 

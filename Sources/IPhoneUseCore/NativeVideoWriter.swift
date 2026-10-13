@@ -30,9 +30,12 @@ final class NativeVideoWriter {
     private var lastTimestamp: UInt32?
     private var ticks: Int64 = 0
     private var pending: (pixels: CVPixelBuffer, time: CMTime)?
+    private var closed = false
     private(set) var frames = 0
     private(set) var firstFrameReceivedAt: Double?
     private(set) var lastFrameReceivedAt: Double?
+    private(set) var encoderSetupMilliseconds = 0.0
+    private(set) var maximumAppendMilliseconds = 0.0
     var mediaSpanSeconds: Double { Double(ticks) / Double(timescale) }
     var hasFrame: Bool { pending != nil }
 
@@ -42,6 +45,7 @@ final class NativeVideoWriter {
     }
 
     func append(_ unit: NativeVideoAccessUnit) throws {
+        guard !closed else { throw IPhoneUseError("recording_writer_closed", "Recording encoder has been released") }
         guard unit.nals.allSatisfy({ $0.count >= 2 }) else { throw IPhoneUseError("recording_format_invalid", "Truncated video NAL") }
         for nal in unit.nals {
             let type = Int((nal[0] >> 1) & 63)
@@ -64,7 +68,28 @@ final class NativeVideoWriter {
         else { pixels = try decoder.decode(unit)?.pixels }
         if video { lastDecodedTimestamp = unit.timestamp }
         guard let pixels else { return }
+        if let lastTimestamp {
+            let delta = Int32(bitPattern: unit.timestamp &- lastTimestamp)
+            guard delta > 0, delta < timescale * 30 else { throw IPhoneUseError("recording_timestamp_invalid", "Non-monotonic or discontinuous video timestamp") }
+            ticks += Int64(delta)
+        }
+        try appendPixels(pixels, time: CMTime(value: ticks, timescale: timescale), receivedAt: unit.firstPacketAt)
+        lastTimestamp = unit.timestamp
+    }
+
+    // The existing stream has already decoded these reference-dependent pictures.
+    // Starting a writer from pixels needs no new device keyframe or stream restart.
+    func appendDecoded(_ pixels: CVPixelBuffer, seconds: Double, receivedAt: Double) throws {
+        guard seconds.isFinite, seconds >= 0 else { throw IPhoneUseError("recording_timestamp_invalid", "Invalid decoded frame time") }
+        let time = CMTime(seconds: seconds, preferredTimescale: timescale)
+        try appendPixels(pixels, time: time, receivedAt: receivedAt)
+        ticks = time.value
+    }
+
+    private func appendPixels(_ pixels: CVPixelBuffer, time: CMTime, receivedAt: Double?) throws {
+        guard !closed else { throw IPhoneUseError("recording_writer_closed", "Recording encoder has been released") }
         if writer == nil {
+            let started = ProcessInfo.processInfo.systemUptime
             var description: CMVideoFormatDescription?
             let status = CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: pixels,
                 formatDescriptionOut: &description)
@@ -82,21 +107,27 @@ final class NativeVideoWriter {
             guard writer.startWriting() else { throw writer.error ?? IPhoneUseError("recording_writer_failed", "Cannot start MP4") }
             writer.startSession(atSourceTime: .zero)
             self.writer = writer; self.input = input; format = description
+            encoderSetupMilliseconds = (ProcessInfo.processInfo.systemUptime - started) * 1000
         }
-        if let lastTimestamp {
-            let delta = Int32(bitPattern: unit.timestamp &- lastTimestamp)
-            guard delta > 0, delta < timescale * 30 else { throw IPhoneUseError("recording_timestamp_invalid", "Non-monotonic or discontinuous video timestamp") }
-            ticks += Int64(delta)
+        if let format {
+            let dimensions = CMVideoFormatDescriptionGetDimensions(format)
+            guard Int(dimensions.width) == CVPixelBufferGetWidth(pixels), Int(dimensions.height) == CVPixelBufferGetHeight(pixels) else {
+                throw IPhoneUseError("recording_format_changed", "Decoded dimensions changed; this segment ended")
+            }
         }
-        let time = CMTime(value: ticks, timescale: timescale)
-        if let pending { try write(pending, duration: CMTimeSubtract(time, pending.time)) }
-        pending = (pixels, time); lastTimestamp = unit.timestamp
-        if firstFrameReceivedAt == nil { firstFrameReceivedAt = unit.firstPacketAt }
-        lastFrameReceivedAt = unit.firstPacketAt
+        if let pending {
+            guard CMTimeCompare(time, pending.time) > 0 else { throw IPhoneUseError("recording_timestamp_invalid", "Non-monotonic decoded frame time") }
+            try write(pending, duration: CMTimeSubtract(time, pending.time))
+        }
+        pending = (pixels, time)
+        if firstFrameReceivedAt == nil { firstFrameReceivedAt = receivedAt }
+        lastFrameReceivedAt = receivedAt
     }
 
     private func write(_ frame: (pixels: CVPixelBuffer, time: CMTime), duration: CMTime) throws {
         guard let input, let writer, let format else { return }
+        let started = ProcessInfo.processInfo.systemUptime
+        defer { maximumAppendMilliseconds = max(maximumAppendMilliseconds, (ProcessInfo.processInfo.systemUptime - started) * 1000) }
         // Encoder readiness is bounded on the recording queue, never the RTP
         // socket queue. Overload fails explicitly instead of silently losing frames.
         let deadline = ProcessInfo.processInfo.systemUptime + 0.5
@@ -126,7 +157,13 @@ final class NativeVideoWriter {
         writer.finishWriting { done.signal() }
         guard done.wait(timeout: .now() + 10) == .success else { writer.cancelWriting(); throw IPhoneUseError("recording_finalize_timeout", "MP4 finalization timed out") }
         guard writer.status == .completed else { throw writer.error ?? IPhoneUseError("recording_writer_failed", "MP4 finalization failed") }
+        releaseEncoder()
+    }
+    private func releaseEncoder() {
+        // Jobs retain their result for idempotent record-stop. They must not
+        // retain an encoder/pixel pool while validating or starting a new job.
+        closed = true; input = nil; writer = nil; format = nil; pending = nil
         decoder.resetReferences()
     }
-    func cancel() { writer?.cancelWriting(); decoder.resetReferences(); pending = nil }
+    func cancel() { writer?.cancelWriting(); releaseEncoder() }
 }

@@ -59,7 +59,7 @@ enum NativeRTCPReport: Equatable {
 final class NativeRTPReceiver: NativeMediaReceiver {
     let address: String
     let port: UInt16
-    private let queue = DispatchQueue(label: "iphone-use.apple.media")
+    private let queue = DispatchQueue(label: "iphone-use.apple.media", qos: .userInitiated)
     private let queueKey = DispatchSpecificKey<Bool>()
     private var socketFD: Int32
     private var reader: DispatchSourceRead?

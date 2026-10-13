@@ -39,7 +39,7 @@ jobs:
             -o .build/runner-pinch-runtime-tests
           .build/runner-pinch-runtime-tests
       - run: python3 -m unittest discover -s scripts/tests -v
-      - run: node --test scripts/tests/test_agent_templates.mjs
+      - run: node --test scripts/tests/test_agent_templates.mjs scripts/tests/test_preview_metrics.mjs
       - name: Compile the iPhone Runner without signing
         run: |
           xcodebuild build-for-testing \

@@ -12,6 +12,8 @@ final class SessionHost {
     private var lifecycle: SessionLifecycle
     private var server: JSONServer?
     private var timer: DispatchSourceTimer?
+    private var previewCheckPending = false
+    private var lastPreviewCheck = 0.0
     private var signals: [DispatchSourceSignal] = []
     private var backendInfo: [String: Any] = [:]
 
@@ -52,7 +54,15 @@ final class SessionHost {
                                 let timer = DispatchSource.makeTimerSource(queue: self.control)
                                 timer.schedule(deadline: .now() + 0.1, repeating: 0.1)
                                 timer.setEventHandler { [self] in
-                                    if lifecycle.isExpired(at: ProcessInfo.processInfo.systemUptime) { close(reason: "idle_timeout") }
+                                    let now = ProcessInfo.processInfo.systemUptime
+                                    if lifecycle.isExpired(at: now) { close(reason: "idle_timeout") }
+                                    if lifecycle.phase == .ready, !previewCheckPending, now - lastPreviewCheck >= 2 {
+                                        previewCheckPending = true; lastPreviewCheck = now
+                                        work.async {
+                                            if self.backend.previewTick() { self.observations.invalidate("preview_display_changed") }
+                                            self.control.async { self.previewCheckPending = false }
+                                        }
+                                    }
                                 }
                                 timer.resume()
                                 self.timer = timer
@@ -93,7 +103,7 @@ final class SessionHost {
             reply(response, {})
         }
         guard request["version"] as? Int == 1, request["session"] as? String == config.session,
-              !id.isEmpty, (["status", "apps", "open", "terminate", "relaunch", "observe", "inspect", "disconnect", "text-finish", "text-prepare", "record-start", "record-stop"] + DeviceAction.operations).contains(operation) else {
+              !id.isEmpty, (["status", "apps", "open", "terminate", "relaunch", "observe", "inspect", "disconnect", "text-finish", "text-prepare", "record-start", "record-stop", "preview-start", "preview-stop"] + DeviceAction.operations).contains(operation) else {
             reject("invalid_request", "Invalid session request")
             return
         }
@@ -209,6 +219,11 @@ final class SessionHost {
                     response["result"] = try observations.inspect(reference!, offset: request["offset"] as! Int,
                                                                   query: request["query"] as? String)
                     effective = true
+                case "preview-start", "preview-stop":
+                    observations.invalidate("preview_changed")
+                    response["requiresObservation"] = true
+                    response["result"] = try operation == "preview-start" ? backend.startPreview() : backend.stopPreview()
+                    effective = true
                 case "record-start":
                     observations.invalidate("recording_started")
                     response["requiresObservation"] = true
@@ -278,7 +293,7 @@ final class SessionHost {
                 let failure = error as? ActionFailure
                 if let result = failure?.result { response["result"] = result }
                 let uncertain = failure?.possiblyExecuted ?? (error as? TransportError)?.possiblySent ?? false
-                if operation == "record-start" || operation == "record-stop" {
+                if ["record-start", "record-stop", "preview-start", "preview-stop"].contains(operation) {
                     response["outcome"] = uncertain ? "unknown" : "not_dispatched"
                 }
                 if appAction || action != nil || operation == "text-finish" || operation == "text-prepare" {
