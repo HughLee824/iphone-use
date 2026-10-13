@@ -77,6 +77,18 @@ final class NativeRecordingTests: XCTestCase {
             XCTAssertEqual(source.keyframeRequests, 0)
             XCTAssertTrue(source.attached, "Decoded subscription must not overwrite the existing packet handler")
             XCTAssertEqual(recorder.status()["state"] as? String, "recording")
+            // An observation of a quiet shared stream must fail closed without
+            // invoking the backend's destructive orientation recovery callback.
+            XCTAssertThrowsError(try NativeCaptureChecks.withOrientationRecovery(capture: { _ in
+                throw IPhoneUseError("native_snapshot_freshness_unavailable", "quiet shared stream")
+            }, resynchronize: {
+                recorder.endSegment(reason: "orientation_unverified")
+                XCTFail("Missing frames must not end the recording")
+                return true
+            }, recordingActive: { recorder.isActive })) {
+                XCTAssertEqual(($0 as? IPhoneUseError)?.code, "native_snapshot_freshness_unavailable")
+            }
+            XCTAssertTrue(recorder.isActive)
             if damage {
                 snapshots.receive(Data([0]), at: 101)
                 let deadline = Date().addingTimeInterval(2)

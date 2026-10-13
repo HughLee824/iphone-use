@@ -453,7 +453,7 @@ final class AppleDeviceBackend: SessionBackend {
                     guard first == second else { throw IPhoneUseError("capture_context_changed", "Display changed while resynchronizing orientation") }
                     return second
                 }
-                }, diagnostics: { self.media?.health() ?? [:] })
+                }, recordingActive: { self.recording?.isActive == true }, diagnostics: { self.media?.health() ?? [:] })
             releaseRecordingMediaIfFinished()
             return observation
         } catch let error as IPhoneUseError where error.code == "native_orientation_unverified" {

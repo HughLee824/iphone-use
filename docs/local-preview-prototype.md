@@ -93,6 +93,8 @@ export RECORDING_ID="RECORDING_ID_FROM_RESULT"
 
 录屏时长为 1–300 秒。`record-start` 返回 ID 或 `waiting_for_frame` 不代表整段录制成功；后续可能因背压、方向改变等提前结束。检查 `state`、`error`、`stopReason`、`writtenFrames`、`fileValidated` 和 `path`；完整校验通过仍需查看 MP4，确认画面是目标场景。文件保存在会话目录的 `recordings/<UUID>/screen.mp4`，以响应中的实际路径为准。
 
+standard 的静态画面可能不再发送视频帧。录屏期间若 `observe` 或动作前校验无法取得新帧，会返回可重试的 `native_snapshot_freshness_unavailable`，并报告 `orientationRecoveryDeferred=true`、`recordingPreserved=true`：该次观察/输入被拒绝，录屏继续，不因为缺帧而重建共享流或永久禁用控制。等屏幕实际变化后重新观察，或先正常停止录屏再观察；不要自动重放未知输入。真正的几何冲突仍结束录屏片段并重新确认方向，媒体损坏/断线仍按原规则停止。正常截止的静态视频用末帧覆盖静止时段，不伪造新画面。
+
 ### 停止与清理
 
 ```sh

@@ -7,6 +7,7 @@ enum NativeCaptureChecks {
     // One UUID-scoped refresh is permitted; a second failure must not recurse.
     static func withOrientationRecovery(capture: (_ afterRefresh: Bool) throws -> CapturedObservation,
                                         resynchronize: () throws -> Bool,
+                                        recordingActive: () -> Bool = { false },
                                         diagnostics: () -> [String: Any] = { [:] },
                                         now: () -> Double = { ProcessInfo.processInfo.systemUptime }) throws -> CapturedObservation {
         let started = now()
@@ -14,6 +15,19 @@ enum NativeCaptureChecks {
         catch let error as IPhoneUseError where needsOrientationRecovery(error) {
             let firstFinished = now()
             let triggerState = diagnostics()
+            // Missing positive evidence is not an orientation conflict. Rebinding
+            // this shared stream would interrupt a healthy static recording.
+            // Reject this capture without returning cached pixels or disabling
+            // control permanently; a later fresh frame can verify the next call.
+            if error.code == "native_snapshot_freshness_unavailable", recordingActive() {
+                var details = error.diagnostics
+                details["orientationRecoveryDeferred"] = true
+                details["recordingPreserved"] = true
+                details["triggerState"] = triggerState
+                throw IPhoneUseError(error.code,
+                    "No fresh media frame to verify orientation; recording continues. Wait for the screen to change or stop recording before observing again.",
+                    diagnostics: details)
+            }
             do {
                 let recoveryStarted = now()
                 let geometryChanged = try resynchronize()
