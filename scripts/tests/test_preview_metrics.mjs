@@ -10,7 +10,7 @@ const catalog=JSON.parse(readFileSync(new URL('../../assets/preview/catalog.json
 
 function fixture(productType='iPhone13,3', navigator={language:'zh-CN'}) {
   let clock = 0;
-  const elements = Object.fromEntries(['screen', 'state', 'diagnostics', 'metrics', 'device', 'stage', 'bezel', 'shell', 'hardware', 'cutout', 'speaker', 'device-name', 'connection', 'fullscreen', 'appearance-toggle', 'viewer', 'placeholder-label', 'diagnostics-label'].map(id => [id, { dataset: {}, style: { setProperty(name,value) { this[name]=value; } }, clientWidth: 1000, clientHeight: 700, events: {}, addEventListener(name, fn) { this.events[name]=fn; }, setAttribute(name,value) { this[name]=value; } }]));
+  const elements = Object.fromEntries(['screen', 'state', 'diagnostics', 'metrics', 'device', 'stage', 'bezel', 'shell', 'hardware', 'cutout', 'speaker', 'device-name', 'connection', 'fullscreen', 'appearance-toggle', 'viewer', 'placeholder-label', 'diagnostics-label', 'identity', 'toolbar', 'chrome'].map(id => [id, { dataset: {}, style: { setProperty(name,value) { this[name]=value; } }, clientWidth: 1000, clientHeight: 700, getBoundingClientRect() { return {left:0,right:0,top:0,bottom:0}; }, events: {}, addEventListener(name, fn) { this.events[name]=fn; }, setAttribute(name,value) { this[name]=value; } }]));
   const document = { documentElement:{}, events:{}, visibilityState: 'visible', getElementById: id => elements[id], addEventListener: (name, fn) => { document.events[name]=fn;if(name==='visibilitychange')document.visibilityChanged = fn; } };
   let report;
   const context = vm.createContext({ document, navigator, URLSearchParams, location: { search: '?diagnostics=1' },
@@ -316,5 +316,23 @@ test('preview labels follow the primary browser language with an English fallbac
     assert.equal(e.state.textContent,e.connection.title);
     await p.run("fetch=async()=>{throw Error()};health()");
     assert.equal(e.connection.title,zh?'预览已停止或连接断开':'Preview stopped or disconnected');
+  }
+});
+
+test('floating chrome yields room only when it would overlap the device envelope', () => {
+  const probe=fixture();
+  const cases=[
+    {width:1280,height:720,rw:1.08,rh:2.25,controls:[{left:20,right:190,bottom:80},{left:1142,right:1260,bottom:80}],inset:0},
+    {width:390,height:844,rw:1.08,rh:2.25,controls:[{left:12,right:180,bottom:64},{left:270,right:378,bottom:64}],inset:76},
+    {width:1280,height:720,rw:2.25,rh:1.08,controls:[{left:20,right:190,bottom:80},{left:1142,right:1260,bottom:80}],inset:92},
+    {width:320,height:240,rw:2.25,rh:1.08,controls:[{left:12,right:168,bottom:64},{left:200,right:308,bottom:64}],inset:76},
+    {width:800,height:1400,rw:1.08,rh:2.25,controls:[{left:20,right:200,bottom:80},{left:662,right:780,bottom:80}],inset:92}
+  ];
+  for(const c of cases){
+    const p=probe.run(`fitPreview(${c.width},${c.height},${c.rw},${c.rh},${JSON.stringify(c.controls)})`);
+    assert.equal(p.topInset,c.inset);
+    const left=(c.width-c.rw*p.scale)/2,right=c.width-left,top=(c.height-c.rh*p.scale)/2+p.topInset/2,bottom=top+c.rh*p.scale;
+    assert.ok(left>=19.99&&right<=c.width-19.99&&bottom<=c.height-19.99);
+    for(const control of c.controls)assert.ok(left>=control.right+12||right<=control.left-12||top>=control.bottom+12);
   }
 });
