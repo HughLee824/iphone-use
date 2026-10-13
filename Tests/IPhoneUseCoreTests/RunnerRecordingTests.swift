@@ -19,6 +19,21 @@ private final class RunnerRecordingConnectionStub: RunnerRecordingConnection {
     var closed = 0
     var changed = false
     var acknowledged = true
+    var previewDevice = NativePreviewDevice(productType: "iPhone13,3", name: "iPhone 12 Pro")
+    var previewRefreshes = 0
+    var failRefresh = false
+    func previewNeedsRefresh() throws -> Bool { changed }
+    func refreshPreview() throws {
+        previewRefreshes += 1
+        if failRefresh { throw TransportError(description: "Lost scoped refresh reply", possiblySent: true) }
+        changed = false
+    }
+    private lazy var previewVideo = try? NativeRTPReceiver(deviceAddress: "::1", captureSnapshots: true)
+    var previewReceiver: NativeRTPReceiver? { previewVideo }
+    var previewDisplay: NativeDisplay? {
+        try? NativeDisplay(["backlightState": "activeOn", "displays": [["primary": true, "displayId": 1,
+            "bounds": [[0,0],[32,48]], "pointScale": 1, "currentOrientation": "rot0", "nativeOrientation": "rot0"]]])
+    }
     func verifyDisplay() throws { if changed { throw IPhoneUseError("display_changed", "Fixture rotated") } }
     func close() -> [String: Any] {
         closed += 1
@@ -97,6 +112,62 @@ final class RunnerRecordingTests: XCTestCase {
         XCTAssertThrowsError(try owner.start(duration: 30))
         XCTAssertEqual(owner.close()["recordingCleanupAcknowledged"] as? Bool, false)
         XCTAssertEqual(connection.closed, 1)
+    }
+
+    func testPreviewAndRecordingRetainOneConnectionInEitherStopOrder() throws {
+        for stopPreviewFirst in [false, true] {
+            var starts = 0
+            let connection = RunnerRecordingConnectionStub()
+            let owner = RunnerNativeRecording(root: try root(), cancellation: NativeCancellation()) { starts += 1; return connection }
+            defer { _ = owner.close() }
+            let preview = try owner.startPreview()
+            XCTAssertNotNil(preview["url"])
+            XCTAssertEqual((preview["device"] as? [String: Any])?["productType"] as? String, "iPhone13,3")
+            XCTAssertEqual((preview["bezel"] as? [String: Any])?["name"] as? String, "iPhone 12 Pro")
+            let recording = try owner.start(duration: 30)
+            XCTAssertEqual(starts, 1)
+            XCTAssertEqual(connection.previewRefreshes, 0)
+            if stopPreviewFirst {
+                _ = try owner.stopPreview()
+                XCTAssertEqual(connection.closed, 0)
+                XCTAssertFalse(connection.receiver.attached, "Preview recordings subscribe to decoded frames, not a new packet decoder")
+                _ = try owner.stop(id: recording["recordingID"] as! String)
+            } else {
+                _ = try owner.stop(id: recording["recordingID"] as! String)
+                XCTAssertEqual(connection.closed, 0)
+                XCTAssertEqual(owner.previewStatus["url"] as? String, preview["url"] as? String)
+                _ = try owner.stopPreview()
+            }
+            XCTAssertEqual(connection.closed, 1)
+        }
+    }
+
+    func testPreviewRotationEndsRecordingAndDoesNotReplayFailedRefresh() throws {
+        for fail in [false, true] {
+            let connection = RunnerRecordingConnectionStub()
+            let owner = RunnerNativeRecording(root: try root(), cancellation: NativeCancellation()) { connection }
+            defer { _ = owner.close() }
+            _ = try owner.startPreview()
+            _ = try owner.start(duration: 30)
+            connection.changed = true; connection.failRefresh = fail
+            XCTAssertTrue(owner.previewTick())
+            XCTAssertEqual(connection.previewRefreshes, 1)
+            XCTAssertFalse(connection.receiver.attached)
+            XCTAssertEqual(connection.closed, fail ? 1 : 0)
+            _ = owner.previewTick()
+            XCTAssertEqual(connection.previewRefreshes, 1)
+            if fail { XCTAssertThrowsError(try owner.startPreview()) }
+        }
+    }
+
+    func testRunnerUnknownProductTypeDoesNotBorrowMatchingNameOrGeometry() throws {
+        let connection = RunnerRecordingConnectionStub()
+        connection.previewDevice = NativePreviewDevice(productType: "iPhone99,1", name: "iPhone 12 Pro")
+        let owner = RunnerNativeRecording(root: try root(), cancellation: NativeCancellation()) { connection }
+        defer { _ = owner.close() }
+        let preview = try owner.startPreview()
+        XCTAssertTrue(preview["bezel"] is NSNull)
+        XCTAssertEqual((preview["device"] as? [String: Any])?["productType"] as? String, "iPhone99,1")
     }
 
     func testManifestCopiesBothLayoutsWithoutMutatingSignedProducts() throws {

@@ -15,7 +15,7 @@ struct SessionOptions: ParsableArguments {
 struct IPhoneUse: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "iphone-use", abstract: "Eyes and hands for agents operating a real iPhone.", version: RunnerSetup.releaseVersion,
-        subcommands: [Configuration.self, Setup.self, BuildRunner.self, Devices.self, Connect.self, Status.self, Apps.self, Open.self, Terminate.self, Relaunch.self, Observe.self, Inspect.self, Tap.self, DoubleTap.self, Pinch.self, LongPress.self, Swipe.self, Home.self, TypeText.self, TextPrepare.self, TextFinish.self, Press.self, RecordStart.self, RecordStop.self, Disconnect.self, Host.self])
+        subcommands: [Configuration.self, Setup.self, BuildRunner.self, Devices.self, Connect.self, Status.self, Apps.self, Open.self, Terminate.self, Relaunch.self, Observe.self, Inspect.self, Tap.self, DoubleTap.self, Pinch.self, LongPress.self, Swipe.self, Home.self, TypeText.self, TextPrepare.self, TextFinish.self, Press.self, RecordStart.self, RecordStop.self, Preview.self, Disconnect.self, Host.self])
     @OptionGroup var options: SessionOptions
 }
 
@@ -484,5 +484,24 @@ struct RecordStop: ParsableCommand {
     mutating func run() throws {
         let session = try options.requiredSession()
         try output { try SessionClient.call(session: session, operation: "record-stop", fields: ["recordingID": recordingID]) }
+    }
+}
+
+struct Preview: ParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "Open an experimental, read-only local browser preview using the session's owned video stream.")
+    @OptionGroup var options: SessionOptions
+    @Flag(help: "Stop preview without stopping control or an active recording.") var stop = false
+    @Flag(help: "Return the URL without opening a browser.") var noOpen = false
+    mutating func run() throws {
+        let session = try options.requiredSession()
+        try output {
+            let response = try SessionClient.call(session: session, operation: stop ? "preview-stop" : "preview-start")
+            if !stop, !noOpen, response["ok"] as? Bool == true,
+               let result = response["result"] as? [String: Any], let url = result["url"] as? String {
+                let open = Process(); open.executableURL = URL(fileURLWithPath: "/usr/bin/open"); open.arguments = [url]
+                try open.run(); open.waitUntilExit()
+            }
+            return response
+        }
     }
 }

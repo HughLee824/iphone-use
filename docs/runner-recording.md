@@ -1,8 +1,10 @@
 # Runner 原生媒体录屏
 
-2026-10-01 最新候选的 [Runner 共存验收](runner-candidate-acceptance.md)已补充当前 VRA 解码路径的真机证据：双击计数经截图及视频确认，22.183 秒 / 689 帧，停止录屏后同一 Runner 单击仍可用。下文保留实现契约与此前版本的历史验证。
+2026-10-12 当前源码还支持[本地浏览器预览](local-preview-prototype.md)：两种模式共用自有媒体流，预览开启后启动录屏可共享已解码像素。稳定 30 fps 未通过验收，方向恢复可能延迟；逐轮成功和失败结果见[预览验收历史](local-preview-validation.md)。以下当前契约已更新为包含预览的行为，旧验收只适用于各自标明的版本。
 
-本次实现将控制模式与录屏传输分开：Runner 的截图、元素、点击和输入仍由 XCTest 执行；显式 `record-start` 创建自有 CoreDevice displayservice 媒体连接，使用与标准模式相同的 HEVC/RTP 接收、MP4 写入和完整解码验证。不会建立 HID 或剪贴板服务。真机共存验收结果见下方，不能把旧的 XCTest 附件探针结果当成本实现的验收。
+2026-10-01 候选的 [Runner 共存验收](runner-candidate-acceptance.md)已补充当前 VRA 解码路径的真机证据：双击计数经截图及视频确认，22.183 秒 / 689 帧，停止录屏后同一 Runner 单击仍可用。下文保留实现契约与此前版本的历史验证。
+
+本次实现将控制模式与录屏传输分开：Runner 的截图、元素、点击和输入仍由 XCTest 执行；显式 `record-start` 或 `preview` 按需创建自有 CoreDevice displayservice 媒体连接，使用与标准模式相同的 HEVC/RTP 接收、MP4 写入和完整解码验证。不会建立 HID 或剪贴板服务。真机共存验收结果见下方，不能把旧的 XCTest 附件探针结果当成本实现的验收。
 
 ```sh
 iphone-use connect --mode runner --device "$DEVICE" --xctestrun "$XCTESTRUN"
@@ -13,11 +15,13 @@ iphone-use --session "$SESSION" record-stop "$RECORDING_ID"
 
 - 复用同一组命令、1–300 秒时长、录制 ID 和 `recordings/<UUID>/screen.mp4` 文件契约。
 - 连接 Runner 时不创建原生媒体会话；`recordingSupport.availability=not_checked` 不是可录制的证明。显式开始时再检查 macOS/iOS 27、配对、解锁、方向、媒体互斥、协议及 RTP 时钟。
-- 每个新录制创建独立媒体流，停止只作用于其自有 UUID。旧 ID 重复停止不会影响后续录制；未知 ID 被拒绝。开始或清理失败后不重放，要求显式重连。
-- `record-stop` 在同一 Runner 会话内完成文件写入、完整解码和媒体清理；不等待 XCTest 结束，也不重建 Runner。清理未确认时保留文件事实并返回 unknown。
-- 时长到达由现有录制队列自动结束文件；随后的 status、观察、动作或 disconnect 回收媒体。会话 idle/signal 清理也先结束文件，再关闭媒体和 Runner。
-- status、观察和动作边界检查显示状态。发现方向/锁屏变化时结束本段；不承诺连续旋转录制。每个视频帧都不是 observation，录制开始/停止会使旧 observation 失效。
+- 未开启预览时，每个新录制使用独立的自有媒体流；预览已开启时，新录制订阅已有解码器，不重启共享流。停止只作用于自有资源；旧 ID 重复停止不会影响后续录制，未知 ID 被拒绝。未知开始/清理结果不重放，按返回的恢复要求显式处理。
+- `record-stop` 在同一 Runner 会话内完成文件写入与完整解码；预览仍开启时保留媒体，报告 `mediaRetainedForPreview`，否则清理媒体。不等待 XCTest 结束，也不重建 Runner。清理未确认时保留文件事实并返回 unknown。
+- 时长到达由现有录制队列自动结束文件；若无预览消费者，随后的 status、观察、动作或 disconnect 回收媒体。会话 idle/signal 清理也先结束文件，再关闭媒体和 Runner。
+- status、观察和动作边界检查显示状态；预览开启时还有串行后台检查。发现方向/锁屏变化时结束本段；不承诺连续旋转录制。每个视频帧都不是 observation，录制或预览开始/停止后需要重新 observe。
 - 会话使用独立 `.xctestrun` 副本，将本次测试自动诊断捕获设为截图。原始签名产物及调用者的清单不改动。
+
+启动返回成功不代表整段录制成功。务必检查该 recording ID 的最终 `error`、`stopReason`、`writtenFrames`、`fileValidated` 和文件内容；资源受限时可能提前出现 `recording_backpressure`，即使浏览器画面仍正常刷新。
 
 ## 共享媒体实现的验证
 

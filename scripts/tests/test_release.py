@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from release_artifact import RUNNER, VERSION_PATTERN, check_checksum, check_linked_libraries, inspect_archive, sha256
+from release_artifact import PREVIEW, PREVIEW_FILES, preview_asset_files, RUNNER, VERSION_PATTERN, check_checksum, check_linked_libraries, inspect_archive, sha256
 
 spec = importlib.util.spec_from_file_location("homebrew", Path(__file__).resolve().parents[1] / "generate-homebrew.py")
 homebrew = importlib.util.module_from_spec(spec)
@@ -86,6 +86,34 @@ class ReleaseTests(unittest.TestCase):
         release = inspect_archive(self.archive, require_clean=True)
         self.assertEqual(release["version"], self.version)
         self.assertEqual(release["build"]["sourceCommit"], "a" * 40)
+
+    def test_preview_artwork_requires_complete_manifest_and_apple_license(self):
+        profile = {"name":"iPhone 12 Pro", "file":"phone.png", "sha256":sha256(b"png"),
+                   "canvasWidth":100, "canvasHeight":200, "screenX":5, "screenY":5,
+                   "screenWidth":90, "screenHeight":190, "cornerRadius":5}
+        catalog = json.dumps({"version":1,"models":{"iPhone13,3":profile}}).encode()
+        artwork = {**{name:name.encode() for name in PREVIEW_FILES}, "catalog.json":catalog, "phone.png":b"png"}
+        self.build["previewAssets"] = {name: sha256(data) for name, data in artwork.items()}
+        self.write_archive(modify_files=lambda files: files.update({PREVIEW + name: data for name, data in artwork.items()}))
+        inspect_archive(self.archive)
+        for missing in artwork:
+            self.write_archive(modify_files=lambda files: files.update({PREVIEW + name: data for name, data in artwork.items() if name != missing}))
+            with self.assertRaisesRegex(ValueError, "Preview artwork"):
+                inspect_archive(self.archive)
+        self.write_archive(modify_files=lambda files: files.update({PREVIEW + name: (b"changed" if name=="phone.png" else data) for name,data in artwork.items()}))
+        with self.assertRaisesRegex(ValueError, "Preview artwork"):
+            inspect_archive(self.archive)
+
+    def test_preview_catalog_rejects_path_escape_and_wrong_geometry(self):
+        catalog_path = Path(__file__).resolve().parents[2] / "assets/preview/catalog.json"
+        catalog = json.loads(catalog_path.read_text())
+        expected = preview_asset_files(catalog_path.read_bytes())
+        self.assertEqual(len(expected), len({p["file"] for p in catalog["models"].values()}) + len(PREVIEW_FILES))
+        for patch in [{"file":"../outside.png"}, {"screenX":16384}, {"screenWidth":0}, {"sha256":"bad"}]:
+            changed=json.loads(catalog_path.read_text())
+            next(iter(changed["models"].values())).update(patch)
+            with self.assertRaises(ValueError):
+                preview_asset_files(json.dumps(changed).encode())
 
     def test_version_syntax(self):
         for version in ["0.1.0", "1.2.3-rc.1", "1.2.3-dev.0"]:

@@ -109,7 +109,7 @@ final class AppleDeviceCLI {
             func validate(_ png: Data) throws -> FrameFingerprint {
                 let fingerprint = try FrameFingerprint(png: png)
                 guard fingerprint.width == Int(before.pixelWidth), fingerprint.height == Int(before.pixelHeight) else {
-                    throw IPhoneUseError("invalid_image", "Screenshot dimensions disagree with the current display")
+                    throw IPhoneUseError("native_screenshot_geometry_conflict", "Screenshot dimensions disagree with the current display")
                 }
                 let image = try ScreenImage(png: png)
                 let samples = try image.rgb(rect: before.screen, screen: before.screen, columns: 32, rows: 64)
@@ -189,6 +189,10 @@ final class AppleDeviceBackend: SessionBackend {
     private var eventDeliveryQueue: DispatchQueue?
     private var stopped = false
     private var recording: NativeStreamRecording?
+    private let previewOrientation = NativePreviewOrientation()
+    private var preview: NativePreview?
+    private var previewDevice = NativePreviewDevice.unknown
+    private var previewFailure: String?
     private var recordingSupported = false
 
     private let makeHID: (NativeTransport, NativeCancellation) -> NativeHIDAdapter
@@ -203,6 +207,7 @@ final class AppleDeviceBackend: SessionBackend {
     func start() throws -> [String: Any] {
         let details = try CoreDevice.read(["device", "info", "details", "--device", config.device])
         recordingSupported = NativeRecordingOptions.supported(by: details)
+        previewDevice = NativePreviewDevice(details: details)
         guard let hardware = details["hardwareProperties"] as? [String: Any], hardware["reality"] as? String == "physical",
               let udid = hardware["udid"] as? String,
               let properties = details["deviceProperties"] as? [String: Any], properties["developerModeStatus"] as? String == "enabled",
@@ -269,6 +274,7 @@ final class AppleDeviceBackend: SessionBackend {
         var result: [String: Any] = ["backend": "apple-native", "sessionGeneration": generation, "deviceID": cli?.device ?? config.device,
                 "captureSourcePolicy": cli?.captureSourcePolicy ?? [:],
                 "recording": recording?.status() ?? ["state": "idle"],
+                "preview": preview?.status() ?? ["state": previewFailure == nil ? "stopped" : "failed", "error": previewFailure as Any? ?? NSNull()],
                 "recordingSupport": ["supported": control.available, "formatVerified": streamRecordingSupported, "source": "owned_native_rtp",
                     "appleCLIAvailable": recordingSupported, "codec": "hevc", "method": "native_rtp"],
                 "capabilities": ["terminate": !closing, "relaunch": !closing, "recording": control.available, "screenshot": true, "tap": control.available, "ax": false, "swipe": control.available,
@@ -354,8 +360,9 @@ final class AppleDeviceBackend: SessionBackend {
             throw IPhoneUseError("native_media_unhealthy", "Owned recording media stopped during input")
         }
     }
-    private func releaseRecordingMediaIfFinished() {
-        guard recording?.isActive != true, media?.isActive == true else { return }
+    private func releaseRecordingMediaIfFinished(force: Bool = false) {
+        guard recording?.isActive != true, (preview == nil || force), media?.isActive == true else { return }
+        preview?.suspend("Synchronizing display")
         recordingMediaCleanup = media?.close() ?? ["mediaStopAcknowledged": true]
         if let currentRecordingID { recordingCleanupByID[currentRecordingID] = recordingMediaCleanup }
         media = nil
@@ -405,6 +412,7 @@ final class AppleDeviceBackend: SessionBackend {
     }
     private func capture(textOptions: NativeTextObservationOptions? = nil, budget: NativeCaptureBudget? = nil) throws -> CapturedObservation {
         releaseRecordingMediaIfFinished()
+        defer { attachPreview() }
         guard recordingMediaCleanup["mediaStopAcknowledged"] as? Bool != false else {
             throw IPhoneUseError("native_media_cleanup_unconfirmed", "Owned media may still be active; screenshot orientation cannot be verified")
         }
@@ -422,11 +430,10 @@ final class AppleDeviceBackend: SessionBackend {
                     throw IPhoneUseError("native_orientation_unverified", "Owned media is unavailable")
                 }
                 if self.recording?.isActive == true {
-                    // Keep the captured recording segment, then leave the stream
-                    // stopped. The retry is an Apple PNG observation and must
-                    // not silently create another resident stream.
+                    // End this recording segment before rebinding orientation.
+                    // Only an explicitly enabled preview may retain a new stream.
                     self.recording?.endSegment(reason: "orientation_unverified")
-                    self.releaseRecordingMediaIfFinished()
+                    self.releaseRecordingMediaIfFinished(force: true)
                     guard self.recordingMediaCleanup["mediaStopAcknowledged"] as? Bool == true else {
                         throw IPhoneUseError("native_orientation_unverified", "Owned media stop was not confirmed")
                     }
@@ -459,12 +466,15 @@ final class AppleDeviceBackend: SessionBackend {
         guard let cli else { throw IPhoneUseError("backend_unavailable", "Native backend not started") }
         let captured = try cli.capture(generation: generation, budget: budget, prepareDisplay: { display in
             try self.cancellation.check()
+            if self.preview != nil, self.media == nil, self.controlError == nil {
+                try self.ensurePreviewMedia(display)
+            }
             // Startup failure remains observation-only. Once control is started,
             // a failed display rebind cannot silently return an unsafe image.
             if self.controlError == nil, self.media?.isActive == true {
                 if self.recording?.isActive == true, self.media?.matchesDisplay(display) == false {
                     self.recording?.endSegment(reason: "display_changed")
-                    self.releaseRecordingMediaIfFinished()
+                    self.releaseRecordingMediaIfFinished(force: true)
                     guard self.recordingMediaCleanup["mediaStopAcknowledged"] as? Bool == true else {
                         throw IPhoneUseError("native_orientation_unverified", "Owned media stop was not confirmed")
                     }
@@ -747,7 +757,11 @@ final class AppleDeviceBackend: SessionBackend {
         if media == nil { media = try makeMediaSession() }
         do {
             guard let media else { throw IPhoneUseError("native_recording_unavailable", "Native media session unavailable") }
-            try media.refreshForRecording(display, mayReplace: hid?.state == .ready)
+            if preview != nil {
+                // Reuse the already decoded stream; no keyframe refresh is needed.
+                try media.ensureDisplay(display, mayReplace: hid?.state == .ready)
+            } else { try media.refreshForRecording(display, mayReplace: hid?.state == .ready) }
+            attachPreview()
             guard let receiver = media.recordingReceiver, let mediaID = media.health()["mediaSessionID"] as? String else {
                 throw IPhoneUseError("native_recording_unavailable", "Fresh owned recording stream unavailable")
             }
@@ -757,7 +771,7 @@ final class AppleDeviceBackend: SessionBackend {
             }
             try cancellation.check()
             guard try cli.display() == display else { throw IPhoneUseError("capture_context_changed", "Display changed while preparing recording; observe again") }
-            let result = try recording.start(duration: duration, receiver: receiver, mediaID: mediaID, rotation: display.rotation)
+            let result = try recording.start(duration: duration, receiver: receiver, mediaID: mediaID, rotation: display.rotation, snapshots: preview == nil ? nil : receiver.snapshots)
             currentRecordingID = result["recordingID"] as? String
             return result
         } catch {
@@ -771,15 +785,86 @@ final class AppleDeviceBackend: SessionBackend {
         releaseRecordingMediaIfFinished()
         let cleanup = recordingCleanupByID[id] ?? [:]
         result["mediaCleanup"] = cleanup
+        result["mediaRetainedForPreview"] = preview != nil && media?.isActive == true
         if cleanup["mediaStopAcknowledged"] as? Bool == false {
             throw ActionFailure(code: "recording_cleanup_unconfirmed", description: "Recording stopped but media cleanup was not confirmed",
                                 possiblyExecuted: true, requiresObservation: true, result: result)
         }
         return result
     }
+    private func attachPreview() {
+        if let receiver = media?.recordingReceiver, let display = media?.boundDisplay {
+            preview?.attach(receiver, display: display)
+        }
+    }
+    private func ensurePreviewMedia(_ display: NativeDisplay) throws {
+        guard display.backlightOn, display.nativeRotation == "rot0", NativeVideoOrientation(rawValue: display.rotation) != nil else {
+            throw IPhoneUseError("preview_display_unavailable", "Preview needs a lit display with supported orientation")
+        }
+        if media == nil { media = try makeMediaSession() }
+        try media?.ensureDisplay(display, mayReplace: hid?.state == .ready)
+        attachPreview()
+    }
+    func startPreview() throws -> [String: Any] {
+        try cancellation.check()
+        if let preview { return preview.status() }
+        guard controlError == nil, hid?.state == .ready, let cli,
+              recordingMediaCleanup["mediaStopAcknowledged"] as? Bool != false else {
+            throw IPhoneUseError("preview_unavailable", "Native control or media cleanup is not ready")
+        }
+        let preview = try NativePreview(device: previewDevice); self.preview = preview; previewFailure = nil
+        do {
+            let facts = try NativeCaptureChecks.read { try cli.read($0) }
+            try ensurePreviewMedia(facts.display)
+            return preview.status()
+        } catch {
+            preview.close(); self.preview = nil; releaseRecordingMediaIfFinished(); throw error
+        }
+    }
+    func stopPreview() throws -> [String: Any] {
+        preview?.close(); preview = nil
+        releaseRecordingMediaIfFinished()
+        guard recordingMediaCleanup["mediaStopAcknowledged"] as? Bool != false else {
+            throw IPhoneUseError("native_media_cleanup_unconfirmed", "Preview closed but media stop is unconfirmed")
+        }
+        return ["state": "stopped", "mediaRetainedForRecording": recording?.isActive == true]
+    }
+    func previewTick() -> Bool {
+        guard let preview, !stopped, !cancellation.isCancelled, let cli, controlError == nil else { return false }
+        do {
+            let display = try NativeCaptureChecks.read { try cli.read($0, timeout: 3) }.display
+            guard display.backlightOn else { throw IPhoneUseError("device_locked", "Display is not awake") }
+            var changed = media?.matchesDisplay(display) != true
+            do { try media?.recordingReceiver?.snapshots?.rejectConflictingGeometry(display) }
+            catch { changed = true }
+            if !changed {
+                changed = try previewOrientation.needsRefresh(cli: cli, snapshots: media?.recordingReceiver?.snapshots, display: display)
+            }
+            if changed {
+                preview.suspend("Synchronizing rotation")
+                recording?.endSegment(reason: "display_changed")
+                releaseRecordingMediaIfFinished(force: true)
+                guard recordingMediaCleanup["mediaStopAcknowledged"] as? Bool != false else {
+                    throw IPhoneUseError("native_media_cleanup_unconfirmed", "Media stop unconfirmed")
+                }
+                let refreshed = try NativeCaptureChecks.read { try cli.read($0, timeout: 3) }.display
+                try ensurePreviewMedia(refreshed)
+            } else { attachPreview() }
+            return changed
+        } catch {
+            previewFailure = String(describing: error)
+            preview.suspend(String(describing: error))
+            recording?.endSegment(reason: "preview_display_unavailable")
+            releaseRecordingMediaIfFinished(force: true)
+            // Terminal until explicit stop/start; never retry an uncertain start.
+            preview.close(); self.preview = nil
+            return true
+        }
+    }
     func stop() -> [String: Any] {
         if stopped { return cleanupFacts }
         stopped = true; cancellation.cancel()
+        preview?.close(); preview = nil
         var result = hid?.release() ?? ["releaseRequired": false, "releaseUncertain": false]
         result.merge(recording?.close() ?? ["recordingProcessExited": true]) { _, new in new }
         result.merge(hid?.closeKeyboard() ?? ["keyboardRemoveAcknowledged": true]) { _, new in new }

@@ -21,6 +21,29 @@ final class NativeSnapshotContinuityTests: XCTestCase {
         XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 12, 18, kCVPixelFormatType_32BGRA, nil, &buffer), kCVReturnSuccess)
         return NativeDecodedVideoFrame(pixels: try XCTUnwrap(buffer), nativeWidth: 12, nativeHeight: 18)
     }
+    func testTimingDistinguishesQueuedPacketsFromSlowDecode() throws {
+        let pixel = try pixels(), entered = expectation(description: "decoder entered")
+        let release = DispatchSemaphore(value: 0)
+        let stream = NativeVideoSnapshot(decode: { unit in
+            if unit.timestamp == 1 { entered.fulfill(); _ = release.wait(timeout: .now() + 3) }
+            return pixel
+        }, resetDecoder: {})
+        defer { release.signal(); stream.close() }
+        stream.receive(packet(1, timestamp: 1), at: ProcessInfo.processInfo.systemUptime)
+        wait(for: [entered], timeout: 2)
+        stream.receive(packet(2, timestamp: 2), at: ProcessInfo.processInfo.systemUptime)
+        Thread.sleep(forTimeInterval: 0.12)
+        release.signal(); idle(stream)
+        let timing = try XCTUnwrap(stream.status()["timing"] as? [String: Any])
+        let events = try XCTUnwrap(timing["slowFrames"] as? [[String: Double]])
+        let slow = try XCTUnwrap(events.first { $0["timestamp"] == 1 })
+        let queued = try XCTUnwrap(events.first { $0["timestamp"] == 2 })
+        XCTAssertGreaterThan(slow["decodeMs"]!, 100)
+        XCTAssertGreaterThan(queued["queueWaitMs"]!, 100)
+        XCTAssertGreaterThanOrEqual(queued["sourceLagMs"]!, queued["decodeMs"]!)
+        XCTAssertEqual(stream.status()["decodedFrames"] as? Int, 2)
+    }
+
     func testTimestampRejectionInvalidatesLatestAndRequiresKeyframeBeforeDecodingAgain() throws {
         let pixel = try pixels()
         var timestamps: [UInt32] = [], resets = 0

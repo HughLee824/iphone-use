@@ -10,8 +10,8 @@ struct NativeDecodedVideoFrame {
     let nativeHeight: Int
 }
 
-// Decoder work never runs on the media socket queue. Recording retains its own
-// handler and decoder; snapshots do not start or stop a stream.
+// Decoder work never runs on the media socket queue. A preview recording can
+// subscribe to these decoded frames; snapshots never start or stop a stream.
 final class NativeVideoSnapshot {
     struct Frame {
         let image: NativeDecodedVideoFrame
@@ -20,12 +20,15 @@ final class NativeVideoSnapshot {
         let completedAt: Double
         let timestamp: UInt32
     }
-    private let queue = DispatchQueue(label: "iphone-use.native.snapshot.decode")
+    // This feeds interactive preview and observations. It must not sit below
+    // JPEG/HTTP work in scheduling priority while that work waits for pixels.
+    private let queue = DispatchQueue(label: "iphone-use.native.snapshot.decode", qos: .userInitiated)
     private let condition = NSCondition()
     private var pendingBytes = 0
     private var generation = 0
     private var closed = false
     private var latest: Frame?
+    private var recordingHandler: ((Frame) -> Void)?
     private var decodedFrames = 0
     private var framesWithoutImage = 0
     private var decodeErrors = 0
@@ -42,6 +45,12 @@ final class NativeVideoSnapshot {
     private var waitingForKeyframe = true
     private var decoderGeneration = 0
     private var lastTimestamp: UInt32?
+    private var unitQueueWaitMs = 0.0
+    private var lastQueueWaitMs = 0.0
+    private var lastDecodeMs = 0.0
+    private var maxQueueWaitMs = 0.0
+    private var maxDecodeMs = 0.0
+    private var slowFrames: [[String: Double]] = []
 
     convenience init() {
         // Standard observations are Apple PNG. This stream only verifies
@@ -56,6 +65,7 @@ final class NativeVideoSnapshot {
     }
 
     func receive(_ data: Data, at receivedAt: Double) {
+        let admittedAt = ProcessInfo.processInfo.systemUptime
         condition.lock()
         guard !closed else { condition.unlock(); return }
         guard pendingBytes + data.count <= 4 * 1024 * 1024 else {
@@ -65,11 +75,14 @@ final class NativeVideoSnapshot {
         pendingBytes += data.count
         condition.unlock()
         queue.async { [self] in
+            let queueWaitMs = (ProcessInfo.processInfo.systemUptime - admittedAt) * 1000
             defer { condition.lock(); pendingBytes -= data.count; condition.unlock() }
             condition.lock(); let admitted = !closed && generation == admittedGeneration; condition.unlock()
             guard admitted else { return }
+            unitQueueWaitMs = max(unitQueueWaitMs, queueWaitMs)
             if decoderGeneration != admittedGeneration {
                 parser = NativeHEVCDepacketizer(); resetDecoder()
+                unitQueueWaitMs = queueWaitMs
                 lastTimestamp = nil; decoderGeneration = admittedGeneration
                 condition.lock(); referenceResets += 1; waitingForKeyframe = true; condition.unlock()
             }
@@ -91,6 +104,8 @@ final class NativeVideoSnapshot {
                     condition.lock(); referenceResets += 1; condition.unlock()
                 }
                 guard let unit = candidate, let unitStarted = unit.firstPacketAt else { return }
+                let packetWaitMs = unitQueueWaitMs
+                unitQueueWaitMs = 0
                 // Parameter-set-only units are allowed to share a timestamp.
                 if let lastTimestamp, unit.nals.contains(where: { ($0[0] >> 1) & 63 <= 31 }),
                    Int32(bitPattern: unit.timestamp &- lastTimestamp) <= 0 {
@@ -100,7 +115,22 @@ final class NativeVideoSnapshot {
                     throw IPhoneUseError("native_snapshot_timestamp_invalid", "Non-increasing video timestamp; require a fresh keyframe")
                 }
                 let video = unit.nals.contains(where: { ($0[0] >> 1) & 63 <= 31 })
+                let decodeStarted = ProcessInfo.processInfo.systemUptime
                 let image = try decode(unit)
+                let completed = ProcessInfo.processInfo.systemUptime
+                if video {
+                    let decodeMs = (completed - decodeStarted) * 1000
+                    condition.lock()
+                    lastQueueWaitMs = packetWaitMs; lastDecodeMs = decodeMs
+                    maxQueueWaitMs = max(maxQueueWaitMs, packetWaitMs); maxDecodeMs = max(maxDecodeMs, decodeMs)
+                    if packetWaitMs > 50 || decodeMs > 50 || completed - unitStarted > 0.1 {
+                        slowFrames.append(["wallTime": Date().timeIntervalSince1970, "timestamp": Double(unit.timestamp), "queueWaitMs": packetWaitMs,
+                                           "decodeMs": decodeMs, "inputToDecodeMs": (decodeStarted - unitStarted) * 1000,
+                                           "sourceLagMs": (completed - unitStarted) * 1000])
+                        if slowFrames.count > 120 { slowFrames.removeFirst() }
+                    }
+                    condition.unlock()
+                }
                 if video { lastTimestamp = unit.timestamp }
                 guard let image else {
                     // A decoded reduced-resolution picture updates references,
@@ -109,12 +139,13 @@ final class NativeVideoSnapshot {
                     return
                 }
                 let frame = Frame(image: image, firstPacketAt: unitStarted,
-                                  completedAt: ProcessInfo.processInfo.systemUptime, timestamp: unit.timestamp)
+                                  completedAt: completed, timestamp: unit.timestamp)
                 condition.lock()
-                if !closed, generation == admittedGeneration { latest = frame; decodedFrames += 1; lastError = nil; condition.broadcast() }
+                if !closed, generation == admittedGeneration { latest = frame; decodedFrames += 1; lastError = nil; recordingHandler?(frame); condition.broadcast() }
                 condition.unlock()
             } catch {
                 // A broken dependency chain is never reused for observation.
+                unitQueueWaitMs = 0
                 condition.lock(); generation += 1; decodeErrors += 1; lastError = String(describing: error)
                 latest = nil; waitingForKeyframe = true; condition.broadcast(); condition.unlock()
             }
@@ -137,6 +168,20 @@ final class NativeVideoSnapshot {
         }
         return nil
     }
+    // Display-only access. This cached frame must never establish an observation
+    // or satisfy an input freshness check.
+    func previewFrame() -> Frame? {
+        condition.lock(); defer { condition.unlock() }
+        return closed ? nil : latest
+    }
+    // Callback runs under the cache lock and must only enqueue bounded work.
+    // Priming and subscription are atomic, so no newer frame can overtake the seed.
+    func setRecordingHandler(_ handler: ((Frame) -> Void)?) {
+        condition.lock(); defer { condition.unlock() }
+        recordingHandler = closed ? nil : handler
+        if let latest, !closed { handler?(latest) }
+    }
+
     // Negative evidence only: an old frame may reveal conflicting axes, but
     // can never become a screenshot or establish that the screen is current.
     func rejectConflictingGeometry(_ display: NativeDisplay) throws {
@@ -156,12 +201,14 @@ final class NativeVideoSnapshot {
                 "timestampRejections": timestampRejections, "referenceResets": referenceResets,
                 "waitingForKeyframe": waitingForKeyframe,
                 "pendingBytes": pendingBytes, "closed": closed, "lastError": lastError as Any? ?? NSNull(),
+                "timing": ["lastQueueWaitMs": lastQueueWaitMs, "lastDecodeMs": lastDecodeMs,
+                           "maxQueueWaitMs": maxQueueWaitMs, "maxDecodeMs": maxDecodeMs, "slowFrames": slowFrames],
                 "lastFrameAgeSeconds": latest.map { now - $0.firstPacketAt } as Any? ?? NSNull(),
                 "lastFrameCompletedAgeSeconds": latest.map { now - $0.completedAt } as Any? ?? NSNull(),
                 "lastFrameDecodeLagSeconds": latest.map { $0.completedAt - $0.firstPacketAt } as Any? ?? NSNull()]
     }
     func close() {
-        condition.lock(); closed = true; latest = nil; condition.broadcast(); condition.unlock()
+        condition.lock(); closed = true; latest = nil; recordingHandler = nil; condition.broadcast(); condition.unlock()
         queue.sync { resetDecoder(); parser = NativeHEVCDepacketizer() }
     }
 }

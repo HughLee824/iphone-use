@@ -27,6 +27,76 @@ private final class RecordingTestClock {
 }
 
 final class NativeRecordingTests: XCTestCase {
+    func testSharedDecodedBurstKeepsRTPSpacingWhenReceiveTimesQuantizeTogether() throws {
+        let dir = try root(), units = try fixture(dir), source = RecordingSource(), clock = RecordingTestClock()
+        let decoder = FixtureHEVCDecoder()
+        let snapshots = NativeVideoSnapshot(decode: { unit in
+            try decoder.decode(unit).map { NativeDecodedVideoFrame(pixels: $0, nativeWidth: 64, nativeHeight: 96) }
+        }, resetDecoder: { decoder.resetReferences() })
+        defer { snapshots.close() }
+        let recorder = NativeStreamRecording(root: dir, now: clock.now)
+        defer { _ = recorder.close() }
+        var id: String?, receivedAt = 98.0
+        source.setVideoHandler { snapshots.receive($0, at: receivedAt) }
+        packets(units, to: source, beforeUnit: { unit in
+            if unit.timestamp == units[1].timestamp {
+                let deadline = Date().addingTimeInterval(2)
+                while snapshots.previewFrame() == nil, Date() < deadline { Thread.sleep(forTimeInterval: 0.005) }
+                XCTAssertNotNil(snapshots.previewFrame())
+                id = try? recorder.start(duration: 30, receiver: source, mediaID: "burst", rotation: "rot0", snapshots: snapshots)["recordingID"] as? String
+                receivedAt = 101
+            }
+        })
+        let deadline = Date().addingTimeInterval(2)
+        while snapshots.status()["decodedFrames"] as? Int != units.count, Date() < deadline { Thread.sleep(forTimeInterval: 0.005) }
+        XCTAssertEqual(snapshots.status()["decodedFrames"] as? Int, units.count)
+        clock.set(104)
+        let result = try recorder.stop(id: XCTUnwrap(id))
+        XCTAssertEqual(result["state"] as? String, "completed")
+        XCTAssertEqual(result["writtenFrames"] as? Int, units.count)
+        XCTAssertEqual(result["mediaSpanSeconds"] as! Double, 2.8, accuracy: 0.001)
+        XCTAssertEqual(source.keyframeRequests, 0)
+    }
+
+    func testSharedDecodedRecordingStartsOnStaticCacheWithoutKeyframeAndDetectsDamage() throws {
+        for damage in [false, true] {
+            let dir = try root(), units = try fixture(dir), source = RecordingSource(), clock = RecordingTestClock()
+            let decoder = FixtureHEVCDecoder()
+            let snapshots = NativeVideoSnapshot(decode: { unit in
+                try decoder.decode(unit).map { NativeDecodedVideoFrame(pixels: $0, nativeWidth: 64, nativeHeight: 96) }
+            }, resetDecoder: { decoder.resetReferences() })
+            defer { snapshots.close() }
+            source.setVideoHandler { snapshots.receive($0, at: 98) }
+            packets([units[0]], to: source)
+            let deadline = Date().addingTimeInterval(2)
+            while snapshots.previewFrame() == nil, Date() < deadline { Thread.sleep(forTimeInterval: 0.005) }
+            XCTAssertNotNil(snapshots.previewFrame())
+            let recorder = NativeStreamRecording(root: dir, now: clock.now)
+            defer { _ = recorder.close() }
+            let started = try recorder.start(duration: 30, receiver: source, mediaID: "unchanged", rotation: "rot0", snapshots: snapshots)
+            XCTAssertEqual(source.keyframeRequests, 0)
+            XCTAssertTrue(source.attached, "Decoded subscription must not overwrite the existing packet handler")
+            XCTAssertEqual(recorder.status()["state"] as? String, "recording")
+            if damage {
+                snapshots.receive(Data([0]), at: 101)
+                let deadline = Date().addingTimeInterval(2)
+                while snapshots.status()["decodeErrors"] as? Int == 0, Date() < deadline { Thread.sleep(forTimeInterval: 0.005) }
+            }
+            clock.set(102)
+            let result = try recorder.stop(id: started["recordingID"] as! String)
+            XCTAssertEqual(result["fileValidated"] as? Bool, !damage)
+            XCTAssertEqual(result["initialCachedFrameAgeSeconds"] as? Double, 2)
+            XCTAssertEqual(result["clockSource"] as? String, "rtcp_sender_reports_with_host_start_anchor")
+            XCTAssertTrue(source.attached)
+            if !damage {
+                XCTAssertEqual(result["writtenFrames"] as? Int, 1)
+                let video = try XCTUnwrap(result["video"] as? [String: Any])
+                XCTAssertEqual(video["durationSeconds"] as! Double, 2, accuracy: 0.01)
+                XCTAssertNotNil(snapshots.previewFrame(), "Stopping recording must retain the preview decoder/cache")
+            }
+        }
+    }
+
     // Generic HEVC fixtures test recording timing/ownership and transport. They
     // do not pretend to exercise Apple's private VRA codec profile. The actual
     // VRA decoder is separately verified using the private recorded fault stream.
@@ -372,6 +442,10 @@ final class NativeRecordingTests: XCTestCase {
         let writer = fixtureWriter(url: url, timescale: 24000)
         for unit in units { try writer.append(unit) }
         try writer.finish()
+        XCTAssertThrowsError(try writer.append(units[0])) {
+            XCTAssertEqual(($0 as? IPhoneUseError)?.code, "recording_writer_closed")
+        }
+        writer.cancel() // Idempotent after releasing the encoder; the file survives.
         let result = try NativeRecordingValidation.inspect(url)
         XCTAssertEqual(result["decodedFrames"] as? Int, units.count)
         XCTAssertEqual(result["durationSeconds"] as! Double, 1.916666, accuracy: 0.001)
@@ -394,6 +468,18 @@ final class NativeRecordingTests: XCTestCase {
         let broken = dir.appendingPathComponent("truncated.mp4")
         try Data(contentsOf: url).prefix(100).write(to: broken)
         XCTAssertThrowsError(try NativeRecordingValidation.inspect(broken))
+    }
+    func testLongDeviceRecordingDecodesEveryWrittenFrame() throws {
+        guard let path = ProcessInfo.processInfo.environment["IPHONE_USE_LONG_RECORDING_FIXTURE"] else {
+            throw XCTSkip("Set IPHONE_USE_LONG_RECORDING_FIXTURE to a five-minute screen.mp4 with its result.json")
+        }
+        let url = URL(fileURLWithPath: path)
+        let recorded = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url.deletingLastPathComponent().appendingPathComponent("result.json"))) as? [String: Any])
+        let expected = try XCTUnwrap(recorded["writtenFrames"] as? Int)
+        XCTAssertGreaterThan(expected, 1000)
+        let facts = try NativeRecordingValidation.inspect(url)
+        XCTAssertGreaterThan(try XCTUnwrap(facts["durationSeconds"] as? Double), 240)
+        XCTAssertEqual(facts["decodedFrames"] as? Int, expected)
     }
     func testLandscapeTrackTransformSurvivesMuxAndExactFrameExtraction() throws {
         let dir = try root(), units = try fixture(dir)

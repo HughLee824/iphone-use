@@ -130,6 +130,8 @@ public enum DeviceDiscovery {
             row["osVersion"] = properties["osVersionNumber"] as? String ?? NSNull()
             row["platform"] = hardware["platform"] as? String ?? NSNull()
             row["deviceType"] = hardware["deviceType"] as? String ?? NSNull()
+            row["productType"] = hardware["productType"] as? String ?? NSNull()
+            row["model"] = hardware["marketingName"] as? String ?? NSNull()
             let facts: [String: Any] = ["transport": connection["transportType"] as? String ?? NSNull(),
                 "tunnelState": connection["tunnelState"] as? String ?? NSNull(),
                 "pairingState": connection["pairingState"] as? String ?? NSNull()]

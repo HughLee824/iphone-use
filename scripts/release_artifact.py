@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import math
 import plistlib
 import re
 import tarfile
@@ -12,6 +13,30 @@ NUMBER = r"(?:0|[1-9][0-9]*)"
 PRERELEASE = rf"(?:{NUMBER}|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
 VERSION_PATTERN = rf"{NUMBER}\.{NUMBER}\.{NUMBER}(?:-{PRERELEASE}(?:\.{PRERELEASE})*)?"
 RUNNER = "libexec/iphone-use/runner/"
+PREVIEW = "libexec/iphone-use/preview/"
+PREVIEW_FILES = ("catalog.json", "Apple-Artwork-License.rtf", "README.md")
+
+
+def preview_asset_files(data):
+    catalog = json.loads(data)
+    if catalog.get("version") != 1 or not isinstance(catalog.get("models"), dict) or not catalog["models"]:
+        raise ValueError("Invalid preview artwork catalog")
+    files = set(PREVIEW_FILES)
+    for product_type, profile in catalog["models"].items():
+        if not re.fullmatch(r"iPhone[0-9]+,[0-9]+", product_type):
+            raise ValueError("Preview artwork must use exact productType keys")
+        name = profile.get("file", "")
+        if not re.fullmatch(r"[a-z0-9-]+[.]png", name) or not re.fullmatch(r"[0-9a-f]{64}", profile.get("sha256", "")):
+            raise ValueError("Invalid preview artwork filename or digest")
+        keys = ("canvasWidth", "canvasHeight", "screenX", "screenY", "screenWidth", "screenHeight", "cornerRadius")
+        values = [profile.get(key) for key in keys]
+        if not all(type(v) in (int, float) and math.isfinite(v) and 0 <= v <= 16384 for v in values):
+            raise ValueError("Invalid preview artwork geometry")
+        cw, ch, x, y, w, h, radius = values
+        if min(cw, ch, w, h) <= 0 or x+w > cw or y+h > ch or radius > min(w,h)/2:
+            raise ValueError("Preview artwork screen escapes its canvas")
+        files.add(name)
+    return sorted(files)
 
 
 def check_linked_libraries(otool_output):
@@ -59,12 +84,23 @@ def inspect_archive(archive, *, require_clean=False):
                 "build-info.json", RUNNER + "manifest.json"]
     if any(name not in files for name in required):
         raise ValueError("Release archive is missing its binary, instructions, licences or metadata")
-    if any(name not in required and not name.startswith(RUNNER) for name in files):
+    if any(name not in required and not name.startswith(RUNNER) and not name.startswith(PREVIEW) for name in files):
         raise ValueError("Release archive contains an unexpected file outside the Runner payload")
     if files["bin/agentsoma"] != files["bin/iphone-use"]:
         raise ValueError("Legacy command must be an exact copy of iphone-use")
     manifest = json.loads(files[RUNNER + "manifest.json"])
     build = json.loads(files["build-info.json"])
+    artwork = {name.removeprefix(PREVIEW): sha256(data) for name, data in files.items() if name.startswith(PREVIEW)}
+    # Older releases have no preview artwork. New packages retain all original
+    # assets, their separate Apple agreement, provenance, and integrity hashes.
+    if artwork or "previewAssets" in build:
+        if (not all(name in artwork for name in PREVIEW_FILES)
+                or set(artwork) != set(preview_asset_files(files[PREVIEW + "catalog.json"]))
+                or artwork != build.get("previewAssets")):
+            raise ValueError("Preview artwork differs from its manifest or is missing its Apple license")
+        catalog = json.loads(files[PREVIEW + "catalog.json"])
+        if any(artwork[profile["file"]] != profile["sha256"] for profile in catalog["models"].values()):
+            raise ValueError("Preview artwork differs from its catalog digest")
     if manifest.get("formatVersion") != 1 or manifest.get("releaseVersion") != version:
         raise ValueError("Archive name and Runner manifest version do not match")
     if build.get("version") != version or build.get("architecture") != architecture or build.get("license") != "MIT":
