@@ -43,11 +43,10 @@ enum NativePreviewPage {
     header{flex:none;min-height:76px;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px 28px;border-bottom:1px solid var(--line);background:var(--header)}
     .brand{display:flex;align-items:center;gap:11px;min-width:0}.brand>div{min-width:0}.mark{width:28px;height:28px;color:var(--accent)}h1{margin:0;font-size:16px;font-weight:620;letter-spacing:-.4px}#device-name{margin-top:3px;font-size:12px;color:var(--secondary);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .toolbar{display:flex;align-items:center;gap:12px}
-    #appearance-toggle{height:34px;padding:0 10px;border:1px solid var(--button-line);border-radius:8px;background:var(--button);font-size:12px;white-space:nowrap}#appearance-toggle:hover{background:var(--hover)}
-    #fullscreen{width:34px;height:34px;display:grid;place-items:center;border:1px solid var(--button-line);border-radius:8px;background:var(--button)}#fullscreen:hover{background:var(--hover)}svg{display:block}
-    .connection{display:flex;align-items:center;gap:8px;color:var(--secondary);font-size:12px;min-height:18px}.dot{width:6px;height:6px;border-radius:50%;background:var(--waiting);flex:none}
+    #appearance-toggle,#fullscreen{width:34px;height:34px;display:grid;place-items:center;border:1px solid var(--button-line);border-radius:8px;background:var(--button)}#appearance-toggle:hover,#fullscreen:hover{background:var(--hover)}svg{display:block}
+    .connection{display:grid;place-items:center;width:18px;height:34px;flex:none}.dot{width:6px;height:6px;border-radius:50%;background:var(--waiting);flex:none}
     .connection[data-kind="live"] .dot{background:var(--live)}.connection[data-kind="error"] .dot{background:var(--error)}
-    #state{max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
     main{min-height:0;flex:1;display:flex;flex-direction:column;align-items:center}
     #stage{position:relative;width:100%;flex:1;min-height:0;display:grid;place-items:center;overflow:hidden}
     #device{position:relative;flex:none}#screen{position:absolute;z-index:1;display:block;object-fit:contain;background:#08090b;visibility:hidden}
@@ -71,14 +70,13 @@ enum NativePreviewPage {
     #placeholder{z-index:2;position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--muted);font-size:12px}
     #placeholder svg{color:var(--muted)}#device[data-ready="true"] #placeholder{display:none}
     #diagnostics{padding:18px 28px;background:var(--bg);color:var(--secondary);font:12px ui-monospace,monospace}#metrics{white-space:pre-wrap;overflow-wrap:anywhere}summary{cursor:pointer}
-    @media(max-width:700px){header{padding:14px 18px;gap:12px;flex-wrap:wrap}.brand{flex:1}.connection{order:3;width:100%}#state{max-width:90vw}.toolbar{gap:8px}}
+    @media(max-width:700px){header{padding:14px 18px;gap:12px}.brand{flex:1}.toolbar{gap:8px}}
     @media(max-height:550px) and (min-width:701px){header{min-height:54px;padding:10px 24px}}
     </style></head>
     <body><div class="viewer" id="viewer">
     <header><div class="brand"><svg class="mark" viewBox="0 0 28 28" fill="none" aria-hidden="true"><rect x="7" y="2" width="14" height="24" rx="4" stroke="currentColor" stroke-width="1.5"/><path d="M12 5h4M12 23h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><div><h1>iPhone-use</h1><div id="device-name">iPhone</div></div></div>
-    <div class="connection" id="connection" data-kind="waiting" role="status"><span class="dot" aria-hidden="true"></span><span id="state">正在连接…</span></div>
-    <div class="toolbar"><button id="appearance-toggle" hidden title="临时外观对比，仅影响本页显示">切换自绘外观</button><button id="fullscreen" title="进入全屏" aria-label="进入全屏"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></header>
-    <main><div id="stage"><div id="device" data-ready="false"><div id="shell" hidden aria-hidden="true"><i class="side-key action-key"></i><i class="side-key volume-up"></i><i class="side-key volume-down"></i><i class="side-key power-key"></i><i class="side-key camera-key"></i><i class="antenna a"></i><i class="antenna b"></i><i class="antenna c"></i><i class="antenna d"></i></div><div id="hardware" hidden aria-hidden="true"><i id="speaker"></i><i id="cutout" hidden></i></div><img id="screen" alt="iPhone 实时画面" draggable="false"><div id="placeholder"><svg width="32" height="44" viewBox="0 0 32 44" fill="none" aria-hidden="true"><rect x="4" y="2" width="24" height="40" rx="6" stroke="currentColor" stroke-width="1.5"/><path d="M13 6h6M13 38h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>等待手机画面</span></div><img id="bezel" hidden alt="" aria-hidden="true" draggable="false"></div></div>
+    <div class="toolbar"><div class="connection" id="connection" data-kind="waiting" role="status" title="正在连接…"><span class="dot" aria-hidden="true"></span><span id="state" class="sr-only">正在连接…</span></div><button id="appearance-toggle" hidden title="切换自绘外观" aria-label="切换自绘外观"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4.5" y="1.5" width="11" height="17" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="M10 2v16M10 5h3M10 8h3M10 11h3M10 14h3" stroke="currentColor" stroke-width="1.2"/></svg></button><button id="fullscreen" title="进入全屏" aria-label="进入全屏"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></header>
+    <main><div id="stage"><div id="device" data-ready="false"><div id="shell" hidden aria-hidden="true"><i class="side-key action-key"></i><i class="side-key volume-up"></i><i class="side-key volume-down"></i><i class="side-key power-key"></i><i class="side-key camera-key"></i><i class="antenna a"></i><i class="antenna b"></i><i class="antenna c"></i><i class="antenna d"></i></div><div id="hardware" hidden aria-hidden="true"><i id="speaker"></i><i id="cutout" hidden></i></div><img id="screen" alt="iPhone 实时画面" draggable="false"><div id="placeholder"><svg width="32" height="44" viewBox="0 0 32 44" fill="none" aria-hidden="true"><rect x="4" y="2" width="24" height="40" rx="6" stroke="currentColor" stroke-width="1.5"/><path d="M13 6h6M13 38h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span class="sr-only">等待手机画面</span></div><img id="bezel" hidden alt="" aria-hidden="true" draggable="false"></div></div>
     </main>
     </div><details id="diagnostics" hidden><summary>浏览器显示统计（最近 1800 帧）</summary><pre id="metrics"></pre></details>
     <script>
@@ -147,7 +145,8 @@ enum NativePreviewPage {
       const key=[w,h,rotation,artworkAvailable,forceDrawing,identityKey,stage.clientWidth,stage.clientHeight].join(':');
       if(key===layoutKey)return;layoutKey=key;
       appearanceToggle.hidden=!canShowOfficial;
-      appearanceToggle.textContent=forceDrawing?'切换官方外观':'切换自绘外观';
+      const appearanceLabel=forceDrawing?'切换官方外观':'切换自绘外观';
+      appearanceToggle.title=appearanceLabel;appearanceToggle.setAttribute('aria-label',appearanceLabel);
       const angle=landscape?(rotation==='rot90'?90:-90):(rotation==='rot180'?180:0);
       const rim=exact?model[3]:12, radius=exact?model[4]:32;
       const screenRatio=canShowOfficial?profile.screenWidth/profile.screenHeight:ratio;
@@ -205,7 +204,7 @@ enum NativePreviewPage {
     fullscreen.hidden=!document.fullscreenEnabled;
     fullscreen.addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.getElementById('viewer').requestFullscreen();}catch{fullscreen.title='浏览器未允许全屏';}});
     document.addEventListener('fullscreenchange',()=>{const label=document.fullscreenElement?'退出全屏':'进入全屏';fullscreen.title=label;fullscreen.setAttribute('aria-label',label);});
-    function showState(text,kind){state.textContent=text;state.title=text;connection.dataset.kind=kind;}
+    function showState(text,kind){state.textContent=text;connection.title=text;connection.dataset.kind=kind;}
     const diagnostic=new URLSearchParams(location.search).has('diagnostics'), samples=[]; let lastSequence=null, failures=0, duplicates=0;
     document.getElementById('diagnostics').hidden=!diagnostic;
     let totals; function resetTotals(){totals={frames:0,first:null,last:null,maxGapMs:0,gapsOver100ms:0,gapsOver250ms:0,slowFrames:[]};} resetTotals();

@@ -10,7 +10,7 @@ const catalog=JSON.parse(readFileSync(new URL('../../assets/preview/catalog.json
 
 function fixture(productType='iPhone13,3') {
   let clock = 0;
-  const elements = Object.fromEntries(['screen', 'state', 'diagnostics', 'metrics', 'device', 'stage', 'bezel', 'shell', 'hardware', 'cutout', 'speaker', 'device-name', 'connection', 'fullscreen', 'appearance-toggle', 'viewer'].map(id => [id, { dataset: {}, style: { setProperty(name,value) { this[name]=value; } }, clientWidth: 1000, clientHeight: 700, events: {}, addEventListener(name, fn) { this.events[name]=fn; }, setAttribute() {} }]));
+  const elements = Object.fromEntries(['screen', 'state', 'diagnostics', 'metrics', 'device', 'stage', 'bezel', 'shell', 'hardware', 'cutout', 'speaker', 'device-name', 'connection', 'fullscreen', 'appearance-toggle', 'viewer'].map(id => [id, { dataset: {}, style: { setProperty(name,value) { this[name]=value; } }, clientWidth: 1000, clientHeight: 700, events: {}, addEventListener(name, fn) { this.events[name]=fn; }, setAttribute(name,value) { this[name]=value; } }]));
   const document = { visibilityState: 'visible', getElementById: id => elements[id], addEventListener: (name, fn) => { if(name==='visibilitychange')document.visibilityChanged = fn; } };
   let report;
   const context = vm.createContext({ document, URLSearchParams, location: { search: '?diagnostics=1' },
@@ -193,14 +193,16 @@ test('temporary appearance comparison switches only decoration and survives rota
   probe.elements.screen.src='blob:unchanged-live-frame';
   toggle.events.click();
   assert.equal(probe.elements.device.dataset.appearance,'drawn');
-  assert.equal(toggle.textContent,'切换官方外观');
+  assert.equal(toggle.title,'切换官方外观');
+  assert.equal(toggle['aria-label'],'切换官方外观');
   probe.layout(960,444,'rot90');
   probe.run(`setDevice(${JSON.stringify({device:{productType:'iPhone13,3'},bezel:catalog.models['iPhone13,3']})})`);
   assert.equal(probe.elements.device.dataset.appearance,'drawn');
   assert.equal(probe.elements.screen.src,'blob:unchanged-live-frame');
   toggle.events.click();
   assert.equal(probe.elements.device.dataset.appearance,'official');
-  assert.equal(toggle.textContent,'切换自绘外观');
+  assert.equal(toggle.title,'切换自绘外观');
+  assert.equal(toggle['aria-label'],'切换自绘外观');
   assert.equal(probe.elements.bezel.style.transform,'translate(-50%,-50%) rotate(90deg)');
   probe.elements.bezel.events.error();
   assert.equal(toggle.hidden,true);
