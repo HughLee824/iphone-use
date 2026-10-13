@@ -4,6 +4,39 @@ import ImageIO
 @testable import IPhoneUseCore
 
 final class NativeCaptureTests: XCTestCase {
+    func testRecordingDefersOnlyMissingFrameRecoveryAndAllowsLaterFreshCapture() throws {
+        var captures = 0, refreshes = 0
+        let png = try screenPNG()
+        for code in ["native_snapshot_freshness_unavailable", "native_snapshot_geometry_unavailable", "native_screenshot_geometry_conflict"] {
+            captures = 0; refreshes = 0
+            let capture = {
+                try NativeCaptureChecks.withOrientationRecovery(capture: { refreshed in
+                    captures += 1
+                    if !refreshed { throw IPhoneUseError(code, "fixture") }
+                    return CapturedObservation(nodes: [], metadata: [:], screenshot: png)
+                }, resynchronize: { refreshes += 1; return true }, recordingActive: { true })
+            }
+            if code == "native_snapshot_freshness_unavailable" {
+                XCTAssertThrowsError(try capture()) {
+                    let failure = $0 as? IPhoneUseError
+                    XCTAssertEqual(failure?.code, code)
+                    XCTAssertEqual(failure?.diagnostics["recordingPreserved"] as? Bool, true)
+                }
+                XCTAssertEqual(captures, 1)
+                XCTAssertEqual(refreshes, 0)
+            } else {
+                XCTAssertEqual(try capture().metadata["orientationResynchronized"] as? Bool, true)
+                XCTAssertEqual(captures, 2)
+                XCTAssertEqual(refreshes, 1)
+            }
+        }
+        let fresh = try NativeCaptureChecks.withOrientationRecovery(capture: { refreshed in
+            XCTAssertFalse(refreshed)
+            return CapturedObservation(nodes: [], metadata: [:], screenshot: png)
+        }, resynchronize: { XCTFail("Fresh capture must retain recording"); return false }, recordingActive: { true })
+        XCTAssertEqual(fresh.screenshot, png)
+    }
+
     func testCaptureFailureRetainsBothParallelReadsAndFailedCommand() throws {
         let png = try screenPNG(width: 12, height: 18)
         for stage in ["checksBefore", "screenshot", "checksAfter"] {
