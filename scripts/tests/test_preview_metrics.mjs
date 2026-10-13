@@ -8,12 +8,12 @@ const script = source.match(/<script>([\s\S]*?)<\/script>/)[1];
 
 const catalog=JSON.parse(readFileSync(new URL('../../assets/preview/catalog.json',import.meta.url),'utf8'));
 
-function fixture(productType='iPhone13,3') {
+function fixture(productType='iPhone13,3', navigator={language:'zh-CN'}) {
   let clock = 0;
-  const elements = Object.fromEntries(['screen', 'state', 'diagnostics', 'metrics', 'device', 'stage', 'bezel', 'shell', 'hardware', 'cutout', 'speaker', 'device-name', 'connection', 'fullscreen', 'appearance-toggle', 'viewer'].map(id => [id, { dataset: {}, style: { setProperty(name,value) { this[name]=value; } }, clientWidth: 1000, clientHeight: 700, events: {}, addEventListener(name, fn) { this.events[name]=fn; }, setAttribute(name,value) { this[name]=value; } }]));
-  const document = { visibilityState: 'visible', getElementById: id => elements[id], addEventListener: (name, fn) => { if(name==='visibilitychange')document.visibilityChanged = fn; } };
+  const elements = Object.fromEntries(['screen', 'state', 'diagnostics', 'metrics', 'device', 'stage', 'bezel', 'shell', 'hardware', 'cutout', 'speaker', 'device-name', 'connection', 'fullscreen', 'appearance-toggle', 'viewer', 'placeholder-label', 'diagnostics-label'].map(id => [id, { dataset: {}, style: { setProperty(name,value) { this[name]=value; } }, clientWidth: 1000, clientHeight: 700, events: {}, addEventListener(name, fn) { this.events[name]=fn; }, setAttribute(name,value) { this[name]=value; } }]));
+  const document = { documentElement:{}, events:{}, visibilityState: 'visible', getElementById: id => elements[id], addEventListener: (name, fn) => { document.events[name]=fn;if(name==='visibilitychange')document.visibilityChanged = fn; } };
   let report;
-  const context = vm.createContext({ document, URLSearchParams, location: { search: '?diagnostics=1' },
+  const context = vm.createContext({ document, navigator, URLSearchParams, location: { search: '?diagnostics=1' },
     ResizeObserver: class { observe() {} }, performance: { now: () => clock }, Date: { now: () => clock },
     requestAnimationFrame: fn => fn(), setInterval: fn => { report = fn; }, setTimeout() {},
     AbortSignal: { timeout() {} }, fetch: () => new Promise(() => {}) });
@@ -21,7 +21,7 @@ function fixture(productType='iPhone13,3') {
   const profile=catalog.models[productType]||null;
   vm.runInContext(`setDevice(${JSON.stringify({device:{productType,name:profile?.name||'Unknown iPhone'},bezel:profile})})`,context);
   return {
-    elements,
+    elements, document,
     run(code) { return vm.runInContext(code,context); },
     layout(w, h, rotation='rot0') {
       elements.screen.naturalWidth=w;elements.screen.naturalHeight=h;
@@ -287,5 +287,34 @@ test('sensor coordinates stay screen-relative through rotations, resizing and mo
       assert.equal(parseFloat(probe.elements.speaker.style.width),m[6].speaker[2]);
       assert.ok(parseFloat(probe.elements.speaker.style.top)>=0,id);
     }
+  }
+});
+
+test('preview labels follow the primary browser language with an English fallback', async () => {
+  for(const [browser,zh] of [
+    [{language:'zh-CN'},true], [{languages:['zh-TW','en-US']},true],
+    [{languages:['en-US','zh-CN'],language:'zh-CN'},false],
+    [{language:'ja-JP'},false], [{languages:[],language:'zh-HK'},true], [{},false]
+  ]) {
+    const p=fixture('iPhone13,3',browser), e=p.elements;
+    assert.equal(p.document.documentElement.lang,zh?'zh-CN':'en');
+    assert.equal(p.document.title,zh?'iPhone-use · 实时预览':'iPhone-use · Live preview');
+    assert.equal(e.screen.alt,zh?'iPhone 实时画面':'Live iPhone screen');
+    assert.equal(e.connection.title,zh?'正在连接…':'Connecting…');
+    assert.equal(e['placeholder-label'].textContent,zh?'等待手机画面':'Waiting for iPhone screen');
+    assert.equal(e['diagnostics-label'].textContent,zh?'浏览器显示统计（最近 1800 帧）':'Browser display metrics (last 1,800 frames)');
+    e['appearance-toggle'].events.click();
+    assert.equal(e['appearance-toggle'].title,zh?'切换官方外观':'Use official frame');
+    assert.equal(e['appearance-toggle']['aria-label'],e['appearance-toggle'].title);
+    p.document.fullscreenElement={};p.document.events.fullscreenchange();
+    assert.equal(e.fullscreen.title,zh?'退出全屏':'Exit fullscreen');
+    await e.fullscreen.events.click(); // No fullscreen API in this fixture: exercise failure label.
+    assert.equal(e.fullscreen.title,zh?'浏览器未允许全屏':'Fullscreen unavailable in this browser');
+    assert.equal(e.fullscreen['aria-label'],e.fullscreen.title);
+    await p.run("fetch=async()=>({ok:true,json:async()=>({mediaHealthy:false,error:'native_media_unhealthy'})});health()");
+    assert.equal(e.connection.title,(zh?'连接不可用':'Connection unavailable')+': native_media_unhealthy');
+    assert.equal(e.state.textContent,e.connection.title);
+    await p.run("fetch=async()=>{throw Error()};health()");
+    assert.equal(e.connection.title,zh?'预览已停止或连接断开':'Preview stopped or disconnected');
   }
 });

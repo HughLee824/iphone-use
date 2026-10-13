@@ -29,10 +29,10 @@ enum NativePreviewPage {
 
     static let html = """
     <!doctype html>
-    <html lang="zh-CN">
+    <html lang="en">
     <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
     <link rel="icon" type="image/png" sizes="64x64" href="favicon.png">
-    <meta name="color-scheme" content="light dark"><title>iPhone-use · 实时预览</title>
+    <meta name="color-scheme" content="light dark"><title>iPhone-use · Live preview</title>
     <style>
     *{box-sizing:border-box} [hidden]{display:none!important}
     :root{color-scheme:light dark;--bg:#e5e9ef;--stage-center:#f8f9fb;--stage-mid:#edf0f4;--text:#242933;--muted:#596373;--secondary:#465263;--line:#1d2c401c;--header:#f5f7fabd;--button:#ffffff8c;--hover:#ffffff;--button-line:#263a542e;--focus:#405dc0;--live:#287750;--waiting:#94601d;--error:#b63b35;--shadow:#1e304329;font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);background:var(--bg)}
@@ -74,11 +74,11 @@ enum NativePreviewPage {
     @media(max-height:550px) and (min-width:701px){header{min-height:54px;padding:10px 24px}}
     </style></head>
     <body><div class="viewer" id="viewer">
-    <header><div class="brand"><div class="connection" id="connection" data-kind="waiting" role="status" title="正在连接…"><svg class="mark" viewBox="0 0 28 28" fill="none" aria-hidden="true"><rect x="7" y="2" width="14" height="24" rx="4" stroke="currentColor" stroke-width="1.5"/><path d="M12 5h4M12 23h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span id="state" class="sr-only">正在连接…</span></div><div><h1>iPhone-use</h1><div id="device-name">iPhone</div></div></div>
-    <div class="toolbar"><button id="appearance-toggle" hidden title="切换自绘外观" aria-label="切换自绘外观"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4.5" y="1.5" width="11" height="17" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="M10 2v16M10 5h3M10 8h3M10 11h3M10 14h3" stroke="currentColor" stroke-width="1.2"/></svg></button><button id="fullscreen" title="进入全屏" aria-label="进入全屏"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></header>
-    <main><div id="stage"><div id="device" data-ready="false"><div id="shell" hidden aria-hidden="true"><i class="side-key action-key"></i><i class="side-key volume-up"></i><i class="side-key volume-down"></i><i class="side-key power-key"></i><i class="side-key camera-key"></i><i class="antenna a"></i><i class="antenna b"></i><i class="antenna c"></i><i class="antenna d"></i></div><div id="hardware" hidden aria-hidden="true"><i id="speaker"></i><i id="cutout" hidden></i></div><img id="screen" alt="iPhone 实时画面" draggable="false"><div id="placeholder"><svg width="32" height="44" viewBox="0 0 32 44" fill="none" aria-hidden="true"><rect x="4" y="2" width="24" height="40" rx="6" stroke="currentColor" stroke-width="1.5"/><path d="M13 6h6M13 38h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span class="sr-only">等待手机画面</span></div><img id="bezel" hidden alt="" aria-hidden="true" draggable="false"></div></div>
+    <header><div class="brand"><div class="connection" id="connection" data-kind="waiting" role="status" title="Connecting…"><svg class="mark" viewBox="0 0 28 28" fill="none" aria-hidden="true"><rect x="7" y="2" width="14" height="24" rx="4" stroke="currentColor" stroke-width="1.5"/><path d="M12 5h4M12 23h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span id="state" class="sr-only">Connecting…</span></div><div><h1>iPhone-use</h1><div id="device-name">iPhone</div></div></div>
+    <div class="toolbar"><button id="appearance-toggle" hidden title="Use drawn frame" aria-label="Use drawn frame"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4.5" y="1.5" width="11" height="17" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="M10 2v16M10 5h3M10 8h3M10 11h3M10 14h3" stroke="currentColor" stroke-width="1.2"/></svg></button><button id="fullscreen" title="Enter fullscreen" aria-label="Enter fullscreen"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></header>
+    <main><div id="stage"><div id="device" data-ready="false"><div id="shell" hidden aria-hidden="true"><i class="side-key action-key"></i><i class="side-key volume-up"></i><i class="side-key volume-down"></i><i class="side-key power-key"></i><i class="side-key camera-key"></i><i class="antenna a"></i><i class="antenna b"></i><i class="antenna c"></i><i class="antenna d"></i></div><div id="hardware" hidden aria-hidden="true"><i id="speaker"></i><i id="cutout" hidden></i></div><img id="screen" alt="Live iPhone screen" draggable="false"><div id="placeholder"><svg width="32" height="44" viewBox="0 0 32 44" fill="none" aria-hidden="true"><rect x="4" y="2" width="24" height="40" rx="6" stroke="currentColor" stroke-width="1.5"/><path d="M13 6h6M13 38h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span id="placeholder-label" class="sr-only">Waiting for iPhone screen</span></div><img id="bezel" hidden alt="" aria-hidden="true" draggable="false"></div></div>
     </main>
-    </div><details id="diagnostics" hidden><summary>浏览器显示统计（最近 1800 帧）</summary><pre id="metrics"></pre></details>
+    </div><details id="diagnostics" hidden><summary id="diagnostics-label">Browser display metrics (last 1,800 frames)</summary><pre id="metrics"></pre></details>
     <script>
 
     let objectURL; const screen=document.getElementById('screen'), state=document.getElementById('state');
@@ -87,6 +87,29 @@ enum NativePreviewPage {
     const cutout=document.getElementById('cutout'), speaker=document.getElementById('speaker');
     const connection=document.getElementById('connection'), fullscreen=document.getElementById('fullscreen');
     const appearanceToggle=document.getElementById('appearance-toggle');
+    // Use the primary browser language, not any secondary preference in its list.
+    const language=navigator.languages?.[0]||navigator.language||'en';
+    const chinese=/^zh(?:-|$)/i.test(language);
+    const text=chinese?{
+      title:'iPhone-use · 实时预览',connecting:'正在连接…',drawn:'切换自绘外观',official:'切换官方外观',
+      enterFullscreen:'进入全屏',exitFullscreen:'退出全屏',fullscreenDenied:'浏览器未允许全屏',
+      screen:'iPhone 实时画面',placeholder:'等待手机画面',diagnostics:'浏览器显示统计（最近 1800 帧）',
+      unavailable:'连接不可用',firstFrame:'等待首帧',waiting:'已连接 · 等待新画面',recovering:'正在恢复画面…',
+      live:'实时画面',disconnected:'预览已停止或连接断开',
+      metricsNote:'图片加载后的 rAF 绘制机会；页面可见性变化时重置；不代表物理屏幕呈现时间或端到端延迟'
+    }:{
+      title:'iPhone-use · Live preview',connecting:'Connecting…',drawn:'Use drawn frame',official:'Use official frame',
+      enterFullscreen:'Enter fullscreen',exitFullscreen:'Exit fullscreen',fullscreenDenied:'Fullscreen unavailable in this browser',
+      screen:'Live iPhone screen',placeholder:'Waiting for iPhone screen',diagnostics:'Browser display metrics (last 1,800 frames)',
+      unavailable:'Connection unavailable',firstFrame:'Waiting for first frame',waiting:'Connected · Waiting for a new frame',recovering:'Recovering preview…',
+      live:'Live preview',disconnected:'Preview stopped or disconnected',
+      metricsNote:'Image load + rAF opportunity; resets on visibility change; not physical display or glass-to-glass latency'
+    };
+    document.documentElement.lang=chinese?'zh-CN':'en';document.title=text.title;screen.alt=text.screen;
+    document.getElementById('placeholder-label').textContent=text.placeholder;
+    document.getElementById('diagnostics-label').textContent=text.diagnostics;
+    function labelButton(button,label){button.title=label;button.setAttribute('aria-label',label);}
+    labelButton(fullscreen,text.enterFullscreen);showState(text.connecting,'waiting');
     let forceDrawing=false;
     let artworkAvailable=true, rotation='rot0', layoutKey='', lastFrameAt=0;
     let connectedDevice={}, profile=null, identityKey='';
@@ -145,8 +168,7 @@ enum NativePreviewPage {
       const key=[w,h,rotation,artworkAvailable,forceDrawing,identityKey,stage.clientWidth,stage.clientHeight].join(':');
       if(key===layoutKey)return;layoutKey=key;
       appearanceToggle.hidden=!canShowOfficial;
-      const appearanceLabel=forceDrawing?'切换官方外观':'切换自绘外观';
-      appearanceToggle.title=appearanceLabel;appearanceToggle.setAttribute('aria-label',appearanceLabel);
+      labelButton(appearanceToggle,forceDrawing?text.official:text.drawn);
       const angle=landscape?(rotation==='rot90'?90:-90):(rotation==='rot180'?180:0);
       const rim=exact?model[3]:12, radius=exact?model[4]:32;
       const screenRatio=canShowOfficial?profile.screenWidth/profile.screenHeight:ratio;
@@ -202,8 +224,8 @@ enum NativePreviewPage {
     bezel.addEventListener('error',()=>{artworkAvailable=false;layout();});
     new ResizeObserver(layout).observe(stage);layout();
     fullscreen.hidden=!document.fullscreenEnabled;
-    fullscreen.addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.getElementById('viewer').requestFullscreen();}catch{fullscreen.title='浏览器未允许全屏';}});
-    document.addEventListener('fullscreenchange',()=>{const label=document.fullscreenElement?'退出全屏':'进入全屏';fullscreen.title=label;fullscreen.setAttribute('aria-label',label);});
+    fullscreen.addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.getElementById('viewer').requestFullscreen();}catch{labelButton(fullscreen,text.fullscreenDenied);}});
+    document.addEventListener('fullscreenchange',()=>{labelButton(fullscreen,document.fullscreenElement?text.exitFullscreen:text.enterFullscreen);});
     function showState(text,kind){state.textContent=text;connection.title=text;connection.dataset.kind=kind;}
     const diagnostic=new URLSearchParams(location.search).has('diagnostics'), samples=[]; let lastSequence=null, failures=0, duplicates=0;
     document.getElementById('diagnostics').hidden=!diagnostic;
@@ -212,9 +234,9 @@ enum NativePreviewPage {
     function presented(sequence,age,started,timing={}){const loaded=performance.now();if(!diagnostic)return;requestAnimationFrame(()=>{if(document.visibilityState!=='visible')return;if(sequence===lastSequence){duplicates++;return;}lastSequence=sequence;const at=Date.now();if(totals.last!==null){const gap=at-totals.last;totals.maxGapMs=Math.max(totals.maxGapMs,gap);if(gap>100)totals.gapsOver100ms++;if(gap>250)totals.gapsOver250ms++;if(gap>100){totals.slowFrames.push({at,gapMs:gap,frameAgeAtResponseMs:age,...timing,rafWaitMs:performance.now()-loaded});if(totals.slowFrames.length>120)totals.slowFrames.shift();}}totals.frames++;if(totals.first===null)totals.first=at;totals.last=at;samples.push({at,sequence,frameAgeAtResponseMs:age,requestToRafMs:performance.now()-started,...timing,rafWaitMs:performance.now()-loaded});if(samples.length>1800)samples.shift();});}
     let sequence = -1;
     async function frames(){const started=performance.now();let retry=0;try{const r=await fetch('frame?after='+sequence,{cache:'no-store',signal:AbortSignal.timeout(3000)});if(!r.ok)throw Error();sequence=Number(r.headers.get('X-Preview-Sequence'));const frameRotation=r.headers.get('X-Preview-Rotation');const age=Number(r.headers.get('X-Preview-Frame-Age-Ms')),encodeMs=Number(r.headers.get('X-Preview-Encode-Ms')),next=URL.createObjectURL(await r.blob()),received=performance.now();const loaded=new Promise((resolve,reject)=>{screen.onload=resolve;screen.onerror=reject;});screen.src=next;try{await loaded;rotation=frameRotation||rotation;device.dataset.ready='true';lastFrameAt=Date.now();layout();presented(sequence,age,started,{requestMs:received-started,imageLoadMs:performance.now()-received,encodeMs});screen.style.opacity=1;}finally{if(objectURL)URL.revokeObjectURL(objectURL);objectURL=next;}}catch{failures++;screen.style.opacity=.25;retry=100;}setTimeout(frames,retry);}
-    async function health(){try{const r=await fetch('state',{cache:'no-store',signal:AbortSignal.timeout(3000)});if(!r.ok)throw Error();const s=await r.json();setDevice(s);if(s.error||!s.mediaHealthy){showState(s.error||'连接不可用','error');screen.style.opacity=.25;}else if(s.frameAgeSeconds==null){showState('等待首帧','waiting');}else if(s.frameAgeSeconds>2){showState('已连接 · 等待新画面','waiting');}else if(!lastFrameAt||Date.now()-lastFrameAt>4000){showState('正在恢复画面…','waiting');}else{showState('实时画面','live');}}catch{showState('预览已停止或连接断开','error');screen.style.opacity=.25;}setTimeout(health,1000);}
+    async function health(){try{const r=await fetch('state',{cache:'no-store',signal:AbortSignal.timeout(3000)});if(!r.ok)throw Error();const s=await r.json();setDevice(s);if(s.error||!s.mediaHealthy){showState(s.error?text.unavailable+': '+s.error:text.unavailable,'error');screen.style.opacity=.25;}else if(s.frameAgeSeconds==null){showState(text.firstFrame,'waiting');}else if(s.frameAgeSeconds>2){showState(text.waiting,'waiting');}else if(!lastFrameAt||Date.now()-lastFrameAt>4000){showState(text.recovering,'waiting');}else{showState(text.live,'live');}}catch{showState(text.disconnected,'error');screen.style.opacity=.25;}setTimeout(health,1000);}
     frames();health();
-    if(diagnostic)setInterval(()=>{const gaps=samples.slice(1).map((s,i)=>s.at-samples[i].at).sort((a,b)=>a-b), span=samples.length>1?samples.at(-1).at-samples[0].at:0;const m=document.getElementById('metrics');m.textContent=JSON.stringify({total:{...totals,fps:totals.last>totals.first?(totals.frames-1)*1000/(totals.last-totals.first):0},visibleNewFrames:samples.length,fps:span?(samples.length-1)*1000/span:0,lastNewFrameAgeMs:samples.length?Date.now()-samples.at(-1).at:null,gapP95Ms:gaps[Math.floor(gaps.length*.95)]||0,maxGapMs:gaps.at(-1)||0,gapsOver250ms:gaps.filter(x=>x>250).length,failures,duplicates,note:'Image load + rAF opportunity; resets on visibility change; not physical display or glass-to-glass latency'},null,2);m.dataset.samples=JSON.stringify(samples);},1000);
+    if(diagnostic)setInterval(()=>{const gaps=samples.slice(1).map((s,i)=>s.at-samples[i].at).sort((a,b)=>a-b), span=samples.length>1?samples.at(-1).at-samples[0].at:0;const m=document.getElementById('metrics');m.textContent=JSON.stringify({total:{...totals,fps:totals.last>totals.first?(totals.frames-1)*1000/(totals.last-totals.first):0},visibleNewFrames:samples.length,fps:span?(samples.length-1)*1000/span:0,lastNewFrameAgeMs:samples.length?Date.now()-samples.at(-1).at:null,gapP95Ms:gaps[Math.floor(gaps.length*.95)]||0,maxGapMs:gaps.at(-1)||0,gapsOver250ms:gaps.filter(x=>x>250).length,failures,duplicates,note:text.metricsNote},null,2);m.dataset.samples=JSON.stringify(samples);},1000);
         </script></body></html>
     """
 }
