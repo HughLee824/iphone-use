@@ -11,6 +11,7 @@ import UIKit
 private struct TextProbe: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIViewController {
         if ProcessInfo.processInfo.arguments.contains("--preview-motion-probe") { return PreviewMotionProbeController() }
+        if ProcessInfo.processInfo.arguments.contains("--preview-rotation-probe") { return RotationProbeController() }
         return ProcessInfo.processInfo.arguments.contains("--screen-guard-probe") ? ScreenGuardProbeController() : TextProbeController()
     }
     func updateUIViewController(_ controller: UIViewController, context: Context) {}
@@ -340,6 +341,9 @@ private final class RotationProbeController: UIViewController, UIContextMenuInte
     private var menuChoices = 0, starts = 0, ends = 0, drops = 0
     private var rotationError = ""
     private var delayedRotation: DispatchWorkItem?
+    private var automaticRotations: [DispatchWorkItem] = []
+    private var automaticStep = 0
+    deinit { automaticRotations.forEach { $0.cancel() } }
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .allButUpsideDown }
     override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation { .portrait }
 
@@ -359,7 +363,9 @@ private final class RotationProbeController: UIViewController, UIContextMenuInte
             self.delayedRotation = work; DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: work)
         }, for: .touchUpInside); controls.addArrangedSubview(delayed)
         let close = UIButton(type: .system); close.setTitle("Close", for: .normal)
-        close.addAction(UIAction { [weak self] _ in self?.delayedRotation?.cancel(); self?.dismiss(animated: true) }, for: .touchUpInside)
+        close.addAction(UIAction { [weak self] _ in
+            self?.delayedRotation?.cancel(); self?.automaticRotations.forEach { $0.cancel() }; self?.dismiss(animated: true)
+        }, for: .touchUpInside)
         controls.addArrangedSubview(close)
         for i in 0..<4 {
             let button = UIButton(type: .system); button.backgroundColor = .systemTeal.withAlphaComponent(0.2)
@@ -377,6 +383,20 @@ private final class RotationProbeController: UIViewController, UIContextMenuInte
         destination.addInteraction(UIDropInteraction(delegate: self))
         facts.numberOfLines = 0; facts.textAlignment = .center; facts.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
         view.addSubview(facts); refresh()
+    }
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard ProcessInfo.processInfo.arguments.contains("--preview-rotation-probe"), automaticRotations.isEmpty else { return }
+        // App-driven rotation isolates passive preview recovery from the CLI's
+        // mandatory post-input observation. No capture or control endpoint.
+        let cycle: [UIInterfaceOrientationMask] = [.landscapeLeft, .landscapeRight, .landscapeLeft, .landscapeRight, .portrait]
+        for (index, mask) in Array(repeating: cycle, count: 3).flatMap({ $0 }).enumerated() {
+            let work = DispatchWorkItem { [weak self] in
+                self?.automaticStep = index + 1; self?.rotate(mask); self?.refresh()
+            }
+            automaticRotations.append(work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 20 + Double(index) * 10, execute: work)
+        }
     }
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
@@ -405,6 +425,7 @@ private final class RotationProbeController: UIViewController, UIContextMenuInte
         for (i, target) in targets.enumerated() { target.setTitle("\(["A", "B", "C", "D"][i]): \(hits[i])", for: .normal) }
         let orientation = view.window?.windowScene?.interfaceOrientation.rawValue ?? 0
         facts.text = "Rotation Probe / UIKit \(orientation) / \(Int(view.bounds.width))x\(Int(view.bounds.height))\nMenu \(menuChoices) / Starts \(starts) / Ends \(ends) / Drops \(drops)" + (rotationError.isEmpty ? "" : "\n" + rotationError)
+        if !automaticRotations.isEmpty { facts.text = (facts.text ?? "") + "\nAuto rotation \(automaticStep)/15" }
     }
     func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
         UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in

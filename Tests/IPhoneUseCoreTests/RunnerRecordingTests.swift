@@ -3,12 +3,16 @@ import XCTest
 
 private final class RunnerRecordingSourceStub: NativeRecordingSource {
     var attached = false
+    var clockConfirmed = true
+    var healthy = true
     func recordingConfiguration() -> [String: Any] {
-        ["RxPayloadType": 100, "TilesPerFrame": 1, "SRTPCipherSuite": 0, "RTPClockRate": Int32(24000)]
+        var config: [String: Any] = ["RxPayloadType": 100, "TilesPerFrame": 1, "SRTPCipherSuite": 0]
+        if clockConfirmed { config["RTPClockRate"] = Int32(24000) }
+        return config
     }
     func setVideoHandler(_ handler: ((Data) -> Void)?) { attached = handler != nil }
     func requestKeyframe() {}
-    func health() -> [String: Any] { ["healthy": true] }
+    func health() -> [String: Any] { ["healthy": healthy] }
 }
 
 private final class RunnerRecordingConnectionStub: RunnerRecordingConnection {
@@ -141,6 +145,41 @@ final class RunnerRecordingTests: XCTestCase {
                 _ = try owner.stopPreview()
             }
             XCTAssertEqual(connection.closed, 1)
+        }
+    }
+
+    func testUnconfirmedRecordingClockPreservesOnlyHealthyExistingPreview() throws {
+        for (withPreview, healthy) in [(true, true), (true, false), (false, true)] {
+            let connection = RunnerRecordingConnectionStub()
+            var opens = 0
+            let owner = RunnerNativeRecording(root: try root(), cancellation: NativeCancellation()) {
+                opens += 1; return connection
+            }
+            defer { _ = owner.close() }
+            let preview = withPreview ? try owner.startPreview() : nil
+            connection.receiver.clockConfirmed = false
+            connection.receiver.healthy = healthy
+            XCTAssertThrowsError(try owner.start(duration: 30)) {
+                XCTAssertEqual(($0 as? IPhoneUseError)?.code, "native_recording_format_unavailable")
+            }
+            XCTAssertFalse(connection.receiver.attached, "No writer or packet subscription was started")
+            XCTAssertEqual(opens, 1, "Rejected starts never reconnect automatically")
+            if withPreview && healthy {
+                XCTAssertEqual(connection.closed, 0)
+                XCTAssertEqual(owner.previewStatus["url"] as? String, preview?["url"] as? String)
+                XCTAssertNil(owner.status()["reconnectRequired"])
+                XCTAssertEqual(owner.status()["state"] as? String, "idle")
+                connection.receiver.clockConfirmed = true
+                let started = try owner.start(duration: 30)
+                XCTAssertEqual(opens, 1)
+                _ = try owner.stop(id: XCTUnwrap(started["recordingID"] as? String))
+                XCTAssertEqual(connection.closed, 0)
+            } else {
+                XCTAssertEqual(connection.closed, 1)
+                XCTAssertEqual(owner.status()["reconnectRequired"] as? Bool, true)
+                XCTAssertThrowsError(try owner.start(duration: 30))
+                XCTAssertEqual(opens, 1)
+            }
         }
     }
 

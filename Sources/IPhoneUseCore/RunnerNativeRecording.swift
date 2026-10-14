@@ -209,6 +209,14 @@ final class RunnerNativeRecording {
             currentRecordingID = result["recordingID"] as? String
             return result
         } catch {
+            // A rebound preview can decode before RTCP has confirmed the
+            // recording clock. This pre-writer rejection must not tear down a
+            // healthy shared preview or poison its next explicit recording.
+            if (error as? IPhoneUseError)?.code == "native_recording_format_unavailable",
+               preview != nil, !recording.isActive,
+               connection?.source.health()["healthy"] as? Bool == true {
+                throw error
+            }
             failure = String(describing: error)
             preview?.suspend(failure!); preview?.close(); preview = nil
             releaseMedia()
