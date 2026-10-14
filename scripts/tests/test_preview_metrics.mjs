@@ -8,7 +8,7 @@ const script = source.match(/<script>([\s\S]*?)<\/script>/)[1];
 
 const catalog=JSON.parse(readFileSync(new URL('../../assets/preview/catalog.json',import.meta.url),'utf8'));
 
-function fixture(productType='iPhone13,3', navigator={language:'zh-CN'}) {
+function fixture(productType='iPhone13,3', navigator={language:'zh-CN'}, appearanceComparisonEnabled=true) {
   let clock = 0;
   const elements = Object.fromEntries(['screen', 'state', 'diagnostics', 'metrics', 'device', 'stage', 'bezel', 'shell', 'hardware', 'cutout', 'speaker', 'device-name', 'connection', 'fullscreen', 'appearance-toggle', 'viewer', 'placeholder-label', 'diagnostics-label', 'identity', 'toolbar', 'chrome'].map(id => [id, { dataset: {}, style: { setProperty(name,value) { this[name]=value; } }, clientWidth: 1000, clientHeight: 700, getBoundingClientRect() { return {left:0,right:0,top:0,bottom:0}; }, events: {}, addEventListener(name, fn) { this.events[name]=fn; }, setAttribute(name,value) { this[name]=value; } }]));
   const document = { documentElement:{}, events:{}, visibilityState: 'visible', getElementById: id => elements[id], addEventListener: (name, fn) => { document.events[name]=fn;if(name==='visibilitychange')document.visibilityChanged = fn; } };
@@ -17,7 +17,7 @@ function fixture(productType='iPhone13,3', navigator={language:'zh-CN'}) {
     ResizeObserver: class { observe() {} }, performance: { now: () => clock }, Date: { now: () => clock },
     requestAnimationFrame: fn => fn(), setInterval: fn => { report = fn; }, setTimeout() {},
     AbortSignal: { timeout() {} }, fetch: () => new Promise(() => {}) });
-  vm.runInContext(script, context);
+  vm.runInContext(script.replace('\\(appearanceComparisonEnabled ? "true" : "false")', String(appearanceComparisonEnabled)), context);
   const profile=catalog.models[productType]||null;
   vm.runInContext(`setDevice(${JSON.stringify({device:{productType,name:profile?.name||'Unknown iPhone'},bezel:profile})})`,context);
   return {
@@ -211,6 +211,32 @@ test('temporary appearance comparison switches only decoration and survives rota
     const fallback=fixture(id);fallback.layout(444,960);
     assert.equal(fallback.elements['appearance-toggle'].hidden,true);
   }
+});
+
+test('production hides comparison while preserving official-first selection and drawn fallback', () => {
+  for(const [id, profile] of Object.entries(catalog.models)) {
+    const probe=fixture(id, {language:'en'}, false), toggle=probe.elements['appearance-toggle'];
+    for(const rotation of ['rot0','rot90','rot270']) {
+      const landscape=rotation!=='rot0';
+      probe.layout(landscape?profile.screenHeight:profile.screenWidth,landscape?profile.screenWidth:profile.screenHeight,rotation);
+      assert.equal(toggle.hidden,true,id);
+      assert.equal(probe.elements.device.dataset.appearance,'official',id);
+      toggle.events.click();
+      assert.equal(probe.elements.device.dataset.appearance,'official',id);
+    }
+    probe.elements.bezel.events.error();
+    assert.equal(probe.elements.device.dataset.appearance,'drawn',id);
+    assert.equal(toggle.hidden,true,id);
+  }
+  for(const [id, expected] of [['iPhone18,1','drawn'],['iPhone19,2','drawn'],['iPhone99,1','generic']]) {
+    const probe=fixture(id, {language:'en'}, false);probe.layout(1206,2622);
+    assert.equal(probe.elements.device.dataset.appearance,expected,id);
+    assert.equal(probe.elements['appearance-toggle'].hidden,true,id);
+  }
+  const missing=fixture('iPhone13,3', {language:'en'}, false);
+  missing.run('setDevice({device:{productType:"iPhone13,3"},bezel:null})');missing.layout(1170,2532);
+  assert.equal(missing.elements.device.dataset.appearance,'drawn');
+  assert.equal(missing.elements['appearance-toggle'].hidden,true);
 });
 
 test('appearance comparison preserves video size and centre across models, viewports and rotations', () => {

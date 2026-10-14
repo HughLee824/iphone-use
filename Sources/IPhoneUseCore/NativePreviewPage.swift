@@ -5,7 +5,9 @@ private final class NativePreviewAssetAnchor: NSObject {}
 // Artwork is loaded once, outside the video encoder. No network fetch, source
 // path embedded in the binary, or dependency on the caller's working directory.
 enum NativePreviewPage {
-    static func assetDirectory(executable: URL? = Bundle(for: NativePreviewAssetAnchor.self).executableURL) -> URL? {
+    // A symlink-launched CLI can have no executable URL on its class bundle.
+    // Keep the class bundle for XCTest, then resolve the CLI's main entry point.
+    static func assetDirectory(executable: URL? = Bundle(for: NativePreviewAssetAnchor.self).executableURL ?? Bundle.main.executableURL) -> URL? {
         guard let executable else { return nil }
         let binary = executable.resolvingSymlinksInPath()
         let installed = binary.deletingLastPathComponent().deletingLastPathComponent()
@@ -23,6 +25,12 @@ enum NativePreviewPage {
         }
         return nil
     }
+
+    #if DEBUG
+    static let appearanceComparisonEnabled = true
+    #else
+    static let appearanceComparisonEnabled = false
+    #endif
 
     // Byte-for-byte copy of assets/brand/favicon-64.png, embedded for relocatable/offline previews.
     static let faviconPNG = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAACXBIWXMAACxLAAAsSwGlPZapAAADBUlEQVRoge2aMU/qUBTH+Ral9A1icCCyaAuExMWJyRg/gYaErYsgkcUokjCU/RJGYTAhUpPOBJqYOOnAwNSFvZSWAIJK6EseyU3zfEItXMt99rdyzj/nV24bSI9LxxyXjjkuHXNc+k8WkGW5UqlwHHdtCY7jKpVKp9OxQUCW5UQi4fF4iKXxeDzJZNKyhhUBSZIYhiFWCsMwkiR9h4CmaaFQiEBAOBxWVRW5wMXFBYGMq6srtAIvLy8bGxsL5zg5OeF5XjDA8/zx8fHCRq/XOxqNEArU63UzF7LX633sVVXVTK8oiggFSqWSmSFKpdJkMjE2TiaTm5sbM73lchmhAACAQAwAwBH4HOcbWAxwjtA8nCO0GOAcoXk4R+h/OUK//oCrAMuy4/F4NBqxLIulAPz3KMsyfgKbm5swbTwe4ydA0zRM0zQNP4FoNArTJEnCTyAWi8E0URTxEygUCjCtWCziJ/D8/AzT8HuM+ny+9/d3mEbTNGYC5+fn8+9gYs0FWq0WjMrlcpgJHB4ewpy3t7dAIICTgNvtfnp6gjmCIHxWCdZT4PT01JhzcHCAk0AgEJBlGYbc39/PKQbrJkBR1OPjI0wYDoe7u7s4Cdze3hoTstns/HqwPgJut7tYLBrba7UaSZJ4CFAUVa1Wjb2SJG1tbS1sBOsgwDCM8dzrut7tdiORiJleYLtAMpns9/vGLk3TotGomekJGwVIkozH481m86+Wdru9t7dncnrCFgGSJFOpVLvd/ljfaDT8fr/56QlbBDiO+1g5GAysvc8E3y/w8PBgrJlOp4Ig7OzsWJiesEUgnU7PPn19feV5fn9/39rodt7ER0dHLMtub28TSwNsf4w6AsD+F93LUEb6otvkqsEyiEhXDUwue1jGi3rZQ9f1y8tLdAKZTOar83xZQFXVcDiMYvpIJPLPNZcVC8x+2QeDwdVOHwqFvmnlbIaiKGdnZytZ+qMoKpVKdbtdG9YuFUW5u7vL5/PW1i7z+Xy1WlUUZZkZfvbi6zrg0jHHZfcAy/Ib2Fmu6PHCFAAAAAAASUVORK5CYII=")!
@@ -118,6 +126,7 @@ enum NativePreviewPage {
     const cutout=document.getElementById('cutout'), speaker=document.getElementById('speaker');
     const connection=document.getElementById('connection'), fullscreen=document.getElementById('fullscreen');
     const appearanceToggle=document.getElementById('appearance-toggle'), toolbar=document.getElementById('toolbar');
+    const appearanceComparisonEnabled=\(appearanceComparisonEnabled ? "true" : "false");
     const chrome=document.getElementById('chrome'), identity=document.getElementById('identity');
     // Use the primary browser language, not any secondary preference in its list.
     const language=navigator.languages?.[0]||navigator.language||'en';
@@ -210,7 +219,7 @@ enum NativePreviewPage {
       if(deviceName.textContent!==name){deviceName.textContent=name;deviceName.title=name;}
       const key=[w,h,rotation,artworkAvailable,forceDrawing,identityKey,stage.clientWidth,stage.clientHeight,identity.clientWidth,toolbar.clientWidth,chrome.clientHeight].join(':');
       if(key===layoutKey)return;layoutKey=key;
-      appearanceToggle.hidden=!canShowOfficial;toolbar.hidden=appearanceToggle.hidden&&fullscreen.hidden;
+      appearanceToggle.hidden=!appearanceComparisonEnabled||!canShowOfficial;toolbar.hidden=appearanceToggle.hidden&&fullscreen.hidden;
       labelButton(appearanceToggle,forceDrawing?text.official:text.drawn);
       const angle=landscape?(rotation==='rot90'?90:-90):(rotation==='rot180'?180:0);
       const rim=exact?model[3]:12, radius=exact?model[4]:32;
@@ -265,7 +274,7 @@ enum NativePreviewPage {
         }
       }
     }
-    appearanceToggle.addEventListener('click',()=>{forceDrawing=!forceDrawing;layout();});
+    appearanceToggle.addEventListener('click',()=>{if(appearanceComparisonEnabled){forceDrawing=!forceDrawing;layout();}});
     bezel.addEventListener('error',()=>{artworkAvailable=false;layout();});
     fullscreen.hidden=!document.fullscreenEnabled;
     const layoutObserver=new ResizeObserver(layout);
