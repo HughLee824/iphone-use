@@ -226,7 +226,7 @@ final class LiveSessionTests: XCTestCase {
         if op == "preview-geometry" {
             // Independent of CoreDevice's display/screenshot cache. No AX walk,
             // PNG encoding, input, or change to the selected application.
-            let image = XCUIDevice.shared.screenshot().image
+            let image = XCUIScreen.main.screenshot().image
             guard let pixels = image.cgImage else { throw CommandError("preview_geometry_unavailable") }
             let sideways: Bool
             switch image.imageOrientation {
