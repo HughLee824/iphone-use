@@ -1,6 +1,6 @@
 # iPhone-use 发布包安装
 
-> 截至 2026-10-11，[iPhone-use 0.2.1](https://github.com/HughLee824/iphone-use/releases/tag/v0.2.1) 已正式发布，Homebrew formula 与网站已更新。Release 附带插件 0.1.6 ZIP，Git marketplace 插件为 0.1.7；CLI 与插件独立更新，具体版本与验证范围见[渠道状态](rename-to-iphone-use.md)。旧 AgentSoma 安装包不会因改名而获得标准模式。本文后续修订不改写已发布安装包内的 README 或任何资产。
+> 截至 2026-10-14，[iPhone-use 0.3.0](https://github.com/HughLee824/iphone-use/releases/tag/v0.3.0) 已正式发布，Homebrew formula 已更新，Release 附带插件 0.1.7 ZIP。0.3.1 正在准备草稿，尚未正式发布；公共 Tap 仍为 0.3.0。CLI 与插件独立更新。旧 AgentSoma 安装包不会因改名而获得标准模式。本文后续修订不改写已发布安装包内的 README 或任何资产。
 
 
 iPhone-use 为外部 agent 提供真实 iPhone 的观察和操作能力。本包同时提供标准模式（截图 + 原生 HID）与 Runner 模式（XCTest）。普通用户先用标准模式，无需 Runner 签名或 setup；配套预编译 iOS Runner 供选择 Runner 模式的开发者在本机重签，不编译源码。
@@ -85,7 +85,9 @@ iphone-use --session "$SESSION" disconnect
 
 示例中的设备、会话、观察 ID 和坐标都必须替换为当前真实值。`--x/--y` 接收屏幕点：`x = screen.x + pixelX × screen.width / imageWidth`，y 同理，尺寸来自本次观察；不能固定除以 3，也不能直接传缩放预览坐标。新用户省略 `--mode` 时默认 standard；旧配置可能保留 runner。单次 `--mode` 不改默认值，需要持久选择时使用 `iphone-use config set mode standard`，保存在 `~/.iphone-use/config.json`。标准模式不安装或启动 Runner，不使用已有签名准备记录，也不隐式切换到 XCTest。
 
-标准模式的观察和动作前校验都使用 Apple PNG，不为截图启动或常驻媒体流。只有开始录屏时才创建自有媒体会话，录屏结束后清理该会话。
+两种模式均可运行 `iphone-use --session "$SESSION" preview` 打开只读本地实时预览，与控制、录屏共享会话。从 0.3.1 起，正式构建隐藏临时外观切换按钮，但仍优先显示对应机型的官方外框，素材不可用时自动回退自绘；Debug 构建保留外观对比按钮。0.3.0 的 Homebrew 符号链接入口会意外跳过官方素材，这是 0.3.1 修复的资源定位问题，并非生产版功能开关。详见源码仓库的 `docs/local-preview-prototype.md`。
+
+标准模式的观察和动作前校验都使用 Apple PNG，不为截图启动或常驻媒体流。显式开始预览或录屏时才创建自有媒体会话；两者共存时共享该流，停止录屏后仍可保持预览，最后一个使用方结束后清理媒体会话。
 
 未录屏也仍会在输入前只读查询媒体会话列表，以避免与 Device Hub 等客户端同时控制设备。`native_media_busy` 表示检测到其他客户端的媒体会话，不表示 iPhone-use 截图依赖媒体流。请自行结束对方的控制或录屏会话，再按返回的 `recovery` 处理；需要重连时只断开自己的会话，不关闭他人的全部媒体会话，也不自动重放原动作。解锁、信任和系统授权仍需用户在设备上完成。
 
