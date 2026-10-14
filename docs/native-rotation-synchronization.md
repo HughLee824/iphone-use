@@ -22,7 +22,7 @@ standard 的动作即使没有 `--observe` 也会强制进行动作后截图。�
 
 普通 `NativeTextProbe` 新增 `--preview-rotation-probe` 启动参数：打开旋转页面后等待 20 秒，再每 10 秒请求一次「左横屏 → 右横屏 → 左横屏 → 右横屏 → 竖屏」，重复三轮，画面显示步数。可按 `docs/apple-native-acceptance.md` 中的现有流程构建、安装后，用 `devicectl device process launch … com.iphone-use.native-text-probe -- --preview-rotation-probe` 启动。此测试应用没有 XCTest、截图或控制端点；未带参数时原有手动入口不变。测试期间宿主只读取预览 HTTP，在第一次左横屏开始录屏，不调用 `observe` 或输入命令。既有预览内部检查属于被测功能，不被禁用。
 
-下面保留修复前的失败和各轮历史证据。
+本轮最终安装包的来源、校验值及两种模式实测记录随 [PR #14](https://github.com/HughLee824/iphone-use/pull/14) 和未发布的 0.3.0 草稿更新；更换安装包后的测试不得沿用旧包结论。下面保留修复前的失败和各轮历史证据。
 
 ## Runner 预览横竖屏恢复补强（2026-10-14）
 

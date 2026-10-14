@@ -96,6 +96,8 @@ export RECORDING_ID="RECORDING_ID_FROM_RESULT"
 
 standard 的静态画面可能不再发送视频帧。录屏期间若 `observe` 或动作前校验无法取得新帧，会返回可重试的 `native_snapshot_freshness_unavailable`，并报告 `orientationRecoveryDeferred=true`、`recordingPreserved=true`：该次观察/输入被拒绝，录屏继续，不因为缺帧而重建共享流或永久禁用控制。等屏幕实际变化后重新观察，或先正常停止录屏再观察；不要自动重放未知输入。真正的几何冲突仍结束录屏片段并重新确认方向，媒体损坏/断线仍按原规则停止。正常截止的静态视频用末帧覆盖静止时段，不伪造新画面。
 
+旋转后刚重建的视频流可能还没有确认录屏所需的 RTCP 时钟。此时 `record-start` 可以返回 `native_recording_format_unavailable`，不代表已开始录制。Runner 对这个写入前拒绝会保留健康的共享预览；待流稳定后，可显式发起新的录屏，不会自动重试或猜测时钟。无预览、媒体不健康和其他错误仍沿用原清理规则，检查实际错误与 `reconnectRequired` 后处理。
+
 ### 停止与清理
 
 ```sh
