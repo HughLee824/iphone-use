@@ -19,6 +19,7 @@ final class NativeVideoSnapshot {
         let firstPacketAt: Double
         let completedAt: Double
         let timestamp: UInt32
+        var displayRotation: String? = nil
     }
     // This feeds interactive preview and observations. It must not sit below
     // JPEG/HTTP work in scheduling priority while that work waits for pixels.
@@ -53,8 +54,8 @@ final class NativeVideoSnapshot {
     private var slowFrames: [[String: Double]] = []
 
     convenience init() {
-        // Standard observations are Apple PNG. This stream only verifies
-        // dimensions; converting every decoded frame into RGB wastes GPU work.
+        // Standard observations are Apple PNG. This stream verifies geometry;
+        // converting every decoded frame into RGB wastes GPU work.
         let decoder = NativeSnapshotDecoder(convertToBGRA: false)
         self.init(decode: { try decoder.decode($0) }, resetDecoder: { decoder.resetReferences() })
     }
@@ -139,7 +140,7 @@ final class NativeVideoSnapshot {
                     return
                 }
                 let frame = Frame(image: image, firstPacketAt: unitStarted,
-                                  completedAt: completed, timestamp: unit.timestamp)
+                                  completedAt: completed, timestamp: unit.timestamp, displayRotation: unit.displayRotation)
                 condition.lock()
                 if !closed, generation == admittedGeneration { latest = frame; decodedFrames += 1; lastError = nil; recordingHandler?(frame); condition.broadcast() }
                 condition.unlock()
@@ -200,6 +201,7 @@ final class NativeVideoSnapshot {
                 "droppedUnits": droppedUnits, "discontinuities": discontinuities, "malformedPackets": malformedPackets,
                 "timestampRejections": timestampRejections, "referenceResets": referenceResets,
                 "waitingForKeyframe": waitingForKeyframe,
+                "lastFrameDisplayRotation": latest?.displayRotation as Any? ?? NSNull(),
                 "pendingBytes": pendingBytes, "closed": closed, "lastError": lastError as Any? ?? NSNull(),
                 "timing": ["lastQueueWaitMs": lastQueueWaitMs, "lastDecodeMs": lastDecodeMs,
                            "maxQueueWaitMs": maxQueueWaitMs, "maxDecodeMs": maxDecodeMs, "slowFrames": slowFrames],
@@ -363,6 +365,12 @@ enum NativeSnapshotImage {
         }
         guard display.nativeRotation == "rot0", NativeVideoOrientation(rawValue: display.rotation) != nil else {
             throw IPhoneUseError("native_snapshot_geometry_unavailable", "Unverified media orientation")
+        }
+        // Independent per-frame negative evidence. CoreDevice metadata and PNG
+        // can retain the same stale half-turn while this owned stream is alive.
+        // Never use the tag itself as an observation/input coordinate transform.
+        if let rotation = frame.displayRotation, rotation != display.rotation {
+            throw IPhoneUseError("native_snapshot_geometry_unavailable", "RTP frame orientation conflicts with the bound display")
         }
         let width = Int(display.rotation == "rot0" ? display.pixelWidth : display.pixelHeight)
         let height = Int(display.rotation == "rot0" ? display.pixelHeight : display.pixelWidth)

@@ -21,6 +21,48 @@ final class NativeSnapshotContinuityTests: XCTestCase {
         XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 12, 18, kCVPixelFormatType_32BGRA, nil, &buffer), kCVReturnSuccess)
         return NativeDecodedVideoFrame(pixels: try XCTUnwrap(buffer), nativeWidth: 12, nativeHeight: 18)
     }
+    func testCompleteFrameOrientationRejectsStaleHalfTurnWithoutChangingPixels() throws {
+        let pixel = try pixels()
+        let stream = NativeVideoSnapshot(decode: { _ in pixel }, resetDecoder: {})
+        defer { stream.close() }
+        func oriented(_ sequence: UInt16, profile: UInt8) -> Data {
+            var data = packet(sequence, timestamp: UInt32(sequence))
+            data[0] |= 16
+            data.insert(contentsOf: [profile, 1, 0, 1, 0, 0, 0, 0], at: 12)
+            return data
+        }
+        func display(_ rotation: String) throws -> NativeDisplay {
+            try NativeDisplay(["backlightState": "activeOn", "displays": [["primary": true,
+                "displayId": 1, "bounds": [[0, 0], [12, 18]], "pointScale": 1,
+                "currentOrientation": rotation, "nativeOrientation": "rot0"]]])
+        }
+        stream.receive(oriented(1, profile: 0x93), at: ProcessInfo.processInfo.systemUptime)
+        idle(stream)
+        let left = try display("rot90"), right = try display("rot270")
+        XCTAssertNoThrow(try stream.rejectConflictingGeometry(left))
+        stream.receive(oriented(2, profile: 0x92), at: ProcessInfo.processInfo.systemUptime)
+        idle(stream)
+        let frame = try XCTUnwrap(stream.previewFrame())
+        XCTAssertEqual(frame.displayRotation, "rot270")
+        XCTAssertTrue(frame.pixels === pixel.pixels)
+        XCTAssertThrowsError(try stream.rejectConflictingGeometry(left)) {
+            XCTAssertEqual(($0 as? IPhoneUseError)?.code, "native_snapshot_geometry_unavailable")
+        }
+        XCTAssertThrowsError(try NativePreview.encode(frame, display: left), "Do not publish an inverted preview frame")
+        XCTAssertNoThrow(try stream.rejectConflictingGeometry(right))
+        // Quiet retained frames are only conflict evidence, never fresh input.
+        XCTAssertFalse(NativeVideoSnapshot.isFresh(frame, after: frame.completedAt + 1, now: frame.completedAt + 2))
+        let cli = AppleDeviceCLI(device: "test", cancellation: NativeCancellation(), reader: { _ in
+            XCTFail("Recognized frame geometry must not take periodic Apple PNGs"); return [:]
+        })
+        let orientation = NativePreviewOrientation()
+        XCTAssertTrue(try orientation.needsRefresh(cli: cli, snapshots: stream, display: left))
+        XCTAssertFalse(try orientation.needsRefresh(cli: cli, snapshots: stream, display: right))
+        // A later untagged frame cannot inherit an older frame's direction.
+        stream.receive(packet(3, timestamp: 3), at: ProcessInfo.processInfo.systemUptime)
+        idle(stream)
+        XCTAssertNil(stream.previewFrame()?.displayRotation)
+    }
     func testTimingDistinguishesQueuedPacketsFromSlowDecode() throws {
         let pixel = try pixels(), entered = expectation(description: "decoder entered")
         let release = DispatchSemaphore(value: 0)

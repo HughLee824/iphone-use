@@ -9,6 +9,12 @@ final class NativePreviewOrientation {
     private var halfTurnConflicts = 0
 
     func needsRefresh(cli: AppleDeviceCLI, snapshots: NativeVideoSnapshot?, display: NativeDisplay) throws -> Bool {
+        if let rotation = snapshots?.previewFrame()?.displayRotation {
+            // A recognized complete-frame tag makes the expensive same-source
+            // PNG comparison redundant. Agreement is not capture freshness.
+            halfTurnConflicts = 0
+            return rotation != display.rotation
+        }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("iphone-use-preview-direction-\(UUID().uuidString)")
         try SessionPaths.secureDirectory(directory)
         defer { try? FileManager.default.removeItem(at: directory) }
