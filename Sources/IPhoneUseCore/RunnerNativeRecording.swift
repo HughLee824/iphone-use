@@ -147,6 +147,7 @@ final class RunnerNativeRecording {
     private let recording: NativeStreamRecording
     private let cancellation: NativeCancellation
     private let connect: () throws -> RunnerRecordingConnection
+    private let previewGeometry: (() throws -> (width: Int, height: Int))?
     private var connection: RunnerRecordingConnection?
     private var failure: String?
     private var cleanup: [String: Any] = [:]
@@ -156,11 +157,16 @@ final class RunnerNativeRecording {
     private var preview: NativePreview?
     var previewStatus: [String: Any] { preview?.status() ?? ["state": failure == nil ? "stopped" : "failed", "error": failure as Any? ?? NSNull()] }
 
-    init(root: URL, cancellation: NativeCancellation, connect: @escaping () throws -> RunnerRecordingConnection) {
+    init(root: URL, cancellation: NativeCancellation,
+         previewGeometry: (() throws -> (width: Int, height: Int))? = nil,
+         connect: @escaping () throws -> RunnerRecordingConnection) {
         recording = NativeStreamRecording(root: root); self.cancellation = cancellation; self.connect = connect
+        self.previewGeometry = previewGeometry
     }
-    convenience init(device: String, root: URL, cancellation: NativeCancellation) {
-        self.init(root: root, cancellation: cancellation, connect: { try RunnerMediaConnection.open(device: device, cancellation: cancellation) })
+    convenience init(device: String, root: URL, cancellation: NativeCancellation,
+                     previewGeometry: @escaping () throws -> (width: Int, height: Int)) {
+        self.init(root: root, cancellation: cancellation, previewGeometry: previewGeometry,
+                  connect: { try RunnerMediaConnection.open(device: device, cancellation: cancellation) })
     }
 
     func start(duration: Double) throws -> [String: Any] {
@@ -263,11 +269,24 @@ final class RunnerNativeRecording {
     func previewTick() -> Bool {
         guard let preview, let connection, !closed, !cancellation.isCancelled else { return false }
         do {
-            let changed = try connection.previewNeedsRefresh()
+            var changed = try connection.previewNeedsRefresh()
+            if !changed, let previewGeometry, let display = connection.previewDisplay {
+                // CoreDevice can report the SAME stale axes for both its PNG
+                // and display metadata. XCTest supplies only negative evidence;
+                // never derive an input transform or render pixels from this probe.
+                let size = try previewGeometry()
+                changed = size.width != Int(display.pixelWidth) || size.height != Int(display.pixelHeight)
+            }
             if changed {
                 preview.suspend("Synchronizing rotation")
                 recording.endSegment(reason: "display_changed")
                 try connection.refreshPreview()
+                if let previewGeometry, let display = connection.previewDisplay {
+                    let size = try previewGeometry()
+                    guard size.width == Int(display.pixelWidth), size.height == Int(display.pixelHeight) else {
+                        throw IPhoneUseError("preview_geometry_unavailable", "Display still conflicts with XCTest after owned-media resynchronization")
+                    }
+                }
             }
             try attachPreview()
             return changed

@@ -15,7 +15,8 @@ private final class RunnerRecordingConnectionStub: RunnerRecordingConnection {
     let receiver = RunnerRecordingSourceStub()
     var source: NativeRecordingSource { receiver }
     let sessionID = UUID().uuidString
-    let rotation = "rot0"
+    var rotation = "rot0"
+    var refreshedRotation: String?
     var closed = 0
     var changed = false
     var acknowledged = true
@@ -26,13 +27,14 @@ private final class RunnerRecordingConnectionStub: RunnerRecordingConnection {
     func refreshPreview() throws {
         previewRefreshes += 1
         if failRefresh { throw TransportError(description: "Lost scoped refresh reply", possiblySent: true) }
+        if let refreshedRotation { rotation = refreshedRotation }
         changed = false
     }
     private lazy var previewVideo = try? NativeRTPReceiver(deviceAddress: "::1", captureSnapshots: true)
     var previewReceiver: NativeRTPReceiver? { previewVideo }
     var previewDisplay: NativeDisplay? {
         try? NativeDisplay(["backlightState": "activeOn", "displays": [["primary": true, "displayId": 1,
-            "bounds": [[0,0],[32,48]], "pointScale": 1, "currentOrientation": "rot0", "nativeOrientation": "rot0"]]])
+            "bounds": [[0,0],[32,48]], "pointScale": 1, "currentOrientation": rotation, "nativeOrientation": "rot0"]]])
     }
     func verifyDisplay() throws { if changed { throw IPhoneUseError("display_changed", "Fixture rotated") } }
     func close() -> [String: Any] {
@@ -168,6 +170,56 @@ final class RunnerRecordingTests: XCTestCase {
         let preview = try owner.startPreview()
         XCTAssertTrue(preview["bezel"] is NSNull)
         XCTAssertEqual((preview["device"] as? [String: Any])?["productType"] as? String, "iPhone99,1")
+    }
+
+    func testIndependentGeometryRecoversStaleCoreDeviceAxesAndPreservesQuietRecording() throws {
+        for initial in ["rot0", "rot270"] {
+            let connection = RunnerRecordingConnectionStub()
+            connection.rotation = initial
+            var size = initial == "rot0" ? (width: 32, height: 48) : (width: 48, height: 32)
+            let owner = RunnerNativeRecording(root: try root(), cancellation: NativeCancellation(),
+                previewGeometry: { size }, connect: { connection })
+            defer { _ = owner.close() }
+            let preview = try owner.startPreview()
+            _ = try owner.start(duration: 30)
+            for _ in 0..<3 { XCTAssertFalse(owner.previewTick()) }
+            XCTAssertEqual(connection.previewRefreshes, 0, "A quiet stream is not a rotation conflict")
+            XCTAssertEqual(owner.status()["state"] as? String, "waiting_for_frame")
+            // Both CoreDevice checks still agree with the OLD rotation.
+            XCTAssertFalse(connection.changed)
+            size = (size.height, size.width)
+            connection.refreshedRotation = initial == "rot0" ? "rot270" : "rot0"
+            XCTAssertTrue(owner.previewTick())
+            XCTAssertEqual(connection.previewRefreshes, 1)
+            XCTAssertEqual(connection.closed, 0)
+            XCTAssertEqual(owner.previewStatus["url"] as? String, preview["url"] as? String)
+            XCTAssertFalse(owner.previewTick())
+            XCTAssertEqual(connection.previewRefreshes, 1)
+        }
+    }
+
+    func testUnresolvedIndependentConflictStopsInsteadOfLoopingRefresh() throws {
+        let connection = RunnerRecordingConnectionStub()
+        let owner = RunnerNativeRecording(root: try root(), cancellation: NativeCancellation(),
+            previewGeometry: { (48, 32) }, connect: { connection })
+        defer { _ = owner.close() }
+        _ = try owner.startPreview()
+        XCTAssertTrue(owner.previewTick())
+        XCTAssertEqual(connection.previewRefreshes, 1)
+        XCTAssertEqual(connection.closed, 1)
+        XCTAssertFalse(owner.previewTick())
+        XCTAssertThrowsError(try owner.startPreview())
+        XCTAssertEqual(connection.previewRefreshes, 1)
+    }
+
+    func testIndependentGeometryRejectsMissingFailedOrInvalidReplies() throws {
+        for response: [String: Any] in [[:], ["ok": false, "result": ["width": 32, "height": 48]],
+            ["ok": true, "result": ["width": 0, "height": 48]],
+            ["ok": true, "result": ["width": 32, "height": 16385]]] {
+            XCTAssertThrowsError(try XCTestBackend.decodePreviewGeometry(response))
+        }
+        let size = try XCTestBackend.decodePreviewGeometry(["ok": true, "result": ["width": 1170, "height": 2532]])
+        XCTAssertEqual(size.width, 1170); XCTAssertEqual(size.height, 2532)
     }
 
     func testManifestCopiesBothLayoutsWithoutMutatingSignedProducts() throws {

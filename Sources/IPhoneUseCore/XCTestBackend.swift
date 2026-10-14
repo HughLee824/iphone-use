@@ -95,7 +95,10 @@ final class XCTestBackend: SessionBackend {
         recordingPlatformSupported = ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 27 &&
             ((details["deviceProperties"] as? [String: Any])?["osVersionNumber"] as? String)?.hasPrefix("27.") == true
         recording = RunnerNativeRecording(device: udid, root: paths.directory.appendingPathComponent("recordings"),
-                                          cancellation: recordingCancellation)
+                                          cancellation: recordingCancellation, previewGeometry: { [weak self] in
+            guard let self else { throw IPhoneUseError("backend_unavailable", "Runner is not connected") }
+            return try Self.decodePreviewGeometry(self.request("preview-geometry", timeout: 3))
+        })
         let manifest = paths.directory.appendingPathComponent("runner.xctestrun")
         try RunnerSessionManifest.prepare(source: URL(fileURLWithPath: config.xctestrun), destination: manifest)
         endpoint = .hostPort(host: .init(address), port: 47821)
@@ -236,7 +239,7 @@ final class XCTestBackend: SessionBackend {
     }
 
     static func validateCapabilities(_ result: [String: Any]) throws {
-        let expected = ["observationVersion": 2, "actionVersion": 9, "launchVersion": 2, "frameStabilityVersion": 2, "screenGuardVersion": 1]
+        let expected = ["observationVersion": 2, "actionVersion": 9, "launchVersion": 2, "frameStabilityVersion": 2, "screenGuardVersion": 1, "previewGeometryVersion": 1]
         var differences = expected.keys.sorted().compactMap { key -> String? in
             let actual = result[key] as? Int
             return actual == expected[key] ? nil : "\(key): expected \(expected[key]!), received \(actual.map(String.init) ?? "missing")"
@@ -245,6 +248,15 @@ final class XCTestBackend: SessionBackend {
         if !differences.isEmpty {
             throw IPhoneUseError("runner_needs_rebuild", "Runner is incompatible (\(differences.joined(separator: "; "))). Release users: install matching CLI/Runner resources and run setup. Source developers: run build-runner and use its new .xctestrun")
         }
+    }
+
+    static func decodePreviewGeometry(_ response: [String: Any]) throws -> (width: Int, height: Int) {
+        guard response["ok"] as? Bool == true, let result = response["result"] as? [String: Any],
+              let width = result["width"] as? Int, let height = result["height"] as? Int,
+              (1...16384).contains(width), (1...16384).contains(height) else {
+            throw IPhoneUseError("preview_geometry_unavailable", "Runner did not return valid screenshot dimensions")
+        }
+        return (width, height)
     }
 
     static func actionFields(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any] {

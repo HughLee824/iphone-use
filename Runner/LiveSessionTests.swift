@@ -219,10 +219,24 @@ final class LiveSessionTests: XCTestCase {
             let hostManaged = ProcessInfo.processInfo.environment["IPHONE_USE_HOST_MANAGED"] == "1"
             return ["protocol": "agentsoma-spike-jsonl-v1", "lifecycleOwner": hostManaged ? "host" : "spike",
                     "lifetimeLimitSeconds": hostManaged ? NSNull() : 900, "observationVersion": 2,
-                    "actionVersion": 9, "launchVersion": 2, "frameStabilityVersion": 2, "screenGuardVersion": 1,
+                    "actionVersion": 9, "launchVersion": 2, "frameStabilityVersion": 2, "screenGuardVersion": 1, "previewGeometryVersion": 1,
                     "applicationStateTimeoutSupported": stateTimeout != nil]
         }
         if op == "shutdown" { return ["stopped": true] }
+        if op == "preview-geometry" {
+            // Independent of CoreDevice's display/screenshot cache. No AX walk,
+            // PNG encoding, input, or change to the selected application.
+            let image = XCUIDevice.shared.screenshot().image
+            guard let pixels = image.cgImage else { throw CommandError("preview_geometry_unavailable") }
+            let sideways: Bool
+            switch image.imageOrientation {
+            case .up, .down: sideways = false
+            case .left, .right: sideways = true
+            default: throw CommandError("preview_geometry_unavailable")
+            }
+            return ["width": sideways ? pixels.height : pixels.width,
+                    "height": sideways ? pixels.width : pixels.height]
+        }
         if op == "launch" {
             let bundle = command["bundleId"] as? String ?? ""
             guard bundle.range(of: "^[A-Za-z0-9][A-Za-z0-9.-]{0,254}\\z", options: .regularExpression) != nil else {
