@@ -239,7 +239,7 @@ final class XCTestBackend: SessionBackend {
     }
 
     static func validateCapabilities(_ result: [String: Any]) throws {
-        let expected = ["observationVersion": 2, "actionVersion": 9, "launchVersion": 2, "frameStabilityVersion": 2, "screenGuardVersion": 1, "previewGeometryVersion": 1]
+        let expected = ["observationVersion": 2, "actionVersion": 9, "launchVersion": 2, "frameStabilityVersion": 2, "screenGuardVersion": 1, "previewGeometryVersion": 2]
         var differences = expected.keys.sorted().compactMap { key -> String? in
             let actual = result[key] as? Int
             return actual == expected[key] ? nil : "\(key): expected \(expected[key]!), received \(actual.map(String.init) ?? "missing")"
@@ -250,13 +250,14 @@ final class XCTestBackend: SessionBackend {
         }
     }
 
-    static func decodePreviewGeometry(_ response: [String: Any]) throws -> (width: Int, height: Int) {
+    static func decodePreviewGeometry(_ response: [String: Any]) throws -> RunnerPreviewGeometry {
         guard response["ok"] as? Bool == true, let result = response["result"] as? [String: Any],
               let width = result["width"] as? Int, let height = result["height"] as? Int,
+              let orientation = result["orientation"] as? Int, [1, 3, 6, 8].contains(orientation),
               (1...16384).contains(width), (1...16384).contains(height) else {
             throw IPhoneUseError("preview_geometry_unavailable", "Runner did not return valid screenshot dimensions")
         }
-        return (width, height)
+        return RunnerPreviewGeometry(width: width, height: height, orientation: orientation)
     }
 
     static func actionFields(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any] {
