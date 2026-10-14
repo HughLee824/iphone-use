@@ -7,6 +7,7 @@ struct NativeRTPPacket {
     let payloadType: UInt8
     let marker: Bool
     let payload: Data
+    let displayRotation: String?
 
     init(_ data: Data) throws {
         let bytes = [UInt8](data)
@@ -14,9 +15,17 @@ struct NativeRTPPacket {
         func word(_ at: Int) -> Int { Int(bytes[at]) << 8 | Int(bytes[at + 1]) }
         func uint32(_ at: Int) -> UInt32 { bytes[at..<at + 4].reduce(0) { ($0 << 8) | UInt32($1) } }
         var offset = 12 + Int(bytes[0] & 15) * 4
+        var rotation: String?
         guard offset <= bytes.count else { throw Self.invalid() }
         if bytes[0] & 16 != 0 {
             guard offset + 4 <= bytes.count else { throw Self.invalid() }
+            let profile = word(offset), words = word(offset + 2)
+            // macOS/iOS 27 DisplayService one-word AVC extension, verified with
+            // portrait/left/right captures (0/3/2), with/without the IDR flag.
+            // Unknown profiles and the unverified value 1 supply no evidence.
+            if words == 1, [0x9001, 0x9011].contains(profile & 0xfcff) {
+                rotation = [0: "rot0", 2: "rot270", 3: "rot90"][(profile >> 8) & 3]
+            }
             offset += 4 + word(offset + 2) * 4
         }
         var end = bytes.count
@@ -29,6 +38,7 @@ struct NativeRTPPacket {
         sequence = UInt16(word(2)); timestamp = uint32(4); ssrc = uint32(8)
         marker = bytes[1] & 128 != 0; payloadType = bytes[1] & 127
         payload = Data(bytes[offset..<end])
+        displayRotation = rotation
     }
     private static func invalid() -> IPhoneUseError { IPhoneUseError("recording_rtp_invalid", "Malformed RTP header or empty payload") }
 }
@@ -38,6 +48,7 @@ struct NativeVideoAccessUnit {
     let nals: [Data]
     let keyframe: Bool
     var firstPacketAt: Double? = nil
+    var displayRotation: String? = nil
 }
 
 // RFC 7798 single-layer HEVC without DONL: single NAL, AP and FU. Late or missing
@@ -47,6 +58,8 @@ struct NativeHEVCDepacketizer {
     private var expected: UInt16?
     private var timestamp: UInt32?
     private var firstPacketAt: Double?
+    private var displayRotation: String?
+    private var rotationConsistent = true
     private var nals: [Data] = []
     private var fragment = Data()
     private var fragmentHeader: Data?
@@ -74,7 +87,8 @@ struct NativeHEVCDepacketizer {
         // Apply loss AFTER changing units: resetUnit must not erase damage on
         // the first received packet of a new timestamp (possibly a partial IDR).
         if sequenceGap { damaged = true }
-        if timestamp == nil { firstPacketAt = receivedAt }
+        if timestamp == nil { firstPacketAt = receivedAt; displayRotation = packet.displayRotation }
+        else if displayRotation != packet.displayRotation { rotationConsistent = false }
         timestamp = packet.timestamp
         do { try append(packet.payload) }
         catch { malformedPackets += 1; damaged = true; waitingForKeyframe = true }
@@ -86,12 +100,14 @@ struct NativeHEVCDepacketizer {
         // Parameter-set-only units can update the format while waiting for IDR.
         if video, waitingForKeyframe, !keyframe { droppedUnits += 1; return nil }
         if keyframe { waitingForKeyframe = false }
-        return NativeVideoAccessUnit(timestamp: packet.timestamp, nals: nals, keyframe: keyframe, firstPacketAt: firstPacketAt)
+        return NativeVideoAccessUnit(timestamp: packet.timestamp, nals: nals, keyframe: keyframe, firstPacketAt: firstPacketAt,
+                                     displayRotation: rotationConsistent ? displayRotation : nil)
     }
 
     private mutating func resetUnit() {
         nals.removeAll(keepingCapacity: true); fragment.removeAll(keepingCapacity: true)
         fragmentHeader = nil; size = 0; damaged = false; timestamp = nil; firstPacketAt = nil
+        displayRotation = nil; rotationConsistent = true
     }
     private mutating func add(_ nal: Data) throws {
         guard nal.count >= 2, nal[0] & 129 == 0, nal[1] == 1, (nal[0] >> 1) & 63 < 48,

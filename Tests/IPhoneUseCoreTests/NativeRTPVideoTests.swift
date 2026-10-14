@@ -2,6 +2,50 @@ import XCTest
 @testable import IPhoneUseCore
 
 final class NativeRTPVideoTests: XCTestCase {
+    private func orientationPacket(_ profile: UInt16?, sequence: UInt16 = 1,
+                                   timestamp: UInt32 = 1, marker: Bool = true,
+                                   payload: [UInt8] = [0x28, 1, 1]) throws -> NativeRTPPacket {
+        var bytes = Data([profile == nil ? 0x80 : 0x90, marker ? 0xe4 : 0x64,
+                          UInt8(sequence >> 8), UInt8(sequence & 255)])
+        for value: UInt32 in [timestamp, 123] {
+            var big = value.bigEndian; withUnsafeBytes(of: &big) { bytes.append(contentsOf: $0) }
+        }
+        if let profile { bytes.append(contentsOf: [UInt8(profile >> 8), UInt8(profile & 255), 0, 1, 0, 0, 0, 0]) }
+        bytes.append(contentsOf: payload)
+        return try NativeRTPPacket(bytes)
+    }
+
+    func testDisplayServiceOrientationProfilesAndUnknownExtensions() throws {
+        for (bits, rotation) in [(0, "rot0"), (2, "rot270"), (3, "rot90")] {
+            for flags: UInt16 in [0x9001, 0x9011] {
+                let packet = try orientationPacket(flags | UInt16(bits << 8))
+                XCTAssertEqual(packet.displayRotation, rotation)
+                XCTAssertEqual(packet.payload, Data([0x28, 1, 1]))
+            }
+        }
+        for profile: UInt16? in [nil, 0xbede, 0x9401, 0x9021, 0x9000, 0x9101] {
+            XCTAssertNil(try orientationPacket(profile).displayRotation)
+        }
+    }
+
+    func testOrientationBelongsToCompleteConsistentAccessUnit() throws {
+        var parser = NativeHEVCDepacketizer()
+        XCTAssertNil(parser.receive(try orientationPacket(0x9311, marker: false)))
+        let unit = parser.receive(try orientationPacket(0x9311, sequence: 2))
+        XCTAssertEqual(unit?.displayRotation, "rot90")
+        // A changed or absent tag in one fragment must not inherit the first tag.
+        for (index, profile): (Int, UInt16?) in [(0, 0x9201), (1, nil)] {
+            let sequence = UInt16(3 + index * 2), timestamp = UInt32(2 + index)
+            XCTAssertNil(parser.receive(try orientationPacket(0x9301, sequence: sequence, timestamp: timestamp, marker: false)))
+            XCTAssertNil(parser.receive(try orientationPacket(profile, sequence: sequence + 1, timestamp: timestamp))?.displayRotation)
+        }
+        XCTAssertEqual(parser.receive(try orientationPacket(0x9201, sequence: 7, timestamp: 4))?.displayRotation, "rot270")
+        // Reordered duplicates do not change the direction of the current unit.
+        XCTAssertNil(parser.receive(try orientationPacket(0x9311, sequence: 8, timestamp: 5, marker: false)))
+        XCTAssertNil(parser.receive(try orientationPacket(0x9201, sequence: 7, timestamp: 4)))
+        XCTAssertEqual(parser.receive(try orientationPacket(0x9311, sequence: 9, timestamp: 5))?.displayRotation, "rot90")
+    }
+
     func testFreshnessKeepsFirstPacketTimeAcrossLateDuplicates() throws {
         var parser = NativeHEVCDepacketizer()
         XCTAssertNotNil(parser.receive(try packet(1, [0x28,1,1]), receivedAt: 1))

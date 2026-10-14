@@ -1,6 +1,25 @@
 import Foundation
 import AppleNativeBridge
 
+// Raw XCTest screenshot axes plus EXIF orientation. Only conflict evidence:
+// CoreDevice remains the authority after stopping the owned stream.
+struct RunnerPreviewGeometry {
+    let width: Int, height: Int, orientation: Int
+
+    func conflicts(with display: NativeDisplay) -> Bool {
+        let sideways = orientation == 6 || orientation == 8
+        if (sideways ? height : width) != Int(display.pixelWidth) ||
+            (sideways ? width : height) != Int(display.pixelHeight) { return true }
+        let displaySideways = display.rotation == "rot90" || display.rotation == "rot270"
+        let nativeWidth = Int(displaySideways ? display.pixelHeight : display.pixelWidth)
+        let nativeHeight = Int(displaySideways ? display.pixelWidth : display.pixelHeight)
+        // A provider may bake the rotation into its pixels. Do not interpret
+        // an upright tag as portrait unless the raw pixels use native axes.
+        guard display.nativeRotation == "rot0", width == nativeWidth, height == nativeHeight else { return false }
+        return [1: "rot0", 3: "rot180", 6: "rot90", 8: "rot270"][orientation] != display.rotation
+    }
+}
+
 protocol RunnerRecordingConnection: AnyObject {
     var source: NativeRecordingSource { get }
     var sessionID: String { get }
@@ -147,6 +166,7 @@ final class RunnerNativeRecording {
     private let recording: NativeStreamRecording
     private let cancellation: NativeCancellation
     private let connect: () throws -> RunnerRecordingConnection
+    private let previewGeometry: (() throws -> RunnerPreviewGeometry)?
     private var connection: RunnerRecordingConnection?
     private var failure: String?
     private var cleanup: [String: Any] = [:]
@@ -154,13 +174,23 @@ final class RunnerNativeRecording {
     private var currentRecordingID: String?
     private var closed = false
     private var preview: NativePreview?
-    var previewStatus: [String: Any] { preview?.status() ?? ["state": failure == nil ? "stopped" : "failed", "error": failure as Any? ?? NSNull()] }
-
-    init(root: URL, cancellation: NativeCancellation, connect: @escaping () throws -> RunnerRecordingConnection) {
-        recording = NativeStreamRecording(root: root); self.cancellation = cancellation; self.connect = connect
+    private var independentOrientationConflicts = 0
+    var previewStatus: [String: Any] {
+        var result = preview?.status() ?? ["state": failure == nil ? "stopped" : "failed", "error": failure as Any? ?? NSNull()]
+        result["independentOrientationConflicts"] = independentOrientationConflicts
+        return result
     }
-    convenience init(device: String, root: URL, cancellation: NativeCancellation) {
-        self.init(root: root, cancellation: cancellation, connect: { try RunnerMediaConnection.open(device: device, cancellation: cancellation) })
+
+    init(root: URL, cancellation: NativeCancellation,
+         previewGeometry: (() throws -> RunnerPreviewGeometry)? = nil,
+         connect: @escaping () throws -> RunnerRecordingConnection) {
+        recording = NativeStreamRecording(root: root); self.cancellation = cancellation; self.connect = connect
+        self.previewGeometry = previewGeometry
+    }
+    convenience init(device: String, root: URL, cancellation: NativeCancellation,
+                     previewGeometry: @escaping () throws -> RunnerPreviewGeometry) {
+        self.init(root: root, cancellation: cancellation, previewGeometry: previewGeometry,
+                  connect: { try RunnerMediaConnection.open(device: device, cancellation: cancellation) })
     }
 
     func start(duration: Double) throws -> [String: Any] {
@@ -179,6 +209,14 @@ final class RunnerNativeRecording {
             currentRecordingID = result["recordingID"] as? String
             return result
         } catch {
+            // A rebound preview can decode before RTCP has confirmed the
+            // recording clock. This pre-writer rejection must not tear down a
+            // healthy shared preview or poison its next explicit recording.
+            if (error as? IPhoneUseError)?.code == "native_recording_format_unavailable",
+               preview != nil, !recording.isActive,
+               connection?.source.health()["healthy"] as? Bool == true {
+                throw error
+            }
             failure = String(describing: error)
             preview?.suspend(failure!); preview?.close(); preview = nil
             releaseMedia()
@@ -263,11 +301,23 @@ final class RunnerNativeRecording {
     func previewTick() -> Bool {
         guard let preview, let connection, !closed, !cancellation.isCancelled else { return false }
         do {
-            let changed = try connection.previewNeedsRefresh()
+            var changed = try connection.previewNeedsRefresh()
+            if !changed, let previewGeometry, let display = connection.previewDisplay {
+                // CoreDevice can report the SAME stale axes for both its PNG
+                // and display metadata. XCTest supplies only negative evidence;
+                // never derive an input transform or render pixels from this probe.
+                changed = try previewGeometry().conflicts(with: display)
+                if changed { independentOrientationConflicts += 1 }
+            }
             if changed {
                 preview.suspend("Synchronizing rotation")
                 recording.endSegment(reason: "display_changed")
                 try connection.refreshPreview()
+                if let previewGeometry, let display = connection.previewDisplay {
+                    guard try !previewGeometry().conflicts(with: display) else {
+                        throw IPhoneUseError("preview_geometry_unavailable", "Display still conflicts with XCTest after owned-media resynchronization")
+                    }
+                }
             }
             try attachPreview()
             return changed
