@@ -2,6 +2,12 @@
 
 With `functions.exec` exposing `tools.exec_command`, use the start block for each selected CLI command. It prints completion/action facts and **displays an attached successful screenshot in the same invocation**, including `text-prepare`, `text-finish` and actions whose outcome is `unknown`. Inspect the emitted image before selecting the next action; do not separately call `view_image` or `observe` when it is already present.
 
+After connect, apply the shared [live-preview lifecycle](live-preview.md) before the first app observation/input. Run `preview --no-open` through this adapter, using the same CLI/environment/permissions as connect.
+
+After successful completion, open `result.url` **once in the Codex built-in browser**. Use the exposed in-app browser capability (for example `cua.createBrowserTab("iab", url, {visible: true})`) following its tool instructions; retain its tab handle for cleanup. If only `mcp__codex_app__open_in_codex` is available, use `target: {type: "browser", url: result.url}`. A `queued` result is pending, not proof that a page is visible; do not issue a second open request.
+
+Choose one mechanism, never both. Record the opening attempt before the call and keep the returned tab ID when available. If no built-in browser tool is exposed, provide the URL without opening a system browser. Do not run plain `preview` or shell `open` as a fallback. Preserve the per-session attempt/URL record across pending commands and turns. Explicit opt-out skips preview, and disconnect cleans up the owned service.
+
 ## Start
 
 Keep the resolved CLI, configuration/state paths and working execution context for the entire device session. For an explicitly supplied prerelease, run `preflight.sh --candidate` with `IPHONE_USE_CLI` set to that binary; a plain preflight deliberately rejects prereleases.

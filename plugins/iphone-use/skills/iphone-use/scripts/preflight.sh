@@ -61,4 +61,11 @@ connect_help=$("$cli" connect --help)
 if printf '%s\n' "$connect_help" | grep -q -- '--mode'; then
   echo 'Control modes: available. Honor saved mode unless the user explicitly selects standard or runner.'
 fi
+if preview_help=$("$cli" preview --help 2>/dev/null) &&
+   printf '%s\n' "$preview_help" | grep -q -- '--no-open' &&
+   printf '%s\n' "$preview_help" | grep -q -- '--stop'; then
+  echo 'Live preview: available. After connect, follow the shared live-preview lifecycle once per owned session unless the user opted out.'
+else
+  echo 'Live preview: unavailable. Continue phone control without preview; do not automatically upgrade or switch the selected CLI.'
+fi
 echo 'Next: iphone-use devices. A successful preflight does not validate device trust or signing.'
