@@ -44,7 +44,7 @@ export SESSION="SESSION_FROM_CONNECT"
 "$IPHONE_USE_CLI" --session "$SESSION" preview
 ```
 
-默认打开本地浏览器。若希望自行选择浏览器：
+`preview` 默认打开 Mac 默认浏览器；单独 `connect` 不会开页。插件 0.1.8 候选将在连接后默认启动一次：Codex 用 `--no-open` 后在内置浏览器打开，Claude Code 由 CLI 打开 Mac 默认浏览器；明确不需要时跳过、同会话不重复开页、结束断开清理，见[插件流程](plugins.md#默认实时预览插件-018-候选)。0.1.8 尚未发布；现有插件 0.1.7 不会默认调用。若希望自行选择浏览器：
 
 ```sh
 "$IPHONE_USE_CLI" --session "$SESSION" preview --no-open

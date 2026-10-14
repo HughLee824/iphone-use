@@ -1,6 +1,6 @@
 # Codex / Claude Code 插件
 
-> CLI 0.2.1、Homebrew 和新名称网站已公开；Release 附带插件 0.1.6 ZIP，Git marketplace 插件为 0.1.7，新增正式插件和技能图标；既有 Release 附件保持不变。两种客户端的公开 Git 插件升级至 0.1.7 已核验，Codex 图标显示已由用户确认；本轮未新增真机任务验证，详见[渠道状态](rename-to-iphone-use.md)。
+> CLI / Homebrew 0.3.1 已发布，现有公开插件和 Release 插件附件仍为 0.1.7。本分支准备插件 0.1.8：Codex 与 Claude Code 连接后默认启动一次实时预览，可明确跳过；尚未发布，既有 Release 附件不变。
 
 
 [公开网站](https://iphone-use.com) → [安装 CLI](install.md) → 安装本页插件 → [选择模式并连接](first-task.md#connect-in-standard-mode) → 首个真机任务。完整英文路径见 [First task](first-task.md)。
@@ -9,7 +9,7 @@
 
 ## 先检查环境
 
-新安装使用已发布的 CLI 0.2.1。旧 `agentsoma` formula 用户先断开会话、卸载旧 formula，再安装新 formula；遇到 Tap Trust 拒绝时按[单公式信任提示](install.md#homebrew-单公式信任)处理，不默认信任整个 Tap。
+新安装使用已发布的 CLI 0.3.1。旧 `agentsoma` formula 用户先断开会话、卸载旧 formula，再安装新 formula；遇到 Tap Trust 拒绝时按[单公式信任提示](install.md#homebrew-单公式信任)处理，不默认信任整个 Tap。
 
 ```sh
 brew install HughLee824/tap/iphone-use
@@ -19,7 +19,7 @@ iphone-use --version
 
 正式版及开发工作流的环境以 [first-task](first-task.md) 为准：标准模式已验收 Apple Silicon / macOS 27、Xcode 27、iOS 27；需要设备信任、Developer Mode 和解锁。**只有 Runner 模式需要开发签名与 setup**。包内只读 `scripts/preflight.sh` 检查一次 CLI、Xcode 和输出能力，随后复用检测结果。
 
-本地候选包不在 PATH 时，通过 `IPHONE_USE_CLI=/absolute/path/to/bin/iphone-use sh /absolute/path/to/skill/scripts/preflight.sh --candidate` 检查；源码 `development` 版本使用 `--source`。设备调用继续使用同一个可执行文件。不要为了通过版本检查切到另一个已安装版本。preflight 的兼容版本下限仍为 CLI 0.1.0，但新安装应使用已发布的 iPhone-use 0.2.1；旧 AgentSoma 0.1.0 的版本号不能证明它支持标准模式。
+本地候选包不在 PATH 时，通过 `IPHONE_USE_CLI=/absolute/path/to/bin/iphone-use sh /absolute/path/to/skill/scripts/preflight.sh --candidate` 检查；源码 `development` 版本使用 `--source`。设备调用继续使用同一个可执行文件。不要为了通过版本检查切到另一个已安装版本。preflight 的兼容版本下限仍为 CLI 0.1.0，但新安装应使用已发布的 iPhone-use 0.3.1；旧 AgentSoma 0.1.0 的版本号不能证明它支持标准模式。
 
 安装后重启原本已打开的客户端，使其取得更新的 PATH。插件安装成功不等于 signing/setup 成功。免费 Personal Team 和全新 Mac 配置仍未验收；详见[前置条件和签名](first-task.md#before-you-start)。
 
@@ -63,9 +63,22 @@ claude plugin list --json
 
 测试失败时，区分 `not_dispatched` 与可能已生效的 `unknown`；优先读取已经附带的有效观察，仅在缺失时重新截图；不能重复输入来补读输出。路径字符串和截图文件存在均不等于 agent 已读取图片。`--observe` 的 `action` 与 `observation` 分别判断，观察失败不覆盖动作事实。
 
+## 默认实时预览（插件 0.1.8 候选）
+
+两端共用同一份生命周期：任务所属会话连接成功后，在首次操作前默认启动一次预览。**Codex 执行 `preview --no-open`，再在内置浏览器打开返回的 URL；Claude Code 执行 `preview`，由 CLI 打开 Mac 默认浏览器。**不改变 CLI `connect` 本身，standard 和 runner 行为一致。
+
+- 明确说“不要预览”“不要打开浏览器”即可跳过服务启动和开页，该选择在本任务重连后仍有效；不会写入全局偏好。
+- 按 session ID 记录启动尝试和 URL，后台命令只续读、不重跑。复用会话时若已有预览，直接复用；后续操作或新一轮对话不再次开页。用户关闭页面后也不自动重开。
+- 预检仅用 `preview --help` 检测能力。旧 CLI 不支持时跳过；启动失败只检查一次状态，必要时提供 URL，不反复重试、不自动升级或切模式。默认预览不是独立后台 hook，而是 Agent 执行的技能步骤。
+- Codex 没有内置浏览器工具时（例如纯终端环境），提供 URL，不擅自改开系统浏览器。记录开页尝试和已返回的标签 ID，失败或结果不确定时不再开第二页。
+- 用户指定浏览器时使用 `--no-open` 后只打开一次 URL。预览用于用户观看；Agent 仍读取原始截图、使用新引用操作。启动/停止预览后重新观察。
+- 任务结束或取消时断开自己持有的会话，核对预览、媒体与控制资源清理。有准确的任务自建标签句柄时可关闭该标签；没有浏览器工具时，失效页面可能留在浏览器中。关闭标签不等于停止服务，也不应退出整个浏览器。
+
+示例：“用 runner 打开设置并进入通用，让我在电脑上看操作过程”；或“打开设置并进入通用，不要预览”。首次默认开页无需再问一次偏好，但仍遵守客户端命令权限。
+
 ## 升级生效与卸载
 
-新插件身份为 `iphone-use@iphone-use`。启用前停用旧 AgentSoma 插件，避免同一手机任务重复匹配；若曾另行安装 `~/.codex/skills/agentsoma`，还需在 Codex 的技能配置中单独停用这份独立 skill，插件停用不会影响它；确认新插件可用后再按需移除旧插件。CLI 与插件版本号独立：CLI / Homebrew 为 0.2.1；0.2.1 Release 的插件 ZIP 保持 0.1.6；跟随默认分支的 Git marketplace 插件为 0.1.7。后者仅增加正式图标和展示元数据，不改变设备操作流程，也不要求升级 CLI。要获取插件新图标，请按下方命令更新 marketplace 和插件；只升级 Homebrew 不会更新插件。0.2.0 Release 中的插件仍是 0.1.4，安装后应核对客户端缓存版本。
+新插件身份为 `iphone-use@iphone-use`。启用前停用旧 AgentSoma 插件，避免同一手机任务重复匹配；若曾另行安装 `~/.codex/skills/agentsoma`，还需在 Codex 的技能配置中单独停用这份独立 skill，插件停用不会影响它；确认新插件可用后再按需移除旧插件。CLI 与插件版本号独立：CLI / Homebrew 为 0.3.1，公开插件及其 Release ZIP 为 0.1.7；本分支的 0.1.8 尚待合入与发布。只升级 Homebrew 不会更新插件。发布 0.1.8 后，两端都需更新插件并开始新会话才能取得默认预览流程；不要修改已发布版本的附件。
 
 先断开活跃设备会话，再 `brew update` / `brew upgrade iphone-use`。插件另外更新：
 

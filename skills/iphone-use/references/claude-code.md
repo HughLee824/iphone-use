@@ -2,6 +2,8 @@
 
 Use the installed `iphone-use:iphone-use` skill, invoked as `/iphone-use:iphone-use`, and the client's **Bash**, **Read**, and command continuation tools. The shared SKILL.md defines device routing, reference validity, action outcomes, and task verification.
 
+After connect, apply the shared [live-preview lifecycle](live-preview.md) before the first app observation/input. Run the one selected `preview` command through this adapter, using the same CLI/environment/permissions as connect. The CLI opens the default browser; do not add a second browser-open call. Preserve the per-session attempt/URL record across pending commands and turns. Explicit opt-out skips preview, and disconnect cleans up the owned service.
+
 ## Execute one command and collect completion
 
 Use Bash with one selected CLI command, for example:
