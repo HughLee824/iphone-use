@@ -19,7 +19,7 @@ iphone-use --session "$SESSION" record-stop "$RECORDING_ID"
 - `record-stop` 在同一 Runner 会话内完成文件写入与完整解码；预览仍开启时保留媒体，报告 `mediaRetainedForPreview`，否则清理媒体。不等待 XCTest 结束，也不重建 Runner。清理未确认时保留文件事实并返回 unknown。
 - 时长到达由现有录制队列自动结束文件；若无预览消费者，随后的 status、观察、动作或 disconnect 回收媒体。会话 idle/signal 清理也先结束文件，再关闭媒体和 Runner。
 - status、观察和动作边界检查显示状态；预览开启时还有串行后台检查。发现方向/锁屏变化时结束本段；不承诺连续旋转录制。每个视频帧都不是 observation，录制或预览开始/停止后需要重新 observe。
-- 会话使用独立 `.xctestrun` 副本，将本次测试自动诊断捕获设为截图。原始签名产物及调用者的清单不改动。
+- 当前源码独立后台启动已安装 Runner，经 USB 本地通信控制，不再创建 IDE 驱动测试会话或改写 `.xctestrun` 副本。原始签名产物及调用者清单不改动。已有预览帧时，先准备录屏编码器再订阅共享像素，录屏时长从准备完成后开始。
 
 启动返回成功不代表整段录制成功。务必检查该 recording ID 的最终 `error`、`stopReason`、`writtenFrames`、`fileValidated` 和文件内容；资源受限时可能提前出现 `recording_backpressure`，即使浏览器画面仍正常刷新。
 

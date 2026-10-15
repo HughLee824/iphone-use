@@ -22,6 +22,7 @@ final class NativeVideoWriter {
     private var parameterSets: [Int: Data] = [:]
     private let decoder = NativeSnapshotDecoder()
     private let injectedDecode: ((NativeVideoAccessUnit) throws -> CVPixelBuffer?)?
+    private let beforeEncoderSetup: () -> Void
     private var format: CMVideoFormatDescription?
     var withheldResolutionFrames: Int { decoder.withheldResolutionFrames }
     private var writer: AVAssetWriter?
@@ -40,8 +41,10 @@ final class NativeVideoWriter {
     var hasFrame: Bool { pending != nil }
 
     init(url: URL, timescale: Int32, orientation: NativeVideoOrientation = .portrait,
-         decode: ((NativeVideoAccessUnit) throws -> CVPixelBuffer?)? = nil) {
+         decode: ((NativeVideoAccessUnit) throws -> CVPixelBuffer?)? = nil,
+         beforeEncoderSetup: @escaping () -> Void = {}) {
         self.url = url; self.timescale = timescale; self.orientation = orientation; injectedDecode = decode
+        self.beforeEncoderSetup = beforeEncoderSetup
     }
 
     func append(_ unit: NativeVideoAccessUnit) throws {
@@ -86,10 +89,13 @@ final class NativeVideoWriter {
         ticks = time.value
     }
 
-    private func appendPixels(_ pixels: CVPixelBuffer, time: CMTime, receivedAt: Double?) throws {
+    // Prepare before subscribing to shared pixels: cold encoder startup must not
+    // accumulate full-resolution buffers behind a blocked recording queue.
+    func prepare(_ pixels: CVPixelBuffer) throws {
         guard !closed else { throw IPhoneUseError("recording_writer_closed", "Recording encoder has been released") }
         if writer == nil {
             let started = ProcessInfo.processInfo.systemUptime
+            beforeEncoderSetup()
             var description: CMVideoFormatDescription?
             let status = CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: pixels,
                 formatDescriptionOut: &description)
@@ -115,6 +121,10 @@ final class NativeVideoWriter {
                 throw IPhoneUseError("recording_format_changed", "Decoded dimensions changed; this segment ended")
             }
         }
+    }
+
+    private func appendPixels(_ pixels: CVPixelBuffer, time: CMTime, receivedAt: Double?) throws {
+        try prepare(pixels)
         if let pending {
             guard CMTimeCompare(time, pending.time) > 0 else { throw IPhoneUseError("recording_timestamp_invalid", "Non-monotonic decoded frame time") }
             try write(pending, duration: CMTimeSubtract(time, pending.time))

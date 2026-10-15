@@ -1,6 +1,23 @@
 import Foundation
 import CoreImage
 
+// A quiet screen can legitimately retain its last frame. Only a decoder that
+// previously produced pictures and then lost its dependency chain needs recovery.
+final class NativePreviewContinuity {
+    private var lostSince: Double?
+
+    func needsRecovery(_ status: [String: Any], now: Double = ProcessInfo.processInfo.systemUptime) -> Bool {
+        guard status["closed"] as? Bool == false,
+              status["decodedFrames"] as? Int ?? 0 > 0,
+              status["waitingForKeyframe"] as? Bool == true else {
+            lostSince = nil
+            return false
+        }
+        if lostSince == nil { lostSince = now }
+        return now - lostSince! >= 3
+    }
+}
+
 // Negative orientation evidence only. Never supplies observation pixels or an
 // input coordinate transform. A conflict triggers an owned stop/read/rebind,
 // after which CoreDevice supplies the authoritative orientation again.

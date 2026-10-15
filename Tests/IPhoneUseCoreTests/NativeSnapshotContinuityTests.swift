@@ -3,6 +3,23 @@ import CoreVideo
 @testable import IPhoneUseCore
 
 final class NativeSnapshotContinuityTests: XCTestCase {
+    func testPreviewRecoveryRequiresSustainedLossAfterDecodedPictures() {
+        let recovery = NativePreviewContinuity()
+        let lost: [String: Any] = ["closed": false, "decodedFrames": 10, "waitingForKeyframe": true]
+        XCTAssertFalse(recovery.needsRecovery(lost, now: 10))
+        XCTAssertFalse(recovery.needsRecovery(lost, now: 12.9))
+        XCTAssertTrue(recovery.needsRecovery(lost, now: 13))
+        // Initial startup, closed/missing sources and quiet healthy frames are
+        // not continuity loss and reset the grace period for another stream.
+        for status: [String: Any] in [[:], ["closed": true, "decodedFrames": 10, "waitingForKeyframe": true],
+                                     ["closed": false, "decodedFrames": 0, "waitingForKeyframe": true],
+                                     ["closed": false, "decodedFrames": 10, "waitingForKeyframe": false]] {
+            XCTAssertFalse(recovery.needsRecovery(status, now: 100))
+            XCTAssertFalse(recovery.needsRecovery(lost, now: 101))
+            XCTAssertTrue(recovery.needsRecovery(lost, now: 104))
+        }
+    }
+
     private func packet(_ sequence: UInt16, timestamp: UInt32, type: UInt8 = 20, marker: Bool = true) -> Data {
         var data = Data([0x80, marker ? 0xe4 : 0x64, UInt8(sequence >> 8), UInt8(sequence & 255)])
         for value: UInt32 in [timestamp, 123] {

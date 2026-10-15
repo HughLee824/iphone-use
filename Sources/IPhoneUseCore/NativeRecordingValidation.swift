@@ -34,7 +34,8 @@ enum NativeRecordingValidation {
             throw IPhoneUseError("recording_invalid", "Recording has no finite video duration/track")
         }
         let reader = try AVAssetReader(asset: asset)
-        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        // Validate decoded frames without an unnecessary full-size RGB conversion.
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange])
         output.alwaysCopiesSampleData = false
         guard reader.canAdd(output) else { throw IPhoneUseError("recording_invalid", "Video track cannot be decoded") }
         reader.add(output)
@@ -44,13 +45,15 @@ enum NativeRecordingValidation {
         // A five-minute phone recording can contain thousands of full-size
         // frames. Keep full decoding, but scale its budget within the host's
         // 75-second command timeout (also allowing 10 seconds to finalize).
-        let validationBudget = max(15, min(45, seconds / 5))
+        let validationBudget = max(15, min(45, seconds / 2))
         let validationStarted = ProcessInfo.processInfo.systemUptime
         let deadline = validationStarted + validationBudget
         while let sample = output.copyNextSampleBuffer() {
-            guard ProcessInfo.processInfo.systemUptime < deadline,
-                  let pixels = CMSampleBufferGetImageBuffer(sample) else {
-                throw IPhoneUseError("recording_validation_timeout", "Video validation exceeded its budget or returned no decoded image")
+            guard ProcessInfo.processInfo.systemUptime < deadline else {
+                throw IPhoneUseError("recording_validation_timeout", "Video validation exceeded its \(validationBudget)-second budget after \(count) decoded frames")
+            }
+            guard let pixels = CMSampleBufferGetImageBuffer(sample) else {
+                throw IPhoneUseError("recording_invalid", "Video decoder returned no image")
             }
             let time = CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sample))
             guard time.isFinite, time >= last else { throw IPhoneUseError("recording_invalid", "Video timestamps are invalid") }

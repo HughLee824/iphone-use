@@ -57,10 +57,9 @@ extension SessionBackend {
 final class XCTestBackend: SessionBackend {
     private let config: HostConfiguration
     private let paths: SessionPaths
-    private var process: Process?
-    private var log: FileHandle?
+    private var runner: StandaloneRunner?
+    private var transport: RunnerUSBTransport?
     private var deviceLock: SessionDeviceLock?
-    private var endpoint: NWEndpoint?
     private let token = UUID().uuidString + UUID().uuidString
     private var identity: String?
     private var runnerPID: Int?
@@ -75,16 +74,10 @@ final class XCTestBackend: SessionBackend {
     }
 
     func start() throws -> [String: Any] {
-        let logURL = paths.directory.appendingPathComponent("xcodebuild.log")
-        FileManager.default.createFile(atPath: logURL.path, contents: nil)
-        log = try FileHandle(forWritingTo: logURL)
         let details = try deviceInfo("details")
         guard let hardware = details["hardwareProperties"] as? [String: Any],
-              let udid = hardware["udid"] as? String,
-              let connection = details["connectionProperties"] as? [String: Any],
-              let address = connection["tunnelIPAddress"] as? String,
-              IPv6Address(address) != nil, address != "::" else {
-            throw IPhoneUseError("coredevice_unavailable", "No native CoreDevice IPv6 address; see \(logURL.path)")
+              let udid = hardware["udid"] as? String else {
+            throw IPhoneUseError("coredevice_unavailable", "CoreDevice did not identify the selected iPhone")
         }
         deviceLock = try SessionDeviceLock(root: paths.directory.deletingLastPathComponent(), device: udid)
         deviceUDID = udid
@@ -99,46 +92,47 @@ final class XCTestBackend: SessionBackend {
             guard let self else { throw IPhoneUseError("backend_unavailable", "Runner is not connected") }
             return try Self.decodePreviewGeometry(self.request("preview-geometry", timeout: 3))
         })
-        let manifest = paths.directory.appendingPathComponent("runner.xctestrun")
-        try RunnerSessionManifest.prepare(source: URL(fileURLWithPath: config.xctestrun), destination: manifest)
-        endpoint = .hostPort(host: .init(address), port: 47821)
-        let runner = Process()
-        runner.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-        runner.arguments = ["xcodebuild", "test-without-building", "-xctestrun", manifest.path,
-            "-destination", "platform=iOS,id=\(udid)", "-parallel-testing-enabled", "NO",
-            "-only-testing:IPhoneUseTests/LiveSessionTests/testCommandSession",
-            "-resultBundlePath", paths.directory.appendingPathComponent("run.xcresult").path]
-        var environment = ProcessInfo.processInfo.environment
-        environment["TEST_RUNNER_IPHONE_USE_SESSION_TOKEN"] = token
-        environment["TEST_RUNNER_IPHONE_USE_LISTEN_HOST"] = address
-        environment["TEST_RUNNER_IPHONE_USE_HOST_MANAGED"] = "1"
-        runner.environment = environment
-        runner.standardInput = FileHandle.nullDevice
-        runner.standardOutput = log
-        runner.standardError = log
-        try runner.run()
-        process = runner
-        try saveJSON(["device": udid, "address": address, "xcodebuildPid": runner.processIdentifier],
+        let transport = RunnerUSBTransport(device: udid)
+        _ = try transport.requireUSB(deadline: ProcessInfo.processInfo.systemUptime + 5)
+        self.transport = transport
+        let bundle = try StandaloneRunner.bundleID(manifest: URL(fileURLWithPath: config.xctestrun))
+        let runner = StandaloneRunner { arguments, tail, environment in
+            try CoreDevice.read(arguments + ["--device", udid], trailingArguments: tail, timeout: 10,
+                                launchEnvironment: environment)
+        }
+        self.runner = runner
+        let launched = try runner.start(bundle: bundle, token: token)
+        try saveJSON(["device": udid, "bundleId": bundle, "runnerPid": launched.pid,
+                      "executable": launched.executable.absoluteString, "transport": "usb-loopback",
+                      "launch": "standalone-background", "installationPerformed": false],
                      to: paths.directory.appendingPathComponent("backend.json"))
         let deadline = ProcessInfo.processInfo.systemUptime + 90
-        while runner.isRunning, ProcessInfo.processInfo.systemUptime < deadline {
-            // Only startup health checks retry. No UI command is sent until readiness succeeds.
+        var nextProcessCheck = ProcessInfo.processInfo.systemUptime
+        while ProcessInfo.processInfo.systemUptime < deadline {
+            // Only startup health checks retry; launching and UI input never do.
             if let response = try? request("ping", timeout: 1), response["ok"] as? Bool == true,
                let result = response["result"] as? [String: Any] {
+                guard let sessionID = response["sessionId"] as? String, UUID(uuidString: sessionID) != nil,
+                      response["runnerPid"] as? Int == launched.pid else {
+                    throw IPhoneUseError("invalid_runner_identity", "USB peer did not match the launched Runner")
+                }
+                identity = sessionID
+                runnerPID = launched.pid
                 try Self.validateCapabilities(result)
                 guard result["applicationStateTimeoutSupported"] as? Bool == true else {
-                    throw IPhoneUseError("unsupported_xctest_runtime", "This XCTest runtime cannot bound application-state waits; see \(logURL.path)")
-                }
-                identity = response["sessionId"] as? String
-                runnerPID = response["runnerPid"] as? Int
-                guard identity != nil, runnerPID != nil else {
-                    throw IPhoneUseError("invalid_runner_identity", "Runner did not report its session identity")
+                    throw IPhoneUseError("unsupported_xctest_runtime", "This XCTest runtime cannot bound application-state waits")
                 }
                 return metadata()
             }
+            if ProcessInfo.processInfo.systemUptime >= nextProcessCheck {
+                guard try runner.isRunning() else {
+                    throw RunnerStartupDiagnostics.failure(processExited: true)
+                }
+                nextProcessCheck = ProcessInfo.processInfo.systemUptime + 3
+            }
             Thread.sleep(forTimeInterval: 0.2)
         }
-        throw IPhoneUseError("runner_start_failed", "XCTest did not become ready. Check the unlocked iPhone for an XCTest UI automation authorization prompt and complete it yourself if present. Inspect \(logURL.path) for the actual installation, signing or startup failure before reconnecting; a timeout alone does not establish its cause.")
+        throw RunnerStartupDiagnostics.failure(processExited: false)
     }
 
     private func deviceInfo(_ kind: String) throws -> [String: Any] {
@@ -148,16 +142,16 @@ final class XCTestBackend: SessionBackend {
 
     private func metadata() -> [String: Any] {
         ["runnerSession": identity ?? "", "runnerPid": runnerPID ?? 0,
-         "xcodebuildPid": process?.processIdentifier ?? 0, "transport": "native-coredevice"]
+         "launch": "standalone-background", "transport": "usb-loopback", "installationPerformed": false]
     }
 
     private func request(_ operation: String, fields: [String: Any] = [:], timeout: TimeInterval = 45) throws -> [String: Any] {
-        guard let endpoint else { throw IPhoneUseError("backend_unavailable", "Runner is not connected") }
+        guard let transport else { throw IPhoneUseError("backend_unavailable", "Runner is not connected") }
         var request = fields
         request["id"] = UUID().uuidString
         request["token"] = token
         request["op"] = operation
-        let response = try JSONTransport.exchange(endpoint: endpoint, request: request, timeout: timeout)
+        let response = try transport.exchange(request, timeout: timeout)
         if let identity, response["sessionId"] as? String != identity {
             throw TransportError(description: "Runner session changed; reconnect and observe", possiblySent: true)
         }
@@ -296,7 +290,7 @@ final class XCTestBackend: SessionBackend {
     }
 
     func startRecording(duration: Double) throws -> [String: Any] {
-        guard let recording, process?.isRunning == true else { throw IPhoneUseError("backend_unavailable", "Runner is not connected") }
+        guard let recording, identity != nil, try runner?.isRunning() == true else { throw IPhoneUseError("backend_unavailable", "Runner is not connected") }
         return try recording.start(duration: duration)
     }
 
@@ -316,31 +310,18 @@ final class XCTestBackend: SessionBackend {
     func stop() -> [String: Any] {
         recordingCancellation.cancel()
         let recordingCleanup = recording?.close() ?? ["recordingCleanupAcknowledged": true]
-        guard let runner = process else {
-            deviceLock = nil
-            return ["xcodebuildExited": true, "recordingCleanup": recordingCleanup]
-        }
         var acknowledged = false
-        if identity != nil, runner.isRunning {
+        if identity != nil {
             acknowledged = (try? request("shutdown", timeout: 5)["ok"] as? Bool) == true
         }
-        var deadline = ProcessInfo.processInfo.systemUptime + 15
-        while runner.isRunning, ProcessInfo.processInfo.systemUptime < deadline { Thread.sleep(forTimeInterval: 0.05) }
-        var forced = false
-        if runner.isRunning {
-            forced = true
-            runner.terminate()
-            deadline = ProcessInfo.processInfo.systemUptime + 3
-            while runner.isRunning, ProcessInfo.processInfo.systemUptime < deadline { Thread.sleep(forTimeInterval: 0.05) }
-            if runner.isRunning { kill(runner.processIdentifier, SIGKILL) }
-        }
-        runner.waitUntilExit()
-        process = nil
+        let cleanup = runner?.stop() ?? ["runnerProcessExited": true]
+        transport = nil
+        identity = nil
+        runnerPID = nil
         deviceLock = nil
-        try? log?.close()
-        log = nil
-        return ["shutdownAcknowledged": acknowledged && recordingCleanup["recordingCleanupAcknowledged"] as? Bool == true,
-                "runnerShutdownAcknowledged": acknowledged, "recordingCleanup": recordingCleanup, "xcodebuildExited": true,
-                "xcodebuildExitCode": Int(runner.terminationStatus), "forced": forced]
+        return ["shutdownAcknowledged": acknowledged && cleanup["runnerProcessExited"] as? Bool == true
+                    && recordingCleanup["recordingCleanupAcknowledged"] as? Bool == true,
+                "runnerShutdownAcknowledged": acknowledged, "recordingCleanup": recordingCleanup,
+                "runnerProcessExited": cleanup["runnerProcessExited"] ?? false, "runnerCleanup": cleanup]
     }
 }

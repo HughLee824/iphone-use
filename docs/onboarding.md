@@ -35,7 +35,7 @@ iphone-use setup --device "$IOS_UDID" --profile "$DEVELOPMENT_PROFILE" --team "$
 
 默认手机 App bundle ID 为 `com.iphone-use.runner.xctrunner`。若 profile 只授权自己的标识，首次 setup 添加 `--bundle-id com.example.iphone-use.xctrunner`；这里传的是 **App 的完整 bundle ID**，之后会保存复用。存在多个匹配开发证书时，用 `--identity` 传 `security find-identity -v -p codesigning` 中的证书 SHA-1。该标识用于本机选取私钥，不是私钥内容。
 
-setup 依次校验发布文件和 CLI 配对、设备版本、profile 的设备/bundle ID/有效期/证书匹配，复制并重签 Runner，通过 `test-without-building` 在设备安装启动，然后验证握手、截图和正常退出。只有全部成功才更新该设备的准备记录。`compiled:false` 表示这条用户路径没有编译；`verified` 的截图项不代表已验证某个业务 App 的 AX 树或交互效果。
+setup 依次校验发布文件和 CLI 配对、设备版本、profile 的设备/bundle ID/有效期/证书匹配，复制并重签 Runner，通过 CoreDevice 在设备安装，随后独立后台启动并经 USB 本地通信验证握手、截图和正常退出。只有全部成功才更新该设备的准备记录。`compiled:false` 表示这条用户路径没有编译；`verified` 的截图项不代表已验证某个业务 App 的 AX 树或交互效果。
 
 之后从任意工作目录连接，无需 `.xctestrun`：
 
@@ -51,10 +51,10 @@ iphone-use --session "$SESSION" disconnect
 
 ## 升级与续签
 
-- **重复 setup**：检查已保存及 Xcode 缓存中的有效 profile，选择同一签名配置下最新的有效版本；已有产物仍匹配时直接复用，并重新做设备验证。
+- **重复 setup**：检查已保存及 Xcode 缓存中的有效 profile，选择同一签名配置下最新的有效版本；已有产物仍匹配时直接复用；显式 setup 会再次部署并做设备验证，普通 connect 不安装。
 - **发布包升级**：安装完整新目录，先断开旧会话再切换 CLI。Runner 内容改变时执行 setup；完全相同的 Runner 内容不会仅因 CLI 版本号变化而要求重签。旧目录不会被覆盖，避免破坏仍被宿主持有的文件。
 - **profile 到期或证书轮换**：在 Xcode/开发团队中更新签名资料后重新 setup，必要时传新的 `--profile`。默认沿用设备记录中的 bundle ID，不因重新签名产生另一个 Runner App。
-- **手机卸载了 Runner**：只要本机产物仍有效，connect 的 `test-without-building` 会重新安装；也可重跑 setup 做完整验证。
+- **手机卸载了 Runner**：connect 返回 `runner_not_installed`，请重跑 setup 部署并验证；connect 不会自动重新安装。
 - **旧产物清理**：当前保留重签产物及诊断目录。确认没有活跃会话引用后再清理旧目录；清理文件本身不会断开会话。
 
 免费 Personal Team 的首次 provisioning 和到期续签尚未验收。Apple 对免费账号规定的 profile 有效期为七天，见[账号能力说明](https://developer.apple.com/help/account/basics/about-your-developer-account)；当前付费团队的成功结果不代表免费账号路径已成立。
@@ -92,6 +92,8 @@ swift build
 
 ```sh
 .build/debug/iphone-use devices
+# SIGNED_RUNNER_APP 使用 build-runner 返回的 result.runnerApp；仅部署/升级时安装。
+xcrun devicectl device install app --device "$IOS_UDID" "$SIGNED_RUNNER_APP"
 .build/debug/iphone-use connect --device "$IOS_UDID" --xctestrun "$SIGNED_XCTESTRUN"
 # 使用 connect 返回的 session。
 .build/debug/iphone-use --session "$SESSION" apps --query Settings
@@ -101,7 +103,7 @@ swift build
 .build/debug/iphone-use --session "$SESSION" disconnect
 ```
 
-`SIGNED_XCTESTRUN` 使用构建结果的 `result.xctestrun`。`connect` 用 Xcode 安装并启动 Runner；之后继续使用已验证的 CoreDevice 原生链路。断开会话停止进程并释放观察缓存，签名构建和手机上的 Runner 保留以便复用。
+`SIGNED_XCTESTRUN` 使用构建结果的 `result.xctestrun`。`connect` 只后台启动已安装的 Runner，以 USB 本地回环通信验证能力和执行操作；不会重新安装或要求打开 WLAN 权限。安装/升级由前面的显式部署步骤负责。断开会话停止进程并释放观察缓存，签名构建和手机上的 Runner 保留以便复用。
 
 每次构建分配一个新的目录，避免覆盖活跃会话引用的文件。Runner 及其共享源码、Xcode 或签名发生变化后重新构建，并将新路径用于下一次 connect；仅 CLI/宿主代码变化时运行 `swift build` 后建立新会话即可。相同的兼容 Runner 构建可供后续会话复用；不需要每次连接都编译。构建目录暂时不自动清理，确认没有会话引用后可移除不再需要的目录。上述独立目录、CLI 名称与路径字段是工程实现选择。
 

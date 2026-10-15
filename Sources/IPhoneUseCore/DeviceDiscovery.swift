@@ -3,7 +3,8 @@ import Foundation
 // devicectl's JSON file is its supported programmatic interface. Never parse its display table.
 enum CoreDevice {
     static func read(_ arguments: [String], savingTo output: URL? = nil,
-                     cancelled: () -> Bool = { false }, trailingArguments: [String] = [], timeout: Int = 20) throws -> [String: Any] {
+                     cancelled: () -> Bool = { false }, trailingArguments: [String] = [], timeout: Int = 20,
+                     launchEnvironment: [String: String]? = nil) throws -> [String: Any] {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("iphone-use-discovery-\(UUID().uuidString)")
         try SessionPaths.secureDirectory(directory)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -15,6 +16,11 @@ enum CoreDevice {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
         process.arguments = commandArguments(arguments, output: resultURL, trailingArguments: trailingArguments, timeout: timeout)
+        if let launchEnvironment {
+            var environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("DEVICECTL_CHILD_") }
+            for (key, value) in launchEnvironment { environment["DEVICECTL_CHILD_" + key] = value }
+            process.environment = environment
+        }
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = log
         process.standardError = log

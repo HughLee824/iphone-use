@@ -26,7 +26,7 @@ CLI 从自身真实路径定位配套资源，支持搬移整个目录和软链�
 
 发布 Runner 不包含 provisioning profile、嵌入的 XCTest 框架、调试符号包或源码。发布构建将 iOS 编译下限设为 17，使用设备提供的 XCTest；最低版本检查只排除已知不兼容，不证明所有 iOS/Xcode 组合都可用。XCTest 的断言和跳过报告使用 `#fileID`，打包时检查二进制是否残留源码仓库的绝对路径。
 
-setup 将包复制到用户状态目录，改写为保存的 App bundle ID、嵌入用户 profile，由本机 codesign 对测试 bundle 和 Runner 签名并校验。随后使用 `test-without-building` 做真机握手、截图和退出验证，成功后原子更新按 UDID 保存的记录。安装目录不写入用户签名资料。设备能力握手仍是最终兼容性检查；本地文件存在和签名校验成功不能替代它。
+setup 将包复制到用户状态目录，改写为保存的 App bundle ID、嵌入用户 profile，由本机 codesign 对测试 bundle 和 Runner 签名并校验。随后通过 CoreDevice 显式安装，独立后台启动 Runner 并经 USB 本地通信做真机握手、截图和退出验证，成功后原子更新按 UDID 保存的记录。安装目录不写入用户签名资料。设备能力握手仍是最终兼容性检查；本地文件存在和签名校验成功不能替代它。
 
 相同设备重复 setup 复用有效产物，续签时扫描 Xcode profile 和已保存 profile。相同签名配置选择较晚到期的有效 profile；跨团队或证书有歧义时明确报错，不猜测。Runner 内容摘要不包含 CLI release 版本和 CLI 摘要，因此同一 Runner 原样随 CLI 更新时可复用。新的重签目录不会覆盖旧目录，活跃会话继续持有自己的文件。
 

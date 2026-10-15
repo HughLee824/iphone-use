@@ -80,7 +80,11 @@ final class SessionHost {
             timer?.cancel()
             signals.forEach { $0.cancel() }
             try? FileManager.default.removeItem(atPath: paths.socket)
-        } catch { _ = backend.stop(); throw error }
+        } catch {
+            let cleanup = backend.stop()
+            try? saveJSON(cleanup, to: paths.directory.appendingPathComponent("startup-cleanup.json"))
+            throw error
+        }
     }
 
     private func receive(_ request: [String: Any], reply originalReply: @escaping JSONServer.Reply) {
@@ -411,7 +415,7 @@ final class SessionHost {
             do { try observations.clear(); cleanup["observationCacheRemoved"] = true }
             catch { cleanup["observationCacheRemoved"] = false; cleanup["cacheError"] = String(describing: error) }
             let stopped = config.backend == "apple-native" ? cleanup["backendStopped"] as? Bool == true
-                : cleanup["xcodebuildExited"] as? Bool == true && cleanup["forced"] as? Bool != true && cleanup["xcodebuildExitCode"] as? Int == 0
+                : cleanup["runnerProcessExited"] as? Bool == true
             let clean = stopped && cleanup["shutdownAcknowledged"] as? Bool == true && cleanup["observationCacheRemoved"] as? Bool == true
             let result: [String: Any] = ["session": config.session, "reason": reason,
                 "hostPid": ProcessInfo.processInfo.processIdentifier, "backend": finalBackendInfo,

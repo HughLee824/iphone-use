@@ -59,7 +59,17 @@ public enum RunnerSetup {
         if let reusable { prepared = reusable }
         else { prepared = try prepare(package: package, profile: signing, identity: selectedIdentity, device: udid, bundleID: bundleID, root: root) }
         let products = root.appendingPathComponent("prepared/\(prepared.directory)")
-        // test-without-building installs the signed binary and checks the real Runner capabilities.
+        // Only explicit setup deploys the signed app. Ordinary connect reuses it
+        // and verifies the live protocol without resetting per-app permissions.
+        do {
+            let sessionRoot = try SessionPaths.stateRoot(environment: ProcessInfo.processInfo.environment)
+            try SessionPaths.secureDirectory(sessionRoot)
+            let deploymentLock = try SessionDeviceLock(root: sessionRoot, device: udid)
+            defer { withExtendedLifetime(deploymentLock) {} }
+            _ = try RunnerUSBTransport(device: udid).requireUSB(deadline: ProcessInfo.processInfo.systemUptime + 5)
+            _ = try CoreDevice.read(["device", "install", "app", "--device", udid],
+                                    trailingArguments: [products.appendingPathComponent("IPhoneUseRunner.app").path], timeout: 60)
+        }
         // Keep a prepared directory after an uncertain connection/cleanup failure: a host may still own it.
         let connection = try SessionClient.connect(device: udid, xctestrun: products.appendingPathComponent("Runner.xctestrun"), idleTimeout: IdleTimeout("3m"))
         guard let session = connection["session"] as? String else { throw IPhoneUseError("setup_verification_failed", "Connection did not return a session") }

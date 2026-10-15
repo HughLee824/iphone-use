@@ -73,7 +73,7 @@ iphone-use setup --device "$IOS_UDID"
 iphone-use connect --device "$IOS_UDID" --mode runner
 ```
 
-`setup` verifies signing, connection, screenshot and cleanup before saving preparation. It does **not** change the default mode. Use `config set mode runner` if you want future connections without `--mode` to use Runner. Signing choices and the separate source workflow (`build-runner`, then `connect --xctestrun`) are described in [onboarding](onboarding.md).
+`setup` verifies signing, connection, screenshot and cleanup before saving preparation. It does **not** change the default mode. Use `config set mode runner` if you want future connections without `--mode` to use Runner. Signing choices and the separate source workflow (`build-runner`, explicitly install its signed app, then `connect --xctestrun`) are described in [onboarding](onboarding.md).
 
 Runner observations also include available elements; actions can use current references such as `o1:e9` where supported. Consult `connect/status` support fields and [actions](actions.md), rather than assuming the routes have identical text semantics. Explicit recording in both modes uses the shared owned native media recorder; Runner input remains XCTest.
 

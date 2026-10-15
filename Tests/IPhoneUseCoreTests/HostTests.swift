@@ -59,7 +59,7 @@ private final class ControlledBackend: SessionBackend {
     func stop() -> [String: Any] {
         stopCount += 1
         stopped.signal()
-        return ["shutdownAcknowledged": true, "backendStopped": true, "xcodebuildExited": true, "xcodebuildExitCode": 0, "forced": false]
+        return ["shutdownAcknowledged": true, "backendStopped": true, "runnerProcessExited": true]
     }
     func observe() throws -> CapturedObservation {
         observeCount += 1
