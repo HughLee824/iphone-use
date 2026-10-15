@@ -38,6 +38,23 @@ jobs:
             Runner/RunnerPinchEvent.m Tests/RunnerRuntime/PinchEventTests.m \
             -o .build/runner-pinch-runtime-tests
           .build/runner-pinch-runtime-tests
+      - name: Test the Runner startup guard with host runtime doubles
+        run: |
+          xcrun clang -fobjc-arc -framework Foundation \
+            Runner/RunnerStartupGuard.m Tests/RunnerRuntime/StartupGuardTests.m \
+            -o .build/runner-startup-runtime-tests
+          .build/runner-startup-runtime-tests disabled
+          IPHONE_USE_HOST_MANAGED=1 IPHONE_USE_SESSION_TOKEN=short \
+            .build/runner-startup-runtime-tests disabled
+          for scenario in active inactive flapping background enter_background timeout nonhome offmain finish; do
+            IPHONE_USE_HOST_MANAGED=1 IPHONE_USE_SESSION_TOKEN=00000000000000000000000000000000 \
+              .build/runner-startup-runtime-tests "$scenario"
+          done
+          xcrun clang -fobjc-arc -framework Foundation -DSTARTUP_TEST_UNSUPPORTED \
+            Runner/RunnerStartupGuard.m Tests/RunnerRuntime/StartupGuardTests.m \
+            -o .build/runner-startup-unsupported-tests
+          IPHONE_USE_HOST_MANAGED=1 IPHONE_USE_SESSION_TOKEN=00000000000000000000000000000000 \
+            .build/runner-startup-unsupported-tests unsupported
       - run: python3 -m unittest discover -s scripts/tests -v
       - run: node --test scripts/tests/test_agent_templates.mjs scripts/tests/test_preview_metrics.mjs
       - name: Compile the iPhone Runner without signing
