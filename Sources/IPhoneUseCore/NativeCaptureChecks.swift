@@ -8,6 +8,7 @@ enum NativeCaptureChecks {
     static func withOrientationRecovery(capture: (_ afterRefresh: Bool) throws -> CapturedObservation,
                                         resynchronize: () throws -> Bool,
                                         recordingActive: () -> Bool = { false },
+                                        resynchronizeRecording: (() throws -> Bool)? = nil,
                                         diagnostics: () -> [String: Any] = { [:] },
                                         now: () -> Double = { ProcessInfo.processInfo.systemUptime }) throws -> CapturedObservation {
         let started = now()
@@ -15,11 +16,11 @@ enum NativeCaptureChecks {
         catch let error as IPhoneUseError where needsOrientationRecovery(error) {
             let firstFinished = now()
             let triggerState = diagnostics()
-            // Missing positive evidence is not an orientation conflict. Rebinding
-            // this shared stream would interrupt a healthy static recording.
-            // Reject this capture without returning cached pixels or disabling
-            // control permanently; a later fresh frame can verify the next call.
-            if error.code == "native_snapshot_freshness_unavailable", recordingActive() {
+            // Missing positive evidence is not an orientation conflict. Preserve
+            // recording only through its explicit source-refresh path; callers
+            // without that capability must still reject rather than use a cache.
+            let recordingRecovery = error.code == "native_snapshot_freshness_unavailable" && recordingActive()
+            if recordingRecovery, resynchronizeRecording == nil {
                 var details = error.diagnostics
                 details["orientationRecoveryDeferred"] = true
                 details["recordingPreserved"] = true
@@ -30,7 +31,12 @@ enum NativeCaptureChecks {
             }
             do {
                 let recoveryStarted = now()
-                let geometryChanged = try resynchronize()
+                let geometryChanged: Bool
+                if recordingRecovery, let resynchronizeRecording {
+                    geometryChanged = try resynchronizeRecording()
+                } else {
+                    geometryChanged = try resynchronize()
+                }
                 let recoveryFinished = now()
                 let recoveredState = diagnostics()
                 let retryStarted = now()

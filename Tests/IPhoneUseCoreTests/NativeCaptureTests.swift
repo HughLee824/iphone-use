@@ -4,6 +4,22 @@ import ImageIO
 @testable import IPhoneUseCore
 
 final class NativeCaptureTests: XCTestCase {
+    func testRecordingRefreshRevalidatesWithoutEndingSegmentAndStillRejectsChangedGeometry() throws {
+        let png = try screenPNG()
+        for changed in [false, true] {
+            var attempts = 0, refreshes = 0
+            let result = try NativeCaptureChecks.withOrientationRecovery(capture: { refreshed in
+                attempts += 1
+                if !refreshed { throw IPhoneUseError("native_snapshot_freshness_unavailable", "quiet recording") }
+                return CapturedObservation(nodes: [], metadata: [:], screenshot: png)
+            }, resynchronize: { XCTFail("Ordinary recovery would end this recording"); return true },
+            recordingActive: { true }, resynchronizeRecording: { refreshes += 1; return changed })
+            XCTAssertEqual(attempts, 2)
+            XCTAssertEqual(refreshes, 1)
+            XCTAssertEqual(result.metadata[changed ? "orientationResynchronized" : "orientationRevalidated"] as? Bool, true)
+        }
+    }
+
     func testRecordingDefersOnlyMissingFrameRecoveryAndAllowsLaterFreshCapture() throws {
         var captures = 0, refreshes = 0
         let png = try screenPNG()
