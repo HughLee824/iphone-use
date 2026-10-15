@@ -4,6 +4,10 @@
 static NSInteger AppState;
 static NSUInteger HomeCount;
 static NSInteger StateAtHome = -1;
+static BOOL InterruptedActivation;
+static NSUInteger ActivationPhase;
+static NSTimeInterval PhaseStarted;
+static NSTimeInterval HomeTime;
 
 #ifdef STARTUP_TEST_UNSUPPORTED
 typedef NSUInteger TestButton;
@@ -17,7 +21,20 @@ typedef NSInteger TestButton;
 @end
 @implementation UIApplication
 + (instancetype)sharedApplication { static id app; if (!app) app = [self new]; return app; }
-- (NSInteger)applicationState { return AppState; }
+- (NSInteger)applicationState {
+    // Advance only after the preceding state was observed. Independent dispatch
+    // timers can be coalesced under CI load, hiding the inactive interval from
+    // the guard and no longer testing interrupted activation at all.
+    if (InterruptedActivation && ActivationPhase < 3) {
+        NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+        if (now - PhaseStarted >= 0.1) {
+            ActivationPhase++;
+            PhaseStarted = now;
+            AppState = ActivationPhase == 2 ? 1 : 0;
+        }
+    }
+    return AppState;
+}
 @end
 
 @interface XCUIDevice : NSObject
@@ -25,7 +42,11 @@ typedef NSInteger TestButton;
 @end
 @implementation XCUIDevice
 - (void)_silentPressButton:(TestButton)button {
-    if (button == 1) { HomeCount++; StateAtHome = AppState; }
+    if (button == 1) {
+        HomeCount++;
+        StateAtHome = AppState;
+        HomeTime = NSProcessInfo.processInfo.systemUptime;
+    }
 }
 @end
 
@@ -57,13 +78,13 @@ int main(int argc, const char *argv[]) {
             Check(HomeCount == 1 && [[RunnerStartupGuard facts][@"state"] isEqual:@"not_needed"], @"no hook after test starts");
             return 0;
         }
-        if ([scenario isEqualToString:@"inactive"] || [scenario isEqualToString:@"flapping"]) {
+        if ([scenario isEqualToString:@"flapping"]) {
+            AppState = 1;
+            InterruptedActivation = YES;
+            PhaseStarted = NSProcessInfo.processInfo.systemUptime;
+        } else if ([scenario isEqualToString:@"inactive"]) {
             AppState = 1;
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ AppState = 0; });
-            if ([scenario isEqualToString:@"flapping"]) {
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 200 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ AppState = 1; });
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ AppState = 0; });
-            }
         } else if ([scenario isEqualToString:@"timeout"]) {
             AppState = 1;
         } else if ([scenario isEqualToString:@"background"]) {
@@ -96,7 +117,11 @@ int main(int argc, const char *argv[]) {
             Check(elapsed < 5.2, @"activation wait bounded");
         } else {
             Check(HomeCount == 1 && StateAtHome == 0, @"exactly one original Home, only while active");
-            Check(elapsed >= ([scenario isEqualToString:@"flapping"] ? 0.65 : 0.35), @"active interval must be continuous");
+            Check(elapsed >= 0.35, @"active interval must settle before Home");
+            if (InterruptedActivation) {
+                Check(ActivationPhase == 3 && HomeTime - PhaseStarted >= 0.35,
+                      @"observed inactive interval must restart the full active wait");
+            }
         }
         NSUInteger count = HomeCount;
         start = NSProcessInfo.processInfo.systemUptime;
