@@ -137,6 +137,7 @@ final class LiveSessionTests: XCTestCase {
 
     @MainActor
     func testCommandSession() async throws {
+        RunnerStartupGuard.finish()
         guard let token = ProcessInfo.processInfo.environment["IPHONE_USE_SESSION_TOKEN"], token.count >= 32 else {
             throw XCTSkip("Start through iphone-use connect to enable the command session", file: #fileID)
         }
@@ -219,7 +220,7 @@ final class LiveSessionTests: XCTestCase {
             let hostManaged = ProcessInfo.processInfo.environment["IPHONE_USE_HOST_MANAGED"] == "1"
             return ["protocol": "agentsoma-spike-jsonl-v1", "lifecycleOwner": hostManaged ? "host" : "spike",
                     "lifetimeLimitSeconds": hostManaged ? NSNull() : 900, "observationVersion": 2,
-                    "actionVersion": 9, "launchVersion": 2, "frameStabilityVersion": 2, "screenGuardVersion": 1, "previewGeometryVersion": 2,
+                    "actionVersion": 9, "launchVersion": 2, "startupGuard": RunnerStartupGuard.facts(), "frameStabilityVersion": 2, "screenGuardVersion": 1, "previewGeometryVersion": 2,
                     "applicationStateTimeoutSupported": stateTimeout != nil]
         }
         if op == "shutdown" { return ["stopped": true] }
