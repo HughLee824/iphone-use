@@ -19,13 +19,14 @@ final class NativeStreamRecording {
         let duration: Double
         var startedAt = Date().timeIntervalSince1970
         var started: Double
-        let mediaID: String
+        var mediaID: String
         let configuration: [String: Any]
         let rotation: String
         weak var receiver: NativeRecordingSource?
         var parser = NativeHEVCDepacketizer()
         let writer: NativeVideoWriter
         weak var snapshots: NativeVideoSnapshot?
+        var usesSharedFrames = false
         var snapshotBaseline: [String: Any] = [:]
         var decodedSeedAge: Double?
         var sharedTimestamp: UInt32?
@@ -36,6 +37,9 @@ final class NativeStreamRecording {
         var firstFrameAt: Double?
         var startupDroppedUnits = 0
         var failure: Error?
+        var sourceGeneration = 0
+        var refreshStarted: Double?
+        var sourceRefreshes: [[String: Any]] = []
         init(root: URL, duration: Double, receiver: NativeRecordingSource, mediaID: String, orientation: NativeVideoOrientation, configuration: [String: Any], clock: Int32, started: Double,
              makeWriter: (URL, Int32, NativeVideoOrientation) -> NativeVideoWriter) {
             self.duration = duration; self.receiver = receiver; self.mediaID = mediaID
@@ -95,6 +99,7 @@ final class NativeStreamRecording {
             jobs[job.id] = job; current = job
             pendingLock.lock(); overflow = false; pendingLock.unlock()
             job.snapshots = snapshots; job.snapshotBaseline = snapshots?.status() ?? [:]
+            job.usesSharedFrames = snapshots != nil
             if let snapshots {
                 snapshots.setRecordingHandler { [weak self, weak job] frame in
                     guard let self, let job else { return }
@@ -114,7 +119,7 @@ final class NativeStreamRecording {
         }
     }
 
-    private func enqueue(_ frame: NativeVideoSnapshot.Frame, job: Job) {
+    private func enqueue(_ frame: NativeVideoSnapshot.Frame, job: Job, generation: Int = 0) {
         // Retained full-resolution pixel buffers are expensive. Fail explicitly
         // at a bounded backlog instead of blocking the shared decoder/preview.
         let bytes = CVPixelBufferGetDataSize(frame.pixels)
@@ -123,7 +128,8 @@ final class NativeStreamRecording {
         pendingBytes += bytes; pendingLock.unlock()
         queue.async { [self] in
             defer { pendingLock.lock(); pendingBytes -= bytes; pendingLock.unlock() }
-            guard job.result == nil, job === current else { return }
+            guard job.result == nil, job === current, job.refreshStarted == nil,
+                  job.sourceGeneration == generation else { return }
             do {
                 if job.firstFrameAt == nil {
                     job.decodedSeedAge = max(0, job.started - frame.firstPacketAt)
@@ -193,6 +199,13 @@ final class NativeStreamRecording {
         let now = now()
         pendingLock.lock(); let overflowed = overflow; pendingLock.unlock()
         if overflowed { job.failure = IPhoneUseError("recording_backpressure", "Bounded video queue overflowed"); finish(job, reason: "video_error"); return }
+        if let started = job.refreshStarted {
+            if now - started >= 30 || now - job.started >= job.duration {
+                job.failure = IPhoneUseError("recording_refresh_timeout", "Media refresh exceeded the recording deadline")
+                finish(job, reason: "media_refresh_failed")
+            }
+            return
+        }
         guard job.receiver?.health()["healthy"] as? Bool == true else {
             job.failure = IPhoneUseError("recording_media_lost", "Owned media lost health during recording")
             finish(job, reason: "media_lost"); return
@@ -221,6 +234,81 @@ final class NativeStreamRecording {
     func endSegment(reason: String) {
         queue.sync { if let current, current.result == nil { finish(current, reason: reason) } }
     }
+
+    struct SharedSource {
+        let receiver: NativeRecordingSource
+        let snapshots: NativeVideoSnapshot
+        let mediaID: String
+        let rotation: String
+        let geometryChanged: Bool
+    }
+
+    // Keep the writer, recording ID and original deadline while replacing only
+    // our quiescent media source. The previous image holds across the measured
+    // capture gap; no synthetic frame or old RTP clock crosses the boundary.
+    func refreshSharedSource(_ replace: () throws -> SharedSource) throws -> Bool {
+        let job: Job = try queue.sync {
+            guard let job = current, job.result == nil, let snapshots = job.snapshots,
+                  job.refreshStarted == nil, job.writer.hasFrame,
+                  job.receiver?.health()["healthy"] as? Bool == true, sharedDecoderIntact(job) else {
+                throw IPhoneUseError("recording_refresh_unavailable", "Recording source is not healthy and ready for refresh")
+            }
+            snapshots.setRecordingHandler(nil)
+            job.sourceGeneration += 1
+            job.refreshStarted = now()
+            // Continuity was checked before releasing this decoder. Its close
+            // is intentional; faults in the replacement are checked separately.
+            job.snapshots = nil
+            return job
+        }
+        do {
+            let replacement = try replace()
+            return try queue.sync {
+                guard job.result == nil, let started = job.refreshStarted else {
+                    throw IPhoneUseError("recording_refresh_timeout", "Recording ended during media refresh")
+                }
+                let resumed = now()
+                guard resumed - started < 30, resumed - job.started < job.duration else {
+                    throw IPhoneUseError("recording_refresh_timeout", "Media refresh exceeded the recording deadline")
+                }
+                job.sourceRefreshes.append(["fromMediaSessionID": job.mediaID, "toMediaSessionID": replacement.mediaID,
+                    "startedSeconds": started - job.started, "resumedSeconds": resumed - job.started,
+                    "durationSeconds": resumed - started, "geometryChanged": replacement.geometryChanged])
+                job.mediaID = replacement.mediaID
+                job.receiver = replacement.receiver
+                if replacement.geometryChanged || replacement.rotation != job.rotation {
+                    job.refreshStarted = nil
+                    finish(job, reason: "display_changed")
+                    return true
+                }
+                let config = replacement.receiver.recordingConfiguration()
+                guard Self.supports(config), config["RTPClockRate"] as? Int32 == job.writer.timescale,
+                      replacement.receiver.health()["healthy"] as? Bool == true,
+                      let seed = replacement.snapshots.previewFrame(), seed.firstPacketAt >= started else {
+                    throw IPhoneUseError("recording_refresh_unverified", "Replacement source has no verified new image or compatible clock")
+                }
+                try job.writer.prepare(seed.pixels) // Reject dimensions changing within this MP4.
+                job.snapshots = replacement.snapshots
+                job.snapshotBaseline = replacement.snapshots.status()
+                job.sharedTimestamp = nil // New SSRC/timestamp epoch; anchor to monotonic recording time.
+                job.refreshStarted = nil
+                let generation = job.sourceGeneration
+                replacement.snapshots.setRecordingHandler { [weak self, weak job] frame in
+                    guard let self, let job else { return }
+                    self.enqueue(frame, job: job, generation: generation)
+                }
+                return false
+            }
+        } catch {
+            queue.sync {
+                if job.result == nil {
+                    job.failure = error
+                    finish(job, reason: "media_refresh_failed")
+                }
+            }
+            throw error
+        }
+    }
     func close() -> [String: Any] {
         queue.sync {
             closed = true
@@ -234,10 +322,11 @@ final class NativeStreamRecording {
         return ["recordingID": job.id, "state": job.firstFrameAt == nil ? (job.snapshots == nil ? "waiting_for_keyframe" : "waiting_for_frame") : "recording",
                 "method": "native_rtp", "codec": "hevc", "path": job.directory.appendingPathComponent("screen.mp4").path,
                 "requestedDurationSeconds": job.duration, "startedAt": job.startedAt, "mediaSessionID": job.mediaID,
-                "displayRotation": job.rotation, "rtpClockRate": job.writer.timescale, "clockSource": job.snapshots == nil ? "rtcp_sender_reports" : "rtcp_sender_reports_with_host_start_anchor",
+                "displayRotation": job.rotation, "rtpClockRate": job.writer.timescale, "clockSource": job.usesSharedFrames ? "rtcp_sender_reports_with_host_start_anchor" : "rtcp_sender_reports",
                 "rtpPackets": job.packets, "writtenFrames": job.writer.frames,
-                "encoding": job.snapshots == nil ? "apple_vra_decode_then_hevc_encode" : "shared_decoded_pixels_then_hevc_encode",
+                "encoding": job.usesSharedFrames ? "shared_decoded_pixels_then_hevc_encode" : "apple_vra_decode_then_hevc_encode",
                 "initialCachedFrameAgeSeconds": job.decodedSeedAge as Any? ?? NSNull(),
+                "sourceRefreshes": job.sourceRefreshes,
                 "withheldResolutionFrames": job.writer.withheldResolutionFrames,
                 "reducedResolutionPolicy": "decode_references_hold_previous_presented_frame",
                 "droppedAccessUnits": job.parser.droppedUnits,

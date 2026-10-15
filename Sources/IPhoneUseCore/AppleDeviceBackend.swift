@@ -454,10 +454,47 @@ final class AppleDeviceBackend: SessionBackend {
                     guard first == second else { throw IPhoneUseError("capture_context_changed", "Display changed while resynchronizing orientation") }
                     return second
                 }
-                }, recordingActive: { self.recording?.isActive == true }, diagnostics: { self.media?.health() ?? [:] })
+                }, recordingActive: { self.recording?.isActive == true }, resynchronizeRecording: {
+                    guard let cli = self.cli, let media = self.media, let recording = self.recording else {
+                        throw IPhoneUseError("native_orientation_unverified", "Owned recording media is unavailable")
+                    }
+                    self.preview?.suspend("Refreshing static display")
+                    return try recording.refreshSharedSource {
+                        let changed = try media.resynchronizeOrientation(mayReplace: self.hid?.state == .ready, check: {
+                            try self.cancellation.check()
+                            try budget?.check()
+                        }) {
+                            let first = try NativeCaptureChecks.read { try cli.read($0, budget: budget) }.display
+                            let second = try NativeCaptureChecks.read { try cli.read($0, budget: budget) }.display
+                            guard first == second else { throw IPhoneUseError("capture_context_changed", "Display changed during recording source refresh") }
+                            return second
+                        }
+                        guard let display = media.boundDisplay, let receiver = media.recordingReceiver,
+                              let snapshots = receiver.snapshots,
+                              let mediaID = media.health()["mediaSessionID"] as? String else {
+                            throw IPhoneUseError("native_orientation_unverified", "Replacement recording media is unavailable")
+                        }
+                        // A newly received image must certify geometry before
+                        // the replacement can feed the existing recording.
+                        let clockDeadline = ProcessInfo.processInfo.systemUptime + 3
+                        while receiver.recordingConfiguration()["RTPClockRate"] == nil,
+                              ProcessInfo.processInfo.systemUptime < clockDeadline {
+                            try self.cancellation.check()
+                            try budget?.check()
+                            Thread.sleep(forTimeInterval: 0.05)
+                        }
+                        let frame = try receiver.snapshot(after: ProcessInfo.processInfo.systemUptime,
+                            timeout: 1, cancellation: self.cancellation)
+                        _ = try NativeSnapshotImage.validateGeometry(frame, display: display)
+                        try budget?.check()
+                        return NativeStreamRecording.SharedSource(receiver: receiver, snapshots: snapshots,
+                            mediaID: mediaID, rotation: display.rotation, geometryChanged: changed)
+                    }
+                }, diagnostics: { self.media?.health() ?? [:] })
             releaseRecordingMediaIfFinished()
             return observation
         } catch let error as IPhoneUseError where error.code == "native_orientation_unverified" {
+            recording?.endSegment(reason: "orientation_unverified")
             controlErrorCode = error.code
             controlError = String(describing: error)
             throw error
@@ -772,7 +809,7 @@ final class AppleDeviceBackend: SessionBackend {
             }
             try cancellation.check()
             guard try cli.display() == display else { throw IPhoneUseError("capture_context_changed", "Display changed while preparing recording; observe again") }
-            let result = try recording.start(duration: duration, receiver: receiver, mediaID: mediaID, rotation: display.rotation, snapshots: preview == nil ? nil : receiver.snapshots)
+            let result = try recording.start(duration: duration, receiver: receiver, mediaID: mediaID, rotation: display.rotation, snapshots: receiver.snapshots)
             currentRecordingID = result["recordingID"] as? String
             return result
         } catch {
