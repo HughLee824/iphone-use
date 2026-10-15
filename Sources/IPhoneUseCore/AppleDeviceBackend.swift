@@ -190,6 +190,7 @@ final class AppleDeviceBackend: SessionBackend {
     private var stopped = false
     private var recording: NativeStreamRecording?
     private let previewOrientation = NativePreviewOrientation()
+    private let previewContinuity = NativePreviewContinuity()
     private var preview: NativePreview?
     private var previewDevice = NativePreviewDevice.unknown
     private var previewFailure: String?
@@ -834,15 +835,16 @@ final class AppleDeviceBackend: SessionBackend {
         do {
             let display = try NativeCaptureChecks.read { try cli.read($0, timeout: 3) }.display
             guard display.backlightOn else { throw IPhoneUseError("device_locked", "Display is not awake") }
-            var changed = media?.matchesDisplay(display) != true
+            let recovery = previewContinuity.needsRecovery(media?.recordingReceiver?.snapshots?.status() ?? [:])
+            var changed = recovery || media?.matchesDisplay(display) != true
             do { try media?.recordingReceiver?.snapshots?.rejectConflictingGeometry(display) }
             catch { changed = true }
             if !changed {
                 changed = try previewOrientation.needsRefresh(cli: cli, snapshots: media?.recordingReceiver?.snapshots, display: display)
             }
             if changed {
-                preview.suspend("Synchronizing rotation")
-                recording?.endSegment(reason: "display_changed")
+                preview.suspend(recovery ? "Recovering video continuity" : "Synchronizing rotation")
+                recording?.endSegment(reason: recovery ? "media_discontinuity" : "display_changed")
                 releaseRecordingMediaIfFinished(force: true)
                 guard recordingMediaCleanup["mediaStopAcknowledged"] as? Bool != false else {
                     throw IPhoneUseError("native_media_cleanup_unconfirmed", "Media stop unconfirmed")

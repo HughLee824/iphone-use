@@ -17,8 +17,8 @@ final class NativeStreamRecording {
         let id = UUID().uuidString
         let directory: URL
         let duration: Double
-        let startedAt = Date().timeIntervalSince1970
-        let started: Double
+        var startedAt = Date().timeIntervalSince1970
+        var started: Double
         let mediaID: String
         let configuration: [String: Any]
         let rotation: String
@@ -84,6 +84,14 @@ final class NativeStreamRecording {
             }
             let job = Job(root: root, duration: duration, receiver: receiver, mediaID: mediaID, orientation: orientation, configuration: config, clock: clock, started: now(), makeWriter: makeWriter)
             try SessionPaths.secureDirectory(root); try SessionPaths.secureDirectory(job.directory)
+            if let seed = snapshots?.previewFrame() {
+                do { try job.writer.prepare(seed.pixels) }
+                catch { job.writer.cancel(); throw error }
+                // Preparation is not recording time. Subscribe atomically to the
+                // latest frame only after the encoder is ready, preserving every
+                // subsequently admitted frame and the existing backlog limit.
+                job.started = now(); job.startedAt = Date().timeIntervalSince1970
+            }
             jobs[job.id] = job; current = job
             pendingLock.lock(); overflow = false; pendingLock.unlock()
             job.snapshots = snapshots; job.snapshotBaseline = snapshots?.status() ?? [:]

@@ -175,6 +175,7 @@ final class RunnerNativeRecording {
     private var closed = false
     private var preview: NativePreview?
     private var independentOrientationConflicts = 0
+    private let previewContinuity = NativePreviewContinuity()
     var previewStatus: [String: Any] {
         var result = preview?.status() ?? ["state": failure == nil ? "stopped" : "failed", "error": failure as Any? ?? NSNull()]
         result["independentOrientationConflicts"] = independentOrientationConflicts
@@ -301,7 +302,9 @@ final class RunnerNativeRecording {
     func previewTick() -> Bool {
         guard let preview, let connection, !closed, !cancellation.isCancelled else { return false }
         do {
-            var changed = try connection.previewNeedsRefresh()
+            let recovery = previewContinuity.needsRecovery(connection.previewReceiver?.snapshots?.status() ?? [:])
+            var changed = recovery
+            if !changed { changed = try connection.previewNeedsRefresh() }
             if !changed, let previewGeometry, let display = connection.previewDisplay {
                 // CoreDevice can report the SAME stale axes for both its PNG
                 // and display metadata. XCTest supplies only negative evidence;
@@ -310,8 +313,8 @@ final class RunnerNativeRecording {
                 if changed { independentOrientationConflicts += 1 }
             }
             if changed {
-                preview.suspend("Synchronizing rotation")
-                recording.endSegment(reason: "display_changed")
+                preview.suspend(recovery ? "Recovering video continuity" : "Synchronizing rotation")
+                recording.endSegment(reason: recovery ? "media_discontinuity" : "display_changed")
                 try connection.refreshPreview()
                 if let previewGeometry, let display = connection.previewDisplay {
                     guard try !previewGeometry().conflicts(with: display) else {

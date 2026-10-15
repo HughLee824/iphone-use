@@ -86,7 +86,7 @@ iphone-use setup --device "$IOS_UDID"
 iphone-use connect --device "$IOS_UDID" --mode runner
 ```
 
-`setup` does not change the default mode; use `iphone-use config set mode runner` for that. Source developers follow [signing setup](docs/onboarding.md#源码开发入口), run `build-runner`, then connect with its returned `.xctestrun`. Runner observations allow `oN:eN` references where supported. Consult support fields and [action contracts](docs/actions.md) for mode-specific behavior.
+`setup` does not change the default mode; use `iphone-use config set mode runner` for that. Source developers follow [signing setup](docs/onboarding.md#源码开发入口), run `build-runner`, then connect with its returned `.xctestrun`. Runner starts the installed app independently in the background and uses authenticated USB loopback communication; `connect` does not reinstall it or require WLAN access. Source-built apps must be explicitly installed before connecting. Runner observations allow `oN:eN` references where supported. Consult support fields and [action contracts](docs/actions.md) for mode-specific behavior.
 
 External agent plugins are optional; see [plugin installation](docs/plugins.md). Historical AgentSoma Runner-release acceptance and current standard-mode acceptance are recorded separately.
 
@@ -193,7 +193,7 @@ flowchart LR
 
 Standard observations and pre-input image checks use Apple CoreDevice PNG exclusively; media starts for explicit recording or preview requests, with geometry checks while in use. Screenshot failures never fall back to media pixels.
 
-`connect` starts the host and fixes the selected mode. Standard connects to Apple native services and owns its HID connection and any explicitly requested recording/preview stream; Runner uses Xcode's `test-without-building` to install and launch XCTest. The host retains the connection between CLI calls, serializes requests, caches observations and manages cleanup. It never switches control routes automatically.
+`connect` starts the host and fixes the selected mode. Standard connects to Apple native services and owns its HID connection and any explicitly requested recording/preview stream; Runner starts the already-installed XCTest app in the background and sends authenticated commands through USB loopback. Deployment belongs to explicit `setup`. The host retains the connection between CLI calls, serializes requests, caches observations and manages cleanup. It never switches control routes automatically.
 
 Session files default to `/private/tmp/agentsoma-<uid>` with directory permissions `0700`; `IPHONE_USE_STATE_DIR` can select an alternative path. Packaged Runner preparation lives in `~/Library/Application Support/iphone-use`. Signing private keys stay in Keychain; the device token stays in host memory and the XCTest subprocess environment.
 

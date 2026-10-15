@@ -21,7 +21,7 @@ flowchart LR
     Decode --> Recording[Recording pixel subscriber / MP4]
 ```
 
-The CLI and host are two process roles of the same executable. A connection starts a host for that session and the selected control backend; runner mode launches XCTest with Xcode's `test-without-building`. Subsequent CLI calls reuse the host and its control connection. The diagram shows the shared recording path when preview is already active; recording without preview retains its independent decoder.
+The CLI and host are two process roles of the same executable. A connection starts a host for that session and the selected control backend; runner mode launches the already-installed XCTest app with CoreDevice `--no-activate` and connects to its loopback listener through usbmuxd (USB only). Subsequent CLI calls reuse the host and its control connection. The diagram shows the shared recording path when preview is already active; recording without preview retains its independent decoder.
 
 | Component | Owns |
 | --- | --- |
@@ -29,7 +29,7 @@ The CLI and host are two process roles of the same executable. A connection star
 | [Session client](../Sources/IPhoneUseCore/SessionClient.swift) | Host startup, local IPC, response matching, and transport uncertainty. |
 | [Session host](../Sources/IPhoneUseCore/SessionHost.swift) | Serial request execution, device ownership, observation references, outcome classification, and lifecycle coordination. |
 | [Observation cache](../Sources/IPhoneUseCore/Observation.swift) | AX compaction, cached snapshots, queries, pagination, and reference invalidation. |
-| [XCTest backend](../Sources/IPhoneUseCore/XCTestBackend.swift) | Xcode process management, Runner capability checks, CoreDevice transport, and backend cleanup. |
+| [XCTest backend](../Sources/IPhoneUseCore/XCTestBackend.swift) | Standalone Runner process ownership, capability checks, USB loopback transport, and backend cleanup. |
 | [Device discovery](../Sources/IPhoneUseCore/DeviceDiscovery.swift) | Device metadata, installed-app queries, and native-tool diagnostics. |
 | [Runner setup](../Sources/IPhoneUseCore/RunnerSetup.swift) / [source build](../Sources/IPhoneUseCore/RunnerBuild.swift) | Preparing a packaged Runner with local signing, or building a signed Runner from source. |
 | [iOS Runner](../Runner/LiveSessionTests.swift) | Screenshots, AX collection, app activation, input primitives, device-side checks, and execution facts. |
@@ -56,7 +56,7 @@ The CLI's optional action `--observe` composes two existing host requests and re
 
 An explicit `preview` request starts a read-only HTTP listener on loopback and acquires the session-owned media stream if needed. Control stays on HID or XCTest. A recording started while preview is active subscribes to the same decoded pixels, rather than restarting the stream; stopping one consumer retains media for the other. Disconnect and idle expiry clean up both. Browser HTTP requests do not renew the session or produce observations.
 
-`NativePreview` keeps only the latest JPEG and uses two bounded CPU conversion slots; superseded results are discarded. The source target is 30 fps, a 960-pixel longest edge and JPEG quality 0.7. Receiver and snapshot decode queues use `userInitiated` QoS, with separate queue-wait/decode and conversion/compression timing. The recording writer releases encoder resources before complete file validation. Resource pressure can still cause stalls or recording backpressure; stable 30 fps has not passed acceptance.
+`NativePreview` keeps only the latest JPEG and uses two bounded CPU conversion slots; superseded results are discarded. The source target is 30 fps, a 960-pixel longest edge and JPEG quality 0.7. Receiver and snapshot decode queues use `userInitiated` QoS, with separate queue-wait/decode and conversion/compression timing. When preview already has a decoded frame, the host prepares the encoder before subscribing and starts the recording clock after preparation. This prevents cold encoder setup from filling the bounded pixel queue; it does not enlarge the queue or discard admitted frames. The recording writer releases encoder resources before complete file validation. Resource pressure can still cause stalls or recording backpressure; stable 30 fps has not passed acceptance.
 
 Periodic orientation checks use system metadata and low-frequency PNG negative evidence. They do not supply action pixels or coordinates. Rotation ends the current recording segment and rebinds preview after owned-stream cleanup; recovery can be delayed. The experimental CPU orientation-probe change was reverted; the probe retains its default CIContext. See [local preview](local-preview-prototype.md) for the current implementation, lifecycle, usage and limitations, and [acceptance history](local-preview-validation.md) for version-specific evidence.
 

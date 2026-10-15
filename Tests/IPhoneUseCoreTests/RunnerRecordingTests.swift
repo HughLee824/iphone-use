@@ -274,25 +274,4 @@ final class RunnerRecordingTests: XCTestCase {
         XCTAssertTrue(RunnerPreviewGeometry(width: 32, height: 48, orientation: 6).conflicts(with: display))
     }
 
-    func testManifestCopiesBothLayoutsWithoutMutatingSignedProducts() throws {
-        let directory = try root(), source = directory.appendingPathComponent("original.xctestrun")
-        let destination = directory.appendingPathComponent("session.xctestrun")
-        let target: [String: Any] = ["BlueprintName": "IPhoneUseTests", "PreferredScreenCaptureFormat": "screenRecording",
-                                    "TestHostPath": "__TESTROOT__/Runner.app", "TestBundlePath": "__TESTHOST__/Tests.xctest"]
-        for original: [String: Any] in [["IPhoneUseTests": target], ["TestConfigurations": [["TestTargets": [target, ["BlueprintName": "Unrelated", "PreferredScreenCaptureFormat": "screenRecording"]]]]]] {
-            let data = try PropertyListSerialization.data(fromPropertyList: original, format: .xml, options: 0)
-            try data.write(to: source)
-            try RunnerSessionManifest.prepare(source: source, destination: destination)
-            XCTAssertEqual(try Data(contentsOf: source), data)
-            let decoded = try XCTUnwrap(try PropertyListSerialization.propertyList(from: Data(contentsOf: destination), format: nil) as? [String: Any])
-            let targets = (decoded["TestConfigurations"] as? [[String: Any]])?.first?["TestTargets"] as? [[String: Any]]
-            let patched = try XCTUnwrap(decoded["IPhoneUseTests"] as? [String: Any] ?? targets?.first)
-            XCTAssertEqual(patched["PreferredScreenCaptureFormat"] as? String, "screenshots")
-            XCTAssertEqual(patched["TestHostPath"] as? String, directory.appendingPathComponent("Runner.app").path)
-            XCTAssertEqual(patched["TestBundlePath"] as? String, "__TESTHOST__/Tests.xctest")
-            if let targets { XCTAssertEqual(targets[1]["PreferredScreenCaptureFormat"] as? String, "screenRecording") }
-        }
-        try PropertyListSerialization.data(fromPropertyList: ["Unknown": [:]], format: .xml, options: 0).write(to: source)
-        XCTAssertThrowsError(try RunnerSessionManifest.prepare(source: source, destination: destination))
-    }
 }

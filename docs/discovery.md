@@ -58,4 +58,4 @@ Runner 只检查 bundle ID 格式，封装 XCTest 的 activate/launch、前台�
 
 ## 当前边界
 
-发布包使用 setup 准备 Runner 后直接 connect；源码开发使用 build-runner 生成已签名的 `.xctestrun`，见 [接入说明](onboarding.md)。两种流程都需要本机 Xcode 和开发签名。设备发现和安装清单不证明免 Xcode 部署、无 Runner 控制、物理重连自动恢复或任意 App 的全部操作兼容性。
+发布包使用 setup 准备 Runner 后直接 connect；源码开发使用 build-runner 生成签名产物，显式安装 App 后使用返回的 `.xctestrun` 连接，见 [接入说明](onboarding.md)。两种流程都需要本机 Xcode 和开发签名。设备发现和安装清单不证明免 Xcode 部署、无 Runner 控制、物理重连自动恢复或任意 App 的全部操作兼容性。
