@@ -278,7 +278,14 @@ final class SessionHost {
                     }
                     previousObservation = observations.beginAction()
                     effective = true
+                    let previewGesture = NativePreviewGesture(action: action!, target: target,
+                        previewRotation: backend.previewGestureRotation)
                     response["result"] = try backend.perform(action!, target: target)
+                    // Published only after the backend returns dispatch facts. Guard
+                    // rejections and thrown failures do not publish a visual receipt.
+                    if let gesture = previewGesture {
+                        backend.showPreviewGesture(gesture)
+                    }
                     observations.finishAction(previous: previousObservation, dispatched: true)
                     response["outcome"] = "completed"
                     if config.backend == "apple-native",

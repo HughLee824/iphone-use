@@ -3,6 +3,15 @@ import Foundation
 // These two reads are independent. Both must finish successfully before the
 // screenshot (and both run again after it); neither result is cached.
 enum NativeCaptureChecks {
+    static func requireHealthyMedia(_ health: [String: Any]) throws {
+        let connection = health["displayConnection"] as? [String: Any]
+        if connection?["errorCode"] as? String == "native_connection_lost" {
+            throw IPhoneUseError("native_connection_lost", "Native display connection ended; close competing device clients, then explicitly reconnect.", diagnostics: ["media": health])
+        }
+        guard health["healthy"] as? Bool == true else {
+            throw IPhoneUseError("native_media_unhealthy", "Owned media has no healthy RTP/RTCP flow; check other device clients and session status before reconnecting.", diagnostics: ["media": health])
+        }
+    }
     // A quiet owned stream cannot certify Apple's cached display transform.
     // One UUID-scoped refresh is permitted; a second failure must not recurse.
     static func withOrientationRecovery(capture: (_ afterRefresh: Bool) throws -> CapturedObservation,

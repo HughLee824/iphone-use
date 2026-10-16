@@ -31,6 +31,14 @@ final class NativePreviewTests: XCTestCase {
         XCTAssertEqual(favicon.1, try Data(contentsOf: root.appendingPathComponent("assets/brand/favicon-64.png")))
         XCTAssertEqual(try get(url.deletingLastPathComponent().appendingPathComponent("favicon.png")).0, 404)
         XCTAssertEqual(try get(url.appendingPathComponent("state")).0, 200)
+        let gestures = try get(url.appendingPathComponent("gestures"))
+        XCTAssertEqual(gestures.0, 200)
+        let events = try XCTUnwrap(JSONSerialization.jsonObject(with: gestures.1) as? [String: Any])
+        XCTAssertEqual(events["sequence"] as? Int, 0)
+        XCTAssertEqual((events["events"] as? [[String: Any]])?.count, 0)
+        XCTAssertEqual(try get(url.deletingLastPathComponent().appendingPathComponent("gestures")).0, 404)
+        XCTAssertEqual(try get(url.appendingPathComponent("gestures"), origin: "https://foreign.example").0, 403)
+        XCTAssertEqual(try get(url.appendingPathComponent("gestures"), host: "foreign.example").0, 403)
         XCTAssertEqual(try get(url.appendingPathComponent("frame")).0, 503)
         XCTAssertEqual(try get(url.deletingLastPathComponent()).0, 404)
         XCTAssertEqual(try get(url, host: "foreign.example").0, 403)
@@ -236,6 +244,45 @@ final class NativePreviewTests: XCTestCase {
             } }
         }
         try body(receiver, send)
+    }
+
+    func testGestureHTTPDeliveryClearsOnRotationAndSuspendWithoutReplayingHistory() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = ObservationCache(directory: directory)
+        _ = try cache.store(observationFixture())
+        let action = try DeviceAction(operation: "tap", request: ["reference": "o1", "x": 100, "y": 200])
+        let gesture = try XCTUnwrap(NativePreviewGesture(action: action, target: cache.resolveTarget(for: action)))
+        try withPreviewReceiver { receiver, _ in
+            let preview = try NativePreview(); defer { preview.close() }
+            func display(_ rotation: String) throws -> NativeDisplay {
+                try NativeDisplay(["backlightState": "activeOn", "displays": [["primary": true, "displayId": 1,
+                    "bounds": [[0,0],[390,844]], "pointScale": 1, "currentOrientation": rotation, "nativeOrientation": "rot0"]]])
+            }
+            func events(_ query: String = "?after=0") throws -> [[String: Any]] {
+                let response = try get(try XCTUnwrap(URL(string: preview.url + "gestures" + query)))
+                XCTAssertEqual(response.0, 200)
+                let facts = try XCTUnwrap(JSONSerialization.jsonObject(with: response.1) as? [String: Any])
+                return try XCTUnwrap(facts["events"] as? [[String: Any]])
+            }
+            preview.attach(receiver, display: try display("rot0"))
+            preview.showGesture(gesture)
+            XCTAssertEqual(try events().first?["kind"] as? String, "tap")
+            XCTAssertTrue(try events("").isEmpty, "A new viewer must not replay existing events")
+            XCTAssertTrue(try events("?after=1").isEmpty, "A delivered event must not repeat")
+            preview.attach(receiver, display: try display("rot0"))
+            XCTAssertEqual(try events().count, 1, "Refreshing the same binding must preserve live events")
+            preview.attach(receiver, display: try display("rot90"))
+            preview.showGesture(gesture)
+            XCTAssertTrue(try events().isEmpty, "Rotation clears old events and rejects late old-direction receipts")
+            preview.attach(receiver, display: try display("rot0"))
+            preview.showGesture(gesture)
+            XCTAssertEqual(try events().count, 1)
+            preview.suspend("test suspension")
+            preview.showGesture(gesture)
+            XCTAssertTrue(try events().isEmpty)
+            XCTAssertNil(preview.gestureRotation)
+        }
     }
 
     func testSlowEncodingDoesNotBlockHTTPAndCannotPublishAfterSuspend() throws {

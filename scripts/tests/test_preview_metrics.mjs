@@ -10,12 +10,12 @@ const catalog=JSON.parse(readFileSync(new URL('../../assets/preview/catalog.json
 
 function fixture(productType='iPhone13,3', navigator={language:'zh-CN'}, appearanceComparisonEnabled=true) {
   let clock = 0;
-  const elements = Object.fromEntries(['screen', 'state', 'diagnostics', 'metrics', 'device', 'stage', 'bezel', 'shell', 'hardware', 'cutout', 'speaker', 'device-name', 'connection', 'fullscreen', 'appearance-toggle', 'viewer', 'placeholder-label', 'diagnostics-label', 'identity', 'toolbar', 'chrome'].map(id => [id, { dataset: {}, style: { setProperty(name,value) { this[name]=value; } }, clientWidth: 1000, clientHeight: 700, getBoundingClientRect() { return {left:0,right:0,top:0,bottom:0}; }, events: {}, addEventListener(name, fn) { this.events[name]=fn; }, setAttribute(name,value) { this[name]=value; } }]));
-  const document = { documentElement:{}, events:{}, visibilityState: 'visible', getElementById: id => elements[id], addEventListener: (name, fn) => { document.events[name]=fn;if(name==='visibilitychange')document.visibilityChanged = fn; } };
+  const elements = Object.fromEntries(['gestures', 'screen', 'state', 'diagnostics', 'metrics', 'device', 'stage', 'bezel', 'shell', 'hardware', 'cutout', 'speaker', 'device-name', 'connection', 'fullscreen', 'appearance-toggle', 'viewer', 'placeholder-label', 'diagnostics-label', 'identity', 'toolbar', 'chrome'].map(id => [id, { dataset: {}, style: { setProperty(name,value) { this[name]=value; } }, clientWidth: 1000, clientHeight: 700, getBoundingClientRect() { return {left:0,right:0,top:0,bottom:0}; }, events: {}, addEventListener(name, fn) { this.events[name]=fn; }, setAttribute(name,value) { this[name]=value; } }]));
+  const document = { documentElement:{}, events:{}, visibilityState: 'visible', getElementById: id => elements[id], addEventListener: (name, fn) => { document.events[name]=fn;if(name==='visibilitychange'){const previous=document.visibilityChanged;document.visibilityChanged=()=>{previous?.();fn();};} } };
   let report;
   const context = vm.createContext({ document, navigator, URLSearchParams, location: { search: '?diagnostics=1' },
     ResizeObserver: class { observe() {} }, performance: { now: () => clock }, Date: { now: () => clock },
-    requestAnimationFrame: fn => fn(), setInterval: fn => { report = fn; }, setTimeout() {},
+    requestAnimationFrame: fn => fn(), setInterval: fn => { report = fn; }, setTimeout() {}, clearTimeout() {},
     AbortSignal: { timeout() {} }, fetch: () => new Promise(() => {}) });
   vm.runInContext(script.replace('\\(appearanceComparisonEnabled ? "true" : "false")', String(appearanceComparisonEnabled)), context);
   const profile=catalog.models[productType]||null;
@@ -360,5 +360,72 @@ test('floating chrome yields room only when it would overlap the device envelope
     const left=(c.width-c.rw*p.scale)/2,right=c.width-left,top=(c.height-c.rh*p.scale)/2+p.topInset/2,bottom=top+c.rh*p.scale;
     assert.ok(left>=19.99&&right<=c.width-19.99&&bottom<=c.height-19.99);
     for(const control of c.controls)assert.ok(left>=control.right+12||right<=control.left-12||top>=control.bottom+12);
+  }
+});
+
+
+test('gesture overlay maps to the actual screen aperture in both appearances and orientations', () => {
+  const p=fixture();
+  for(const [w,h,rot] of [[444,960,'rot0'],[960,444,'rot90'],[960,444,'rot270']]){
+    p.layout(w,h,rot);
+    for(const property of ['left','top','width','height','borderRadius']) assert.equal(p.elements.gestures.style[property],p.elements.screen.style[property]);
+    p.elements.device.dataset.ready='true';
+    const e={kind:'swipe',rotation:rot,aspect:w/h,paths:[[[.2,.8],[.8,.2]]]};
+    p.run(`showGestures([${JSON.stringify(e)}])`);
+    assert.doesNotMatch(p.elements.gestures.innerHTML,/<path|gesture-line|gesture-ring/);
+    assert.match(p.elements.gestures.innerHTML,/gesture-motion/);
+    p.run('forceDrawing=true;layoutKey="";layout()');
+    assert.equal(p.elements.gestures.style.width,p.elements.screen.style.width);
+    assert.equal(p.elements.gestures.innerHTML,'');
+  }
+});
+
+test('gesture rendering rejects other orientations, invalid points and hidden-page history', () => {
+  const p=fixture();p.layout(444,960);p.elements.device.dataset.ready='true';
+  const good={kind:'tap',rotation:'rot0',aspect:444/960,paths:[[[.5,.5],[.5,.5]]]};
+  p.run(`showGestures([${JSON.stringify(good)}])`);assert.match(p.elements.gestures.innerHTML,/gesture-touch/);
+  p.run('clearGestures()');
+  for(const e of [{...good,rotation:'rot90'},{...good,paths:[[[2,.5],[.5,.5]]]},{...good,kind:'type'}]){
+    p.run(`showGestures([${JSON.stringify(e)}])`);assert.equal(p.elements.gestures.innerHTML,'');
+  }
+  p.visibility('hidden');p.run(`showGestures([${JSON.stringify(good)}])`);assert.equal(p.elements.gestures.innerHTML,'');
+});
+
+
+test('all gestures use neutral contacts with bounded distinct animation lifetimes', () => {
+  const p=fixture();p.layout(444,960);p.elements.device.dataset.ready='true';
+  for(const [kind,duration] of Object.entries({'tap':600,'double-tap':850,'long-press':1200,'swipe':900,'drag':1400,'pinch':1000})){
+    const paths=kind==='pinch'?[[[.4,.5],[.2,.5]],[[.6,.5],[.8,.5]]]:[[[.2,.8],[.8,.2]]];
+    p.run(`showGestures([${JSON.stringify({kind,rotation:'rot0',aspect:444/960,paths})}])`);
+    const html=p.elements.gestures.innerHTML;
+    assert.match(html,new RegExp('class="gesture-'+kind+'"'));
+    assert.ok(html.includes('--gesture-duration:'+duration+'ms'));
+    assert.equal((html.match(/<circle /g)||[]).length,paths.length);
+    assert.doesNotMatch(html,/<path|gesture-ring|gesture-line/);
+  }
+  assert.match(source,/fill:rgba\(142,142,147,\.48\)/);
+  assert.match(source,/@media\(prefers-reduced-motion:reduce\).*\.gesture-touch\{animation:none/);
+});
+
+
+test('in-flight gesture responses cannot restore history after a visibility change', async () => {
+  for(const failed of [false,true]) {
+    const p=fixture();p.layout(444,960);p.elements.device.dataset.ready='true';
+    const event={kind:'tap',rotation:'rot0',aspect:444/960,paths:[[[.5,.5],[.5,.5]]]};
+    p.run(`gestureCursor=10;let pendingResolve,pendingReject;
+      fetch=()=>new Promise((resolve,reject)=>{pendingResolve=resolve;pendingReject=reject;});`);
+    const pending=p.run('gestures()');
+    p.visibility('hidden');p.visibility('visible');
+    p.run(failed?'pendingReject(Error())':`pendingResolve({ok:true,json:async()=>({sequence:11,events:[${JSON.stringify(event)}]})})`);
+    await pending;
+    assert.equal(p.run('gestureCursor'),null);
+    assert.equal(p.elements.gestures.innerHTML,'');
+    // The first new response establishes a cursor and must not replay old events.
+    await p.run(`fetch=async()=>({ok:true,json:async()=>({sequence:12,events:[${JSON.stringify(event)}]})});gestures()`);
+    assert.equal(p.run('gestureCursor'),12);
+    assert.equal(p.elements.gestures.innerHTML,'');
+    // Subsequent live events still render normally.
+    await p.run(`fetch=async()=>({ok:true,json:async()=>({sequence:13,events:[${JSON.stringify(event)}]})});gestures()`);
+    assert.match(p.elements.gestures.innerHTML,/gesture-touch/);
   }
 });

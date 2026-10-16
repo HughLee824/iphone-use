@@ -612,6 +612,24 @@ final class NativeRecordingTests: XCTestCase {
         XCTAssertGreaterThan(try XCTUnwrap(facts["durationSeconds"] as? Double), 60)
         XCTAssertEqual(facts["decodedFrames"] as? Int, expected)
     }
+    func testLeadingEmptyEditDoesNotCountAsAnEncodedFrame() throws {
+        let dir = try root(), units = try fixture(dir)
+        let decoder = FixtureHEVCDecoder()
+        let pixels = try XCTUnwrap(decoder.decode(units[0]))
+        for delay in [0.0, 109.0 / 600.0] {
+            let url = dir.appendingPathComponent("delayed-\(delay).mp4")
+            let writer = NativeVideoWriter(url: url, timescale: 24000)
+            for index in 0..<3 {
+                try writer.appendDecoded(pixels, seconds: delay + Double(index) / 30, receivedAt: 100 + delay + Double(index) / 30)
+            }
+            try writer.finish(lastFrameDurationSeconds: 1.0 / 30)
+            let facts = try NativeRecordingValidation.inspect(url)
+            XCTAssertEqual(writer.frames, 3)
+            XCTAssertEqual(facts["decodedFrames"] as? Int, writer.frames)
+            XCTAssertEqual(try XCTUnwrap(facts["firstFrameSeconds"] as? Double), delay, accuracy: 0.002)
+            XCTAssertEqual(try XCTUnwrap(facts["durationSeconds"] as? Double), delay + 0.1, accuracy: 0.002)
+        }
+    }
     func testLandscapeTrackTransformSurvivesMuxAndExactFrameExtraction() throws {
         let dir = try root(), units = try fixture(dir)
         for orientation in [NativeVideoOrientation.left, .right] {

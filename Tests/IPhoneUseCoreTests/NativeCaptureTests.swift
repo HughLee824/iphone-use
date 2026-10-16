@@ -4,6 +4,21 @@ import ImageIO
 @testable import IPhoneUseCore
 
 final class NativeCaptureTests: XCTestCase {
+    func testUnhealthyMediaIsNotLatchedAsAnOrientationFailure() throws {
+        for ended in [false, true] {
+            let health: [String: Any] = ["healthy": false, "displayConnection": ended ? ["errorCode": "native_connection_lost"] : [:]]
+            XCTAssertThrowsError(try NativeCaptureChecks.withOrientationRecovery(capture: { _ in
+                try NativeCaptureChecks.requireHealthyMedia(health)
+                XCTFail("Unhealthy media cannot certify geometry")
+                return CapturedObservation(nodes: [], metadata: [:], screenshot: Data())
+            }, resynchronize: { XCTFail("Do not restart media for a connection failure"); return true })) {
+                let failure = $0 as? IPhoneUseError
+                XCTAssertEqual(failure?.code, ended ? "native_connection_lost" : "native_media_unhealthy")
+                XCTAssertNotNil(failure?.diagnostics["media"])
+            }
+        }
+        XCTAssertNoThrow(try NativeCaptureChecks.requireHealthyMedia(["healthy": true]))
+    }
     func testRecordingRefreshRevalidatesWithoutEndingSegmentAndStillRejectsChangedGeometry() throws {
         let png = try screenPNG()
         for changed in [false, true] {

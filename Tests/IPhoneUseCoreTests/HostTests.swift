@@ -18,6 +18,8 @@ private final class ControlledBackend: SessionBackend {
     private(set) var appsCount = 0
     private(set) var actionCount = 0
     private(set) var inputCount = 0
+    private(set) var previewGestures: [NativePreviewGesture] = []
+    func showPreviewGesture(_ gesture: NativePreviewGesture) { previewGestures.append(gesture) }
     var liveScreen: Data?
     var actionFailure: ActionFailure?
     var blockAction = false
@@ -427,6 +429,7 @@ final class HostTests: XCTestCase {
         XCTAssertEqual(facts["transportStatus"] as? String, "sent")
         XCTAssertEqual((facts["recovery"] as? [String: Any])?["nextAction"] as? String, "inspect_observation")
         XCTAssertEqual(backend.actionCount, 1); XCTAssertEqual(backend.observeCount, 2)
+        XCTAssertEqual(backend.previewGestures.count, 1, "A queued native input is visualized without claiming acknowledgement")
         let stale = try call(paths, session: session, op: "tap", fields: ["reference": "o1:e11"])
         XCTAssertEqual(stale["outcome"] as? String, "not_dispatched")
         XCTAssertEqual(backend.actionCount, 1)
@@ -912,6 +915,7 @@ final class HostTests: XCTestCase {
             let reference = "o\(index + 1):e11"
             let result = try call(paths, session: session, op: "tap", fields: ["reference": reference])
             XCTAssertEqual(result["outcome"] as? String, failure.possiblyExecuted ? "unknown" : "not_dispatched")
+            XCTAssertTrue(backend.previewGestures.isEmpty, "Thrown failures must not publish inferred touches")
             let detail = try call(paths, session: session, op: "inspect", fields: ["reference": reference, "offset": 0])
             XCTAssertEqual((detail["result"] as? [String: Any])?["refs"] as? String,
                            index == 0 ? "current" : (index == 1 ? "target_changed" : "invalidated"))
@@ -1009,6 +1013,7 @@ final class HostTests: XCTestCase {
         XCTAssertEqual(rejected["requiresObservation"] as? Bool, true)
         XCTAssertEqual((rejected["error"] as? [String: Any])?["code"] as? String, "screen_changed")
         XCTAssertEqual(backend.inputCount, 0)
+        XCTAssertTrue(backend.previewGestures.isEmpty)
         let again = try call(paths, session: session, op: "tap", fields: fields)
         XCTAssertEqual((again["error"] as? [String: Any])?["code"] as? String, "stale_reference")
         XCTAssertEqual(backend.actionCount, 1)
@@ -1016,6 +1021,7 @@ final class HostTests: XCTestCase {
         _ = try call(paths, session: session, op: "observe")
         XCTAssertEqual(try call(paths, session: session, op: "tap", fields: ["reference": "o2", "x": 200, "y": 600])["outcome"] as? String, "completed")
         XCTAssertEqual(backend.inputCount, 1)
+        XCTAssertEqual(backend.previewGestures.count, 1)
         _ = try call(paths, session: session, op: "disconnect")
         wait(for: [finished], timeout: 3)
     }

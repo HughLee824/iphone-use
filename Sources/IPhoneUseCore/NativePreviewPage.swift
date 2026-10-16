@@ -68,6 +68,19 @@ enum NativePreviewPage {
     #stage{position:relative;width:100%;flex:1;min-height:0;display:grid;place-items:center;overflow:hidden}
     #device{position:relative;flex:none}#screen{position:absolute;z-index:1;display:block;object-fit:contain;background:#08090b;visibility:hidden}
     #device[data-ready="true"] #screen{visibility:visible}
+    #gestures{position:absolute;z-index:5;pointer-events:none;overflow:hidden;isolation:isolate}
+    #gestures svg{position:absolute;inset:0;width:100%;height:100%;overflow:hidden}
+    .gesture-touch{fill:rgba(142,142,147,.48);stroke:rgba(255,255,255,.72);stroke-width:1;transform-box:fill-box;transform-origin:center;animation:touch-press var(--gesture-duration) ease-out both}
+    .gesture-motion{animation:touch-move var(--gesture-duration) cubic-bezier(.25,.1,.25,1) both}
+    .gesture-double-tap .gesture-touch{animation-name:touch-double}
+    .gesture-long-press .gesture-touch,.gesture-drag .gesture-touch{animation-name:touch-hold}
+    .gesture-drag .gesture-motion{animation-name:touch-drag}
+    @keyframes touch-press{0%{opacity:0;transform:scale(1.12)}12%{opacity:1;transform:scale(.92)}25%,70%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.12)}}
+    @keyframes touch-double{0%,42%{opacity:0;transform:scale(1.12)}12%,54%{opacity:1;transform:scale(.88)}25%,68%{opacity:1;transform:scale(1)}38%,100%{opacity:0;transform:scale(1.12)}}
+    @keyframes touch-hold{0%{opacity:0;transform:scale(1.12)}10%,25%{opacity:1;transform:scale(.9)}35%,82%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.12)}}
+    @keyframes touch-move{0%,15%{transform:translate(0,0)}75%,100%{transform:translate(var(--dx),var(--dy))}}
+    @keyframes touch-drag{0%,35%{transform:translate(0,0)}82%,100%{transform:translate(var(--dx),var(--dy))}}
+    @media(prefers-reduced-motion:reduce){#gestures .gesture-touch{animation:none;opacity:1;transform:none}#gestures .gesture-motion{animation:none;transform:translate(var(--dx),var(--dy))}}
     #bezel{z-index:3;position:absolute;left:50%;top:50%;pointer-events:none;user-select:none}
     /* Static, independently authored materials. No blur, animation, canvas or per-frame drawing. */
     #shell,#hardware{position:absolute;left:50%;top:50%;pointer-events:none;user-select:none}
@@ -115,7 +128,7 @@ enum NativePreviewPage {
     -->
     <header id="chrome"><div class="identity glass" id="identity"><div class="connection" id="connection" data-kind="waiting" role="status" title="Connecting…"><svg aria-hidden="true" class="mark" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" data-slot="icon">  <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"/></svg><span id="state" class="sr-only">Connecting…</span></div><h1 id="device-name">iPhone</h1></div>
     <div class="toolbar glass" id="toolbar" role="group" aria-label="Preview controls"><button id="appearance-toggle" hidden title="Use drawn frame" aria-label="Use drawn frame"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" data-slot="icon">  <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 8.25V6a2.25 2.25 0 0 0-2.25-2.25H6A2.25 2.25 0 0 0 3.75 6v8.25A2.25 2.25 0 0 0 6 16.5h2.25m8.25-8.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-7.5A2.25 2.25 0 0 1 8.25 18v-1.5m8.25-8.25h-6a2.25 2.25 0 0 0-2.25 2.25v6"/></svg></button><button id="fullscreen" title="Enter fullscreen" aria-label="Enter fullscreen"><svg aria-hidden="true" class="enter-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" data-slot="icon">  <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15"/></svg><svg aria-hidden="true" class="exit-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" data-slot="icon">  <path stroke-linecap="round" stroke-linejoin="round" d="M9 9V4.5M9 9H4.5M9 9 3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5 5.25 5.25"/></svg></button></div></header>
-    <main><div id="stage"><div id="device" data-ready="false"><div id="shell" hidden aria-hidden="true"><i class="side-key action-key"></i><i class="side-key volume-up"></i><i class="side-key volume-down"></i><i class="side-key power-key"></i><i class="side-key camera-key"></i><i class="antenna a"></i><i class="antenna b"></i><i class="antenna c"></i><i class="antenna d"></i></div><div id="hardware" hidden aria-hidden="true"><i id="speaker"></i><i id="cutout" hidden></i></div><img id="screen" alt="Live iPhone screen" draggable="false"><div id="placeholder"><svg aria-hidden="true" class="mark" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" data-slot="icon">  <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"/></svg><span id="placeholder-label" class="sr-only">Waiting for iPhone screen</span></div><img id="bezel" hidden alt="" aria-hidden="true" draggable="false"></div></div>
+    <main><div id="stage"><div id="device" data-ready="false"><div id="shell" hidden aria-hidden="true"><i class="side-key action-key"></i><i class="side-key volume-up"></i><i class="side-key volume-down"></i><i class="side-key power-key"></i><i class="side-key camera-key"></i><i class="antenna a"></i><i class="antenna b"></i><i class="antenna c"></i><i class="antenna d"></i></div><div id="hardware" hidden aria-hidden="true"><i id="speaker"></i><i id="cutout" hidden></i></div><div id="gestures" aria-hidden="true"></div><img id="screen" alt="Live iPhone screen" draggable="false"><div id="placeholder"><svg aria-hidden="true" class="mark" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" data-slot="icon">  <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"/></svg><span id="placeholder-label" class="sr-only">Waiting for iPhone screen</span></div><img id="bezel" hidden alt="" aria-hidden="true" draggable="false"></div></div>
     </main>
     </div><details id="diagnostics" hidden><summary id="diagnostics-label">Browser display metrics (last 1,800 frames)</summary><pre id="metrics"></pre></details>
     <script>
@@ -246,6 +259,8 @@ enum NativePreviewPage {
       screen.style.left=x*scale+'px';screen.style.top=y*scale+'px';
       screen.style.width=sw*scale+'px';screen.style.height=sh*scale+'px';
       screen.style.borderRadius=p.cornerRadius*scale+'px';
+      for(const property of ['left','top','width','height','borderRadius'])document.getElementById('gestures').style[property]=screen.style[property];
+      document.getElementById('gestures').innerHTML='';
       bezel.hidden=!official;shell.hidden=official;hardware.hidden=official;
       const transform='translate(-50%,-50%) rotate('+angle+'deg)';
       if(official){
@@ -287,10 +302,42 @@ enum NativePreviewPage {
     let totals; function resetTotals(){totals={frames:0,first:null,last:null,maxGapMs:0,gapsOver100ms:0,gapsOver250ms:0,slowFrames:[]};} resetTotals();
     if(diagnostic)document.addEventListener('visibilitychange',()=>{samples.length=0;lastSequence=null;failures=0;duplicates=0;resetTotals();});
     function presented(sequence,age,started,timing={}){const loaded=performance.now();if(!diagnostic)return;requestAnimationFrame(()=>{if(document.visibilityState!=='visible')return;if(sequence===lastSequence){duplicates++;return;}lastSequence=sequence;const at=Date.now();if(totals.last!==null){const gap=at-totals.last;totals.maxGapMs=Math.max(totals.maxGapMs,gap);if(gap>100)totals.gapsOver100ms++;if(gap>250)totals.gapsOver250ms++;if(gap>100){totals.slowFrames.push({at,gapMs:gap,frameAgeAtResponseMs:age,...timing,rafWaitMs:performance.now()-loaded});if(totals.slowFrames.length>120)totals.slowFrames.shift();}}totals.frames++;if(totals.first===null)totals.first=at;totals.last=at;samples.push({at,sequence,frameAgeAtResponseMs:age,requestToRafMs:performance.now()-started,...timing,rafWaitMs:performance.now()-loaded});if(samples.length>1800)samples.shift();});}
+    // Bounded visual dispatch receipts; these are not raw device touch samples.
+    const gestureLayer=document.getElementById('gestures');
+    let gestureCursor=null,gestureTimer,gestureGeneration=0;
+    function clearGestures(){gestureLayer.innerHTML='';}
+    function gestureFits(e){return ['tap','double-tap','long-press','swipe','drag','pinch'].includes(e.kind)&&e.rotation===rotation&&Number.isFinite(e.aspect)&&Math.abs(e.aspect-screen.naturalWidth/screen.naturalHeight)<.005&&Array.isArray(e.paths)&&e.paths.length>0&&e.paths.length<=2&&e.paths.every(p=>Array.isArray(p)&&p.length===2&&p.every(v=>Array.isArray(v)&&v.length===2&&v.every(n=>Number.isFinite(n)&&n>=0&&n<=1)));}
+    function showGestures(events){
+      if(document.visibilityState!=='visible'||device.dataset.ready!=='true')return;
+      const e=events.filter(gestureFits).at(-1);if(!e)return;
+      const w=parseFloat(screen.style.width),h=parseFloat(screen.style.height);if(!(w>0&&h>0))return;
+      // Compact visual receipts, not a replay of device timing. Move the same
+      // neutral contact point; no arrows, trails or additional rendering surfaces.
+      const duration={'tap':600,'double-tap':850,'long-press':1200,'swipe':900,'drag':1400,'pinch':1000}[e.kind];
+      let content='';
+      for(const [from,to] of e.paths){
+        const x=from[0]*w,y=from[1]*h,dx=(to[0]-from[0])*w,dy=(to[1]-from[1])*h;
+        content+='<g transform="translate('+x+' '+y+')"><g class="gesture-motion" style="--dx:'+dx+'px;--dy:'+dy+'px"><circle class="gesture-touch" cx="0" cy="0" r="14"/></g></g>';
+      }
+      gestureLayer.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" class="gesture-'+e.kind+'" style="--gesture-duration:'+duration+'ms" viewBox="0 0 '+w+' '+h+'">'+content+'</svg>';
+      clearTimeout(gestureTimer);gestureTimer=setTimeout(clearGestures,duration);
+    }
+    async function gestures(){
+      const generation=gestureGeneration;
+      if(document.visibilityState==='visible')try{
+        const r=await fetch('gestures'+(gestureCursor===null?'':'?after='+gestureCursor),{cache:'no-store',signal:AbortSignal.timeout(1500)});if(!r.ok)throw Error();
+        const data=await r.json();if(!Number.isSafeInteger(data.sequence)||!Array.isArray(data.events))throw Error();
+        if(generation===gestureGeneration&&document.visibilityState==='visible'){
+          if(gestureCursor!==null)showGestures(data.events);gestureCursor=data.sequence;
+        }
+      }catch{if(generation===gestureGeneration){gestureCursor=null;clearGestures();}}
+      setTimeout(gestures,document.visibilityState==='visible'?200:1000);
+    }
+    document.addEventListener('visibilitychange',()=>{gestureGeneration++;gestureCursor=null;clearGestures();});
     let sequence = -1;
     async function frames(){const started=performance.now();let retry=0;try{const r=await fetch('frame?after='+sequence,{cache:'no-store',signal:AbortSignal.timeout(3000)});if(!r.ok)throw Error();sequence=Number(r.headers.get('X-Preview-Sequence'));const frameRotation=r.headers.get('X-Preview-Rotation');const age=Number(r.headers.get('X-Preview-Frame-Age-Ms')),encodeMs=Number(r.headers.get('X-Preview-Encode-Ms')),next=URL.createObjectURL(await r.blob()),received=performance.now();const loaded=new Promise((resolve,reject)=>{screen.onload=resolve;screen.onerror=reject;});screen.src=next;try{await loaded;rotation=frameRotation||rotation;device.dataset.ready='true';lastFrameAt=Date.now();layout();presented(sequence,age,started,{requestMs:received-started,imageLoadMs:performance.now()-received,encodeMs});screen.style.opacity=1;}finally{if(objectURL)URL.revokeObjectURL(objectURL);objectURL=next;}}catch{failures++;screen.style.opacity=.25;retry=100;}setTimeout(frames,retry);}
     async function health(){try{const r=await fetch('state',{cache:'no-store',signal:AbortSignal.timeout(3000)});if(!r.ok)throw Error();const s=await r.json();setDevice(s);if(s.error||!s.mediaHealthy){showState(s.error?text.unavailable+': '+s.error:text.unavailable,'error');screen.style.opacity=.25;}else if(s.frameAgeSeconds==null){showState(text.firstFrame,'waiting');}else if(s.frameAgeSeconds>2){showState(text.waiting,'waiting');}else if(!lastFrameAt||Date.now()-lastFrameAt>4000){showState(text.recovering,'waiting');}else{showState(text.live,'live');}}catch{showState(text.disconnected,'error');screen.style.opacity=.25;}setTimeout(health,1000);}
-    frames();health();
+    frames();health();gestures();
     if(diagnostic)setInterval(()=>{const gaps=samples.slice(1).map((s,i)=>s.at-samples[i].at).sort((a,b)=>a-b), span=samples.length>1?samples.at(-1).at-samples[0].at:0;const m=document.getElementById('metrics');m.textContent=JSON.stringify({total:{...totals,fps:totals.last>totals.first?(totals.frames-1)*1000/(totals.last-totals.first):0},visibleNewFrames:samples.length,fps:span?(samples.length-1)*1000/span:0,lastNewFrameAgeMs:samples.length?Date.now()-samples.at(-1).at:null,gapP95Ms:gaps[Math.floor(gaps.length*.95)]||0,maxGapMs:gaps.at(-1)||0,gapsOver250ms:gaps.filter(x=>x>250).length,failures,duplicates,note:text.metricsNote},null,2);m.dataset.samples=JSON.stringify(samples);},1000);
         </script></body></html>
     """
