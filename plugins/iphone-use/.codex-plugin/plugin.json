@@ -1,6 +1,6 @@
 {
   "name": "iphone-use",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Observe and operate a connected physical iPhone with the iPhone-use CLI.",
   "author": {
     "name": "iPhone-use contributors",
