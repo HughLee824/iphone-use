@@ -251,9 +251,13 @@ struct ScreenGuardOptions: ParsableArguments {
 
     @Option(help: "Exclude one visually identified video/animation rectangle from the pre-input global comparison: x,y,width,height in screen points. Coordinate gestures only; at most 25% of screen; cannot overlap protected regions. Applies to this action only.") var ignoreRect: String?
 
+    @Option(help: "Tap only: tightly bound a visible overlay control, x,y,width,height (up to 96x96 points). Requires --dynamic-anchor; retains exact geometry and local-contrast shape validation while video changes.") var dynamicTarget: String?
+    @Option(help: "Independent visible page label/control for a dynamic tap, x,y,width,height (up to 256x96 points). Must not overlap the target. No whole-screen bypass.") var dynamicAnchor: String?
+
     var fields: [String: Any] {
         var value: [String: Any] = ["maxScreenChange": maxScreenChange, "maxRegionChange": maxRegionChange, "protect": protect]
         value["ignoreRect"] = ignoreRect
+        value["dynamicTarget"] = dynamicTarget; value["dynamicAnchor"] = dynamicAnchor
         return value
     }
 }

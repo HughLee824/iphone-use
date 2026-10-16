@@ -139,6 +139,12 @@ private final class TextProbeController: UIViewController, UITextViewDelegate {
             self?.present(navigation, animated: true)
         }, for: .touchUpInside)
         stack.addArrangedSubview(gestures)
+        let video = UIButton(type: .system); video.setTitle("Video workflow", for: .normal)
+        video.addAction(UIAction { [weak self] _ in
+            let controller = PreviewMotionProbeController(); controller.modalPresentationStyle = .fullScreen
+            self?.present(controller, animated: true)
+        }, for: .touchUpInside)
+        stack.addArrangedSubview(video)
         let rotation = UIButton(type: .system); rotation.setTitle("Rotation workflow", for: .normal)
         rotation.addAction(UIAction { [weak self] _ in
             let controller = RotationProbeController(); controller.modalPresentationStyle = .fullScreen

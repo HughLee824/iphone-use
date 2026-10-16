@@ -14,6 +14,7 @@ struct DeviceAction {
     let caretRegion: ScreenRect?
     let pinchMotion: PinchMotion?
     let ignoredScreenRect: ScreenRect?
+    let dynamicRects: [ScreenRect]?
 
     init(operation: String, request: [String: Any], allowScreenText: Bool = false) throws {
         guard Self.operations.contains(operation) else { throw IPhoneUseError("invalid_action", "Unknown device action") }
@@ -205,6 +206,21 @@ struct DeviceAction {
                 }
             }
         }
+        if request["dynamicTarget"] != nil || request["dynamicAnchor"] != nil {
+            guard operation == "tap", coordinate, ignoredScreenRect == nil, protected.isEmpty,
+                  policy.maxScreenChange == 0.01, policy.maxRegionChange == 0 else {
+                throw IPhoneUseError("invalid_dynamic_target", "Dynamic overlay validation requires a coordinate tap with default guard policy and no ignore/protect options")
+            }
+            dynamicRects = try ["dynamicTarget", "dynamicAnchor"].map { key in
+                guard let raw = request[key] as? String else { throw IPhoneUseError("invalid_dynamic_target", "Supply both --dynamic-target and --dynamic-anchor") }
+                let parts = raw.split(separator: ",", omittingEmptySubsequences: false)
+                let v = parts.compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+                guard parts.count == 4, v.count == 4, v.allSatisfy(\.isFinite), v[2] > 0, v[3] > 0 else {
+                    throw IPhoneUseError("invalid_dynamic_target", "Use x,y,width,height in screenshot points")
+                }
+                return ScreenRect(CGRect(x: v[0], y: v[1], width: v[2], height: v[3]))
+            }
+        } else { dynamicRects = nil }
         guardPolicy = policy
         protectedReferences = protected
         self.fields = fields

@@ -262,6 +262,24 @@ final class FrameStabilityTests: XCTestCase {
         }
     }
 
+    func testMovingPageReturnsCompletedInputWithFreshButUnstableFrame() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("dynamic-proof-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let a = try screenPNG(), b = try screenPNG(patches: [(CGRect(x: 0, y: 0, width: 390, height: 400), [30, 80, 120])])
+        let fingerprint = try FrameFingerprint(png: b)
+        var stability = FrameStability(startedAt: 0)
+        for (time, image) in [(0.0, a), (0.8, a), (1.6, b)] { try record(&stability, image, time) }
+        XCTAssertTrue(stability.observationReady); XCTAssertFalse(stability.stable)
+        var response: [String: Any] = ["ok": true, "execution": ["started": true, "inputCompleted": true, "completed": true],
+            "stability": stability.result, "frame": ["screenshotBase64": b.base64EncodedString(), "hash": fingerprint.hash,
+                "width": fingerprint.width, "height": fingerprint.height, "capturedAt": 100.0]]
+        XCTAssertNoThrow(try XCTestCapture.actionResponse(response, directory: directory))
+        for (key, value): (String, Any) in [("samples", 1), ("observedForMs", 200.0), ("reason", "stable"), ("automaticReplayAllowed", true)] {
+            var invalid = stability.result; invalid[key] = value; response["stability"] = invalid
+            XCTAssertThrowsError(try XCTestCapture.actionResponse(response, directory: directory))
+        }
+    }
+
     func testSuccessWithoutStableFrameEvidenceIsRejected() {
         let directory = URL(fileURLWithPath: "/private/tmp/as-missing-frame-\(UUID().uuidString.prefix(8))")
         defer { try? FileManager.default.removeItem(at: directory) }

@@ -69,3 +69,25 @@ final class NativePreviewOrientation {
         return opposite < 0.08 && current - opposite > 0.025 && opposite < current * 0.5
     }
 }
+
+// Private, bounded transition diagnostics; no screenshots, packet payloads or UI text.
+enum NativePreviewEvents {
+    static func append(to url: URL, event: String, reason: String, source: [String: Any]) {
+        var health = source
+        if var snapshots = health["snapshots"] as? [String: Any] {
+            snapshots.removeValue(forKey: "timing"); health["snapshots"] = snapshots
+        }
+        let facts: [String: Any] = ["timestamp": Date().timeIntervalSince1970,
+            "event": event, "reason": reason, "media": health]
+        guard let data = try? jsonData(facts) else { return }
+        if !FileManager.default.fileExists(atPath: url.path) {
+            FileManager.default.createFile(atPath: url.path, contents: nil, attributes: [.posixPermissions: 0o600])
+        }
+        guard let file = try? FileHandle(forWritingTo: url) else { return }
+        defer { try? file.close() }
+        do {
+            if try file.seekToEnd() > 1_048_576 { try file.truncate(atOffset: 0); try file.seek(toOffset: 0) }
+            try file.write(contentsOf: data + Data([10]))
+        } catch {} // Diagnostics never interrupt media/control.
+    }
+}

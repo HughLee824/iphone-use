@@ -874,12 +874,16 @@ final class AppleDeviceBackend: SessionBackend {
             guard display.backlightOn else { throw IPhoneUseError("device_locked", "Display is not awake") }
             let recovery = previewContinuity.needsRecovery(media?.recordingReceiver?.snapshots?.status() ?? [:])
             var changed = recovery || media?.matchesDisplay(display) != true
+            var reason = recovery ? "decoder_continuity_lost" : "display_metadata_changed"
             do { try media?.recordingReceiver?.snapshots?.rejectConflictingGeometry(display) }
-            catch { changed = true }
+            catch { changed = true; reason = "frame_geometry_conflict: \(error)" }
             if !changed {
                 changed = try previewOrientation.needsRefresh(cli: cli, snapshots: media?.recordingReceiver?.snapshots, display: display)
+                if changed { reason = "frame_rotation_conflict" }
             }
             if changed {
+                NativePreviewEvents.append(to: paths.directory.appendingPathComponent("preview-events.jsonl"),
+                    event: "refresh_started", reason: reason, source: media?.health() ?? [:])
                 preview.suspend(recovery ? "Recovering video continuity" : "Synchronizing rotation")
                 recording?.endSegment(reason: recovery ? "media_discontinuity" : "display_changed")
                 releaseRecordingMediaIfFinished(force: true)
@@ -888,6 +892,8 @@ final class AppleDeviceBackend: SessionBackend {
                 }
                 let refreshed = try NativeCaptureChecks.read { try cli.read($0, timeout: 3) }.display
                 try ensurePreviewMedia(refreshed)
+                NativePreviewEvents.append(to: paths.directory.appendingPathComponent("preview-events.jsonl"),
+                    event: "refresh_completed", reason: reason, source: media?.health() ?? [:])
             } else { attachPreview() }
             return changed
         } catch {

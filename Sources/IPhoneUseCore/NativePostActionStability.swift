@@ -39,6 +39,7 @@ enum NativePostActionStability {
         var comparison: [String: Any]?
         var unchangedSince = started, lastSampleAt = started, consecutive = 0, samples = 0, attempts = 0
         var lastError: String?, stable = false
+        var geometrySamples = 0
         var lastCaptureDiagnostics: [String: Any] = [:]
         var captureSamples: [[String: Any]] = []
         var exclusionContext = sourceContext
@@ -63,7 +64,7 @@ enum NativePostActionStability {
                 lastCaptureDiagnostics = error.diagnostics
                 captureSamples.append(["attempt": attempts, "elapsedMs": (now() - began) * 1000, "errorCode": error.code])
                 anchor = nil; anchorContext = nil; anchorIdentity = nil; consecutive = 0
-                exclusionInvalidated = true
+                exclusionInvalidated = true; geometrySamples = 0
                 pause(min(0.2, max(0, deadline - now())))
                 continue
             }
@@ -92,6 +93,7 @@ enum NativePostActionStability {
                 throw IPhoneUseError("invalid_ignored_region", "Post-action exclusion is outside the screen")
             }
             let sameGeometry = anchorContext?.matches(context) == true && anchorIdentity == identity
+            geometrySamples = sameGeometry ? geometrySamples + 1 : 1
             let match = anchor.map { FrameComparison(reference: $0, current: fingerprint,
                                                      ignoredCaret: mask, screen: context.screen) }
             let toleratedBounds = sameGeometry ? match.flatMap {
@@ -118,7 +120,7 @@ enum NativePostActionStability {
             }
             stable = finished < deadline && consecutive >= requiredFrames
                 && finished - unchangedSince >= stableDuration && finished - started >= minimumDuration
-            if stable { break }
+            if stable || (geometrySamples >= requiredFrames && finished - started >= minimumDuration) { break }
             pause(min(max(0, 0.2 - (now() - began)), max(0, deadline - now())))
         }
         try checkCancellation()
@@ -131,7 +133,7 @@ enum NativePostActionStability {
         var metadata = latest.metadata
         let reason: String
         if stable { reason = "stable" }
-        else if comparison?["readinessEquivalent"] as? Bool == false { reason = "frame_stability_timeout" }
+        else if comparison?["readinessEquivalent"] as? Bool == false { reason = "dynamic_or_transitioning" }
         else if consecutive < requiredFrames { reason = "insufficient_stable_samples" }
         else { reason = "observation_deadline_exceeded" }
         metadata["postActionStability"] = [
