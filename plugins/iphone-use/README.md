@@ -1,9 +1,9 @@
 # iPhone-use plugin
 
-> CLI 0.3.1 and plugin 0.1.7 are public. This branch prepares plugin 0.1.8 with a shared default live-preview workflow for Codex and Claude Code; it is not published yet and does not replace existing release assets.
+> CLI 0.3.3 is public. CLI 0.3.4 and plugin 0.1.9 are release candidates. Plugin 0.1.9 carries the dynamic-page workflow for both modes; the bounded dynamic target/anchor options require CLI and Runner 0.3.4. Existing published release assets are unchanged.
 
 
-Eyes and hands for agents operating a real iPhone. This self-contained package supports **Codex** and **Claude Code** through one skill and two client adapters. For new installations, use the published iPhone-use CLI **0.3.1**, full Xcode on a Mac, and a trusted, unlocked iPhone with Developer Mode. Only Runner mode requires local Apple development signing; standard mode needs no Runner setup. See the first-task guide for the currently validated macOS/iOS environment.
+Eyes and hands for agents operating a real iPhone. This self-contained package supports **Codex** and **Claude Code** through one skill and two client adapters. For new installations, use the published iPhone-use CLI **0.3.3**, full Xcode on a Mac, and a trusted, unlocked iPhone with Developer Mode. Only Runner mode requires local Apple development signing; standard mode needs no Runner setup. See the first-task guide for the currently validated macOS/iOS environment.
 
 [Website](https://iphone-use.com) · [First task](https://github.com/HughLee824/iphone-use/blob/main/docs/first-task.md) · [中文安装指南](https://github.com/HughLee824/iphone-use/blob/main/docs/plugins.md)
 
@@ -30,3 +30,5 @@ For offline/local authoring, Claude Code can load this folder with `claude --plu
 The control path runs locally on the Mac and iPhone. The selected AI client's model may receive screenshots and UI text under that client's data settings. Review what is visible before asking it to work with private apps.
 
 With plugin 0.1.8, after a successful connection the agent starts one local preview per task-owned session in either mode, using the built-in browser in Codex (`preview --no-open` followed by one in-app open) and the Mac default browser in Claude Code (`preview`). Codex without an in-app browser tool returns the URL without opening a system browser. Say “no preview” or “do not open a browser” to skip both service startup and page opening. Existing previews and prior attempts are reused rather than reopened. Older CLIs without preview keep the phone-control workflow. Preview failure is reported without retry loops or blocking otherwise-ready control. At task end, disconnect stops the owned preview/media; an inactive browser tab can remain when no exact tab handle is available. Preview does not replace the agent's screenshot and reference checks.
+
+Plugin 0.1.9 must be installed separately from a CLI upgrade. Update the marketplace and plugin, then start a new client session and verify workflow version 0.1.9 in the installed skill. See the [upgrade guide](https://github.com/HughLee824/iphone-use/blob/main/docs/plugins.md#升级生效与卸载). A changing video frame is usable evidence; follow the scoped controls and fresh-image checks in the skill instead of terminating the app to recover.
