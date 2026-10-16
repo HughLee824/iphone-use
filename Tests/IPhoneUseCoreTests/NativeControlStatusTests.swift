@@ -2,6 +2,15 @@ import XCTest
 @testable import IPhoneUseCore
 
 final class NativeControlStatusTests: XCTestCase {
+    func testEndedDisplayConnectionRequiresReconnectAndPreservesInputUncertainty() {
+        let media: [String: Any] = ["healthy": false, "displayConnection": ["errorCode": "native_connection_lost"]]
+        let state = NativeControlStatus.resolve(hid: .ready, media: media, closing: false, startupCode: nil, startupError: nil)
+        XCTAssertEqual(state.code, "native_connection_lost")
+        XCTAssertEqual(state.recovery, .reconnectAndObserve)
+        XCTAssertNotNil(state.mediaFailureSnapshot)
+        let uncertain = NativeControlStatus.resolve(hid: .releaseUncertain, media: media, closing: false, startupCode: nil, startupError: nil)
+        XCTAssertEqual(uncertain.code, "native_release_uncertain")
+    }
     func testInactiveMediaDoesNotBlockReadyHIDOrHideUncertainInput() {
         func status(_ hid: NativeHIDAdapter.State) -> NativeControlStatus {
             NativeControlStatus.resolve(hid: hid, media: ["state": "inactive", "healthy": false], closing: false,

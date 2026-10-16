@@ -41,7 +41,12 @@ enum NativeRecordingValidation {
         reader.add(output)
         guard reader.startReading() else { throw reader.error ?? IPhoneUseError("recording_invalid", "Cannot start video decoder") }
         defer { reader.cancelReading() }
-        var count = 0, first = 0.0, last = -Double.infinity, width = 0, height = 0
+        // A delayed first image creates an empty edit at the start of the MP4.
+        // AVAssetReader materializes that edit as a black image, even though it
+        // is not an encoded sample. Decode it, but don't compare it to writer.frames.
+        let emptyRanges = track.segments.filter(\.isEmpty).map { $0.timeMapping.target }
+        var count = 0, emptyEditFrames = 0, first = 0.0, last = -Double.infinity, width = 0, height = 0
+        var lastPresentation = -Double.infinity
         // A five-minute phone recording can contain thousands of full-size
         // frames. Keep full decoding, but scale its budget within the host's
         // 75-second command timeout (also allowing 10 seconds to finalize).
@@ -55,8 +60,14 @@ enum NativeRecordingValidation {
             guard let pixels = CMSampleBufferGetImageBuffer(sample) else {
                 throw IPhoneUseError("recording_invalid", "Video decoder returned no image")
             }
-            let time = CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sample))
-            guard time.isFinite, time >= last else { throw IPhoneUseError("recording_invalid", "Video timestamps are invalid") }
+            let presentationTime = CMSampleBufferGetPresentationTimeStamp(sample)
+            let time = CMTimeGetSeconds(presentationTime)
+            guard time.isFinite, time >= lastPresentation else { throw IPhoneUseError("recording_invalid", "Video timestamps are invalid") }
+            lastPresentation = time
+            if emptyRanges.contains(where: { CMTimeRangeContainsTime($0, time: presentationTime) }) {
+                emptyEditFrames += 1
+                continue
+            }
             if count == 0 { first = time; width = CVPixelBufferGetWidth(pixels); height = CVPixelBufferGetHeight(pixels) }
             last = time; count += 1
         }
@@ -65,7 +76,7 @@ enum NativeRecordingValidation {
         }
         let transform = track.preferredTransform
         let presented = CGRect(x: 0, y: 0, width: width, height: height).applying(transform)
-        return ["durationSeconds": seconds, "decodedFrames": count, "firstFrameSeconds": first,
+        return ["durationSeconds": seconds, "decodedFrames": count, "emptyEditFrames": emptyEditFrames, "firstFrameSeconds": first,
                 "validationBudgetSeconds": validationBudget,
                 "validationElapsedSeconds": ProcessInfo.processInfo.systemUptime - validationStarted,
                 "lastFrameSeconds": last, "width": width, "height": height, "bytes": bytes,

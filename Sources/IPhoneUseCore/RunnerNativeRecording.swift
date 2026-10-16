@@ -278,6 +278,8 @@ final class RunnerNativeRecording {
         }
     }
 
+    func showPreviewGesture(_ gesture: NativePreviewGesture) { preview?.showGesture(gesture) }
+    var previewGestureRotation: String? { preview?.gestureRotation }
     func startPreview() throws -> [String: Any] {
         try cancellation.check()
         guard !closed, failure == nil else { throw IPhoneUseError("preview_unavailable", failure ?? "Connection closed") }

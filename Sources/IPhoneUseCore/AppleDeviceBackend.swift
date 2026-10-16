@@ -532,7 +532,8 @@ final class AppleDeviceBackend: SessionBackend {
             guard let media = self.media, media.isActive else {
                 return ["verification": "apple_png_and_stable_display_metadata"]
             }
-            guard media.matchesDisplay(display), media.health()["healthy"] as? Bool == true,
+            try NativeCaptureChecks.requireHealthyMedia(media.health())
+            guard media.matchesDisplay(display),
                   let receiver = media.recordingReceiver, receiver.snapshots != nil else {
                 throw IPhoneUseError("native_orientation_unverified", "Owned media cannot verify display geometry; reconnect explicitly")
             }
@@ -734,6 +735,8 @@ final class AppleDeviceBackend: SessionBackend {
         }
         return result
     }
+    func showPreviewGesture(_ gesture: NativePreviewGesture) { preview?.showGesture(gesture) }
+    var previewGestureRotation: String? { preview?.gestureRotation }
     func cancelCurrent() { cancellation.cancel() }
     func prepareText() throws -> [String: Any] {
         try cancellation.check()

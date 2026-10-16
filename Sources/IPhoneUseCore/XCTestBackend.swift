@@ -23,9 +23,13 @@ protocol SessionBackend: AnyObject {
     func startPreview() throws -> [String: Any]
     func stopPreview() throws -> [String: Any]
     func previewTick() -> Bool
+    func showPreviewGesture(_ gesture: NativePreviewGesture)
+    var previewGestureRotation: String? { get }
 }
 
 extension SessionBackend {
+    func showPreviewGesture(_ gesture: NativePreviewGesture) {}
+    var previewGestureRotation: String? { nil }
     func startPreview() throws -> [String: Any] { throw IPhoneUseError("preview_unsupported", "Preview is unavailable") }
     func stopPreview() throws -> [String: Any] { ["state": "stopped"] }
     func previewTick() -> Bool { false }
@@ -305,6 +309,8 @@ final class XCTestBackend: SessionBackend {
     }
     func stopPreview() throws -> [String: Any] { try recording?.stopPreview() ?? ["state": "stopped"] }
     func previewTick() -> Bool { recording?.previewTick() ?? false }
+    func showPreviewGesture(_ gesture: NativePreviewGesture) { recording?.showPreviewGesture(gesture) }
+    var previewGestureRotation: String? { recording?.previewGestureRotation }
     func cancelCurrent() { recordingCancellation.cancel() }
 
     func stop() -> [String: Any] {

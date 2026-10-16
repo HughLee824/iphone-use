@@ -76,6 +76,10 @@ struct NativeControlStatus {
         if let startupError { return Self(code: startupCode ?? "native_control_unavailable", message: startupError, recovery: .resolveError) }
         guard let hid, hid != .unprepared else { return Self(code: "native_hid_unavailable", message: "No negotiated HID surface is available.", recovery: .resolveError) }
         if hid == .contactActive { return Self(code: "native_contact_active", message: "A touch contact or keyboard key is still active; wait for the original action and inspect the session.", recovery: .checkSession) }
+        if requiresMedia, (media["displayConnection"] as? [String: Any])?["errorCode"] as? String == "native_connection_lost" {
+            return Self(code: "native_connection_lost", message: "Native display connection ended; close competing device clients, then explicitly reconnect.",
+                        recovery: .reconnectAndObserve, mediaFailureSnapshot: media)
+        }
         if requiresMedia, media["healthReason"] as? String == "display_refresh_failed" {
             return Self(code: "native_media_display_refresh_failed", message: media["error"] as? String,
                         recovery: .reconnectAndObserve, mediaFailureSnapshot: media)

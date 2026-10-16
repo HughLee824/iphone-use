@@ -42,6 +42,7 @@ final class NativePreview {
     private var slowFrames: [[String: Double]] = []
     private var error: String?
     private var closed = false
+    private var gestures = NativePreviewGestures()
     private(set) var url = ""
 
     init(device: NativePreviewDevice = .unknown, encodeFrame: @escaping (NativeVideoSnapshot.Frame, NativeDisplay, CIContext) throws -> EncodedJPEG = { try NativePreview.encodeMeasured($0, display: $1, context: $2) }) throws {
@@ -80,6 +81,7 @@ final class NativePreview {
         queue.sync {
             guard !closed else { return }
             if self.receiver !== receiver || self.display != display {
+                gestures.clear()
                 jpeg = nil; frameAt = nil; lastSubmittedFrameAt = nil; bindingGeneration += 1
             }
             self.receiver = receiver; self.display = display; error = nil
@@ -87,7 +89,17 @@ final class NativePreview {
     }
 
     func suspend(_ reason: String) {
-        queue.sync { bindingGeneration += 1; receiver = nil; display = nil; jpeg = nil; frameAt = nil; lastSubmittedFrameAt = nil; error = reason }
+        queue.sync { gestures.clear(); bindingGeneration += 1; receiver = nil; display = nil; jpeg = nil; frameAt = nil; lastSubmittedFrameAt = nil; error = reason }
+    }
+
+    var gestureRotation: String? { queue.sync { display?.rotation } }
+
+    func showGesture(_ gesture: NativePreviewGesture) {
+        queue.async { [weak self] in
+            guard let self, !self.closed, let display = self.display,
+                  display.rotation == gesture.rotation else { return }
+            self.gestures.append(gesture, now: ProcessInfo.processInfo.systemUptime)
+        }
     }
 
     func status() -> [String: Any] { queue.sync { facts() } }
@@ -242,6 +254,10 @@ final class NativePreview {
                     self.send(connection, type: "image/png", data: data, cache: "private, max-age=86400")
                 } else { self.send(connection, code: "404 Not Found", type: "text/plain", data: Data()) }
             case "/\(self.token)/state": self.send(connection, type: "application/json", data: (try? jsonData(self.facts())) ?? Data())
+            case "/\(self.token)/gestures":
+                let query = URLComponents(string: "http://localhost" + String(parts[1]))?.queryItems
+                let after = query?.first(where: { $0.name == "after" })?.value.flatMap(Int.init)
+                self.send(connection, type: "application/json", data: (try? jsonData(self.gestures.response(after: after, now: ProcessInfo.processInfo.systemUptime))) ?? Data())
             case "/\(self.token)/frame":
                 let query = URLComponents(string: "http://localhost" + String(parts[1]))?.queryItems
                 if let after = query?.first(where: { $0.name == "after" })?.value.flatMap(Int.init),
