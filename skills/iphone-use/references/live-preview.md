@@ -6,7 +6,7 @@ The preview is for the person watching the task. It does not replace the agent's
 
 Default to preview after a successful connection in either standard or runner. Do not ask an extra preference question. Honor an explicit request such as “no preview”, “don't open a browser”, or “只操作手机，不要预览” for the entire task, including reconnects, until the user changes it. Skip starting the service as well as opening the page. If the user later opts out, stop only this task's preview with `preview --stop` and obtain fresh references before further input.
 
-Preflight reports **Live preview: available** only when the selected CLI supports `preview`, `--no-open` and `--stop`. If unavailable, continue the supported phone workflow and briefly explain that preview needs a newer CLI (current recommended CLI: 0.3.1). Do not automatically upgrade, switch binaries or modes, or repeatedly probe help.
+Preflight reports **Live preview: available** only when the selected CLI supports `preview`, `--no-open` and `--stop`. If unavailable, continue the supported phone workflow and briefly explain that preview needs a CLI with these supported command forms. Do not automatically upgrade, switch binaries or modes, or repeatedly probe help.
 
 Keep a small task record keyed by the returned device **session ID**: preview skipped, attempted/pending, active with returned URL, or failed. Preserve it across turn continuation/compaction. It is task bookkeeping, not a new persistent user setting. A new session gets a new record; the user's opt-out still applies. Never start another connection just to open a preview.
 
