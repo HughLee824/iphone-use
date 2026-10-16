@@ -356,13 +356,13 @@ final class LiveSessionTests: XCTestCase {
             frameStability = stability
             actionFrame = (png, capturedAt, fingerprint)
             try checkIssues()
-            if stability.stable { return }
+            if stability.stable || stability.observationReady { return }
             let now = ProcessInfo.processInfo.systemUptime
             let delay = min(max(0, FrameStability.sampleInterval - (now - began)), stability.remaining(at: now))
             if delay > 0 { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
         }
-        throw CommandError("frame_stability_timeout", requiresObservation: true,
-                           message: "Input completed, but screen frames did not stabilize within 5 seconds; do not replay the action")
+        throw CommandError("post_action_capture_timeout", requiresObservation: true,
+                           message: "Input completed but insufficient post-action frames were captured; do not replay the action")
     }
 
     @MainActor

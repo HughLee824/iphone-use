@@ -38,6 +38,7 @@ struct ScreenContext: Codable {
 struct ScreenGuard: Codable {
     static let algorithm = "srgb-grid-v1"
     static let maskedAlgorithm = "srgb-area-excluded-rect-v2"
+    static let dynamicAlgorithm = "bounded-overlay-contrast-v1"
     static let maximumRegions = 5
     static let pixelTolerance = 8
     static let globalColumns = 32
@@ -69,6 +70,7 @@ struct ScreenGuard: Codable {
         let screenChange: Double
         let regionChanges: [Double]
         let policy: Policy
+        var dynamicMatches: [Bool]? = nil
         var fieldPixelsMatch: Bool? = nil
         var fieldCaretMatch = false
         var caretObservationID: String? = nil
@@ -80,11 +82,20 @@ struct ScreenGuard: Codable {
         var regionsAccepted: Bool {
             regionChanges.allSatisfy { $0 <= policy.maxRegionChange }
         }
-        var accepted: Bool { screenChange <= policy.maxScreenChange && (regionsAccepted && fieldPixelsMatch != false || fieldCaretMatch || fieldAppearanceMatch) }
+        var accepted: Bool {
+            if let dynamicMatches { return dynamicMatches.count == 2 && dynamicMatches.allSatisfy { $0 } }
+            return screenChange <= policy.maxScreenChange
+                && (regionsAccepted && fieldPixelsMatch != false || fieldCaretMatch || fieldAppearanceMatch)
+        }
         var result: [String: Any] {
             var result: [String: Any] = ["algorithm": ignoredRect == nil ? ScreenGuard.algorithm : ScreenGuard.maskedAlgorithm, "accepted": accepted, "screenChange": screenChange,
              "regionChanges": regionChanges, "maxScreenChange": policy.maxScreenChange,
              "maxRegionChange": policy.maxRegionChange, "pixelTolerance": ScreenGuard.pixelTolerance]
+            if let dynamicMatches {
+                result["algorithm"] = ScreenGuard.dynamicAlgorithm
+                result["dynamicMatches"] = dynamicMatches
+                result["validationScope"] = "explicit_target_and_anchor"
+            }
             if let rect = ignoredRect {
                 result["ignoredRect"] = ["x": rect.x, "y": rect.y, "width": rect.width, "height": rect.height]
                 result["rawScreenChange"] = rawScreenChange
@@ -116,13 +127,69 @@ struct ScreenGuard: Codable {
     let regions: [Region]
     let ignoredRect: ScreenRect?
     let unmaskedRGB: [Data]?
+    let dynamicOverlay: [OverlayGlyph]?
 
-    init(png: Data, context: ScreenContext, rects: [ScreenRect], policy: Policy, ignoring ignoredRect: ScreenRect? = nil) throws {
+    // Explicitly selected control + independent page landmark. Local contrast
+    // retains stroke geometry while removing slowly varying video brightness,
+    // including behind translucent controls. No search, alignment or tolerance
+    // widening: both templates must match at their original coordinates.
+    struct OverlayGlyph: Codable {
+        let rect: ScreenRect
+        let contrast: Data
+        static let side = 64
+        static let radius = 4
+        static let featureCount = 56 * 56
+
+        static func features(_ rgb: Data) -> Data {
+            let bytes = Array(rgb)
+            let gray = (0..<side * side).map { i in
+                (Double(bytes[i * 3]) + Double(bytes[i * 3 + 1]) + Double(bytes[i * 3 + 2])) / 3
+            }
+            var result = Data(capacity: featureCount)
+            for y in radius..<(side - radius) {
+                for x in radius..<(side - radius) {
+                    var sum = 0.0
+                    for dy in -radius...radius {
+                        for dx in -radius...radius { sum += gray[(y + dy) * side + x + dx] }
+                    }
+                    let value = (gray[y * side + x] - sum / 81).rounded()
+                    result.append(UInt8(max(0, min(255, value + 128))))
+                }
+            }
+            return result
+        }
+        static func energy(_ data: Data) -> Double {
+            data.reduce(0.0) { $0 + pow(Double($1) - 128, 2) }
+        }
+        static func usable(_ data: Data) -> Bool {
+            data.count == featureCount && energy(data) / Double(featureCount) >= 16
+                && data.filter { $0 >= 136 }.count >= 48
+                && data.filter { $0 <= 120 }.count >= 48
+        }
+        init(image: ScreenImage, rect: ScreenRect, screen: ScreenRect) throws {
+            self.rect = rect
+            contrast = Self.features(try image.rgb(rect: rect, screen: screen, columns: Self.side, rows: Self.side))
+            guard Self.usable(contrast) else { throw Failure.invalidGuard }
+        }
+        var valid: Bool { rect.valid && Self.usable(contrast) }
+        func matches(image: ScreenImage, screen: ScreenRect) throws -> Bool {
+            let current = Self.features(try image.rgb(rect: rect, screen: screen, columns: Self.side, rows: Self.side))
+            guard Self.usable(current) else { return false }
+            let originalEnergy = Self.energy(contrast), currentEnergy = Self.energy(current)
+            let scale = sqrt(currentEnergy / originalEnergy)
+            guard (0.2...5).contains(scale) else { return false }
+            let dot = zip(contrast, current).reduce(0.0) { $0 + (Double($1.0) - 128) * (Double($1.1) - 128) }
+            return dot / sqrt(originalEnergy * currentEnergy) >= 0.95
+        }
+    }
+
+    init(png: Data, context: ScreenContext, rects: [ScreenRect], policy: Policy, ignoring ignoredRect: ScreenRect? = nil, dynamicRects: [ScreenRect]? = nil) throws {
         guard context.valid, policy.valid, (1...Self.maximumRegions).contains(rects.count),
               rects.allSatisfy({ $0.valid && context.screen.cgRect.contains($0.cgRect) }) else { throw Failure.invalidGuard }
         let image = try ScreenImage(png: png)
         try image.validateMapping(to: context.screen)
-        algorithm = ignoredRect == nil ? Self.algorithm : Self.maskedAlgorithm
+        algorithm = dynamicRects == nil ? (ignoredRect == nil ? Self.algorithm : Self.maskedAlgorithm) : Self.dynamicAlgorithm
+        dynamicOverlay = try dynamicRects.map { try $0.map { try OverlayGlyph(image: image, rect: $0, screen: context.screen) } }
         self.ignoredRect = ignoredRect
         self.context = context
         self.policy = policy
@@ -136,14 +203,23 @@ struct ScreenGuard: Codable {
             }
         }
         regions = try rects.map { Region(rect: $0, rgb: try image.rgb(rect: $0, screen: context.screen, columns: Self.regionSide, rows: Self.regionSide)) }
+        try validate()
     }
 
     func validate() throws {
-        guard algorithm == (ignoredRect == nil ? Self.algorithm : Self.maskedAlgorithm), context.valid, policy.valid, pixelWidth > 0, pixelHeight > 0,
+        guard algorithm == (dynamicOverlay == nil ? (ignoredRect == nil ? Self.algorithm : Self.maskedAlgorithm) : Self.dynamicAlgorithm), context.valid, policy.valid, pixelWidth > 0, pixelHeight > 0,
               globalRGB.count == Self.globalColumns * Self.globalRows * 3,
               (1...Self.maximumRegions).contains(regions.count),
               regions.allSatisfy({ $0.rect.valid && context.screen.cgRect.contains($0.rect.cgRect)
                   && $0.rgb.count == Self.regionSide * Self.regionSide * 3 }) else { throw Failure.invalidGuard }
+        if let dynamicOverlay {
+            guard dynamicOverlay.count == 2, ignoredRect == nil, unmaskedRGB == nil,
+                  policy.maxScreenChange == 0.01, policy.maxRegionChange == 0,
+                  dynamicOverlay.allSatisfy({ $0.valid && context.scope.cgRect.contains($0.rect.cgRect)
+                      && $0.rect.width <= 256 && $0.rect.height <= 96 }),
+                  dynamicOverlay[0].rect.width <= 96,
+                  !dynamicOverlay[0].rect.cgRect.intersects(dynamicOverlay[1].rect.cgRect) else { throw Failure.invalidGuard }
+        }
         if let ignoredRect {
             let rects = try Self.unmaskedRects(screen: context.screen, ignored: ignoredRect, protected: regions.map(\.rect))
             guard let unmaskedRGB, unmaskedRGB.count == rects.count,
@@ -183,10 +259,16 @@ struct ScreenGuard: Codable {
         guard image.image.width == pixelWidth, image.image.height == pixelHeight else { throw Failure.contextChanged }
         try image.validateMapping(to: current.screen)
         let global = try image.rgb(rect: context.screen, screen: context.screen, columns: Self.globalColumns, rows: Self.globalRows)
+        let raw = Self.changedFraction(globalRGB, global)
+        if let dynamicOverlay {
+            // Diagnostic only for this explicit scope; do not report an unchecked
+            // moving background as zero change.
+            return Check(screenChange: raw, regionChanges: [], policy: policy,
+                         dynamicMatches: try dynamicOverlay.map { try $0.matches(image: image, screen: context.screen) })
+        }
         let changes = try regions.map { region in
             Self.changedFraction(region.rgb, try image.rgb(rect: region.rect, screen: context.screen, columns: Self.regionSide, rows: Self.regionSide))
         }
-        let raw = Self.changedFraction(globalRGB, global)
         guard let ignoredRect, let unmaskedRGB else {
             return Check(screenChange: raw, regionChanges: changes, policy: policy)
         }
@@ -324,6 +406,9 @@ struct CoordinateGesture: Codable {
         if let end {
             guard [end.x, end.y].allSatisfy(\.isFinite), screenGuard.context.scope.cgRect.contains(end),
                   hypot(end.x - start.x, end.y - start.y) >= 1 else { throw ScreenGuard.Failure.invalidGuard }
+        }
+        if let overlay = screenGuard.dynamicOverlay {
+            guard kind == "tap", end == nil, overlay[0].rect.cgRect.contains(start) else { throw ScreenGuard.Failure.invalidGuard }
         }
         let required = Self.actionRegions(start: start, end: end, screen: screenGuard.context.screen.cgRect)
         guard screenGuard.regions.prefix(required.count).map(\.rect) == required else { throw ScreenGuard.Failure.invalidGuard }

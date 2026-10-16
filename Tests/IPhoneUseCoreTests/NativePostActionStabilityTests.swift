@@ -122,13 +122,13 @@ final class NativePostActionStabilityTests: XCTestCase {
             time += 0.6; defer { count += 1 }
             return [empty, left, right, right, right][min(count, 4)]
         }
-        XCTAssertEqual(count, 5)
-        XCTAssertEqual(facts(result)["stable"] as? Bool, true)
+        XCTAssertEqual(count, 3)
+        XCTAssertEqual(facts(result)["stable"] as? Bool, false)
         XCTAssertEqual(result.screenshot, right.screenshot)
         XCTAssertEqual((facts(result)["localizedChange"] as? [String: Any])?["comparisons"] as? Int, 0)
     }
 
-    func testTransitionReturnsLastStableFrameAndNeverFirstFrame() throws {
+    func testTransitionReturnsLatestFrameWithoutClaimingReadiness() throws {
         let old = try frame(), animated = try frame(120), final = try frame(200)
         var time = 0.0, index = 0
         let result = try NativePostActionStability.capture(now: { time }, pause: { time += $0 }, checkCancellation: {}) { deadline in
@@ -136,9 +136,9 @@ final class NativePostActionStabilityTests: XCTestCase {
             time += 0.6; defer { index += 1 }
             return [old, animated, final, final, final][min(index, 4)]
         }
-        XCTAssertEqual(index, 5)
+        XCTAssertEqual(index, 3)
         XCTAssertEqual(result.screenshot, final.screenshot)
-        XCTAssertEqual(facts(result)["stable"] as? Bool, true)
+        XCTAssertEqual(facts(result)["stable"] as? Bool, false)
         XCTAssertEqual(facts(result)["frameHash"] as? String, try FrameFingerprint(png: final.screenshot).hash)
     }
 
@@ -154,17 +154,17 @@ final class NativePostActionStabilityTests: XCTestCase {
         XCTAssertEqual(facts(result)["stable"] as? Bool, true)
     }
 
-    func testContinuousAnimationReturnsLatestWithExplicitTimeout() throws {
+    func testContinuousAnimationReturnsFreshFrameWithoutWaitingForStillness() throws {
         var time = 0.0, count = 0
         let a = try frame(), b = try frame(200)
         let result = try NativePostActionStability.capture(now: { time }, pause: { time += $0 }, checkCancellation: {}) { _ in
             time += 1; count += 1
             return count.isMultiple(of: 2) ? b : a
         }
-        XCTAssertEqual(count, 15)
+        XCTAssertEqual(count, 3)
         XCTAssertEqual(result.screenshot, a.screenshot)
         XCTAssertEqual(facts(result)["stable"] as? Bool, false)
-        XCTAssertEqual(facts(result)["reason"] as? String, "frame_stability_timeout")
+        XCTAssertEqual(facts(result)["reason"] as? String, "dynamic_or_transitioning")
         XCTAssertEqual(facts(result)["automaticReplayAllowed"] as? Bool, false)
     }
 

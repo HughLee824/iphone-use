@@ -64,10 +64,19 @@ enum XCTestCapture {
                       evidence["accepted"] as? Bool == true, evidence["algorithm"] as? String == expectedGuard.algorithm,
                       evidence["maxScreenChange"] as? Double == expectedGuard.policy.maxScreenChange,
                       evidence["maxRegionChange"] as? Double == expectedGuard.policy.maxRegionChange,
-                      let global = evidence["screenChange"] as? Double, global.isFinite, (0...expectedGuard.policy.maxScreenChange).contains(global),
-                      let regions = evidence["regionChanges"] as? [Double], regions.count == expectedGuard.regions.count,
+                      let global = evidence["screenChange"] as? Double, global.isFinite,
+                      (0...(expectedGuard.dynamicOverlay == nil ? expectedGuard.policy.maxScreenChange : 1)).contains(global),
+                      let regions = evidence["regionChanges"] as? [Double], regions.count == (expectedGuard.dynamicOverlay == nil ? expectedGuard.regions.count : 0),
                       regions.allSatisfy({ $0.isFinite && (0...expectedGuard.policy.maxRegionChange).contains($0) }) else {
                     throw IPhoneUseError("missing_screen_guard_facts", "Runner did not confirm the requested screen guard; observe before deciding what to do next")
+                }
+                if expectedGuard.dynamicOverlay != nil {
+                    guard evidence["dynamicMatches"] as? [Bool] == [true, true],
+                          evidence["validationScope"] as? String == "explicit_target_and_anchor" else {
+                        throw IPhoneUseError("missing_screen_guard_facts", "Runner did not confirm both dynamic overlay regions")
+                    }
+                } else if evidence["dynamicMatches"] != nil {
+                    throw IPhoneUseError("missing_screen_guard_facts", "Unexpected dynamic overlay validation")
                 }
                 if let rect = expectedGuard.ignoredRect {
                     guard let raw = evidence["ignoredRect"] as? [String: Any],
@@ -108,6 +117,18 @@ enum XCTestCapture {
                     guard execution?["inputCompleted"] as? Bool == true, result["kind"] as? String == "home",
                           result["homePressCompleted"] as? Bool == true, result["homeScreenConfirmed"] as? Bool == false else {
                         throw IPhoneUseError("missing_home_facts", "Runner did not confirm Home input completion")
+                    }
+                } else if stability?["stable"] as? Bool == false {
+                    guard execution?["inputCompleted"] as? Bool == true,
+                          stability?["reason"] as? String == "dynamic_or_transitioning",
+                          stability?["automaticReplayAllowed"] as? Bool == false,
+                          stability?["algorithm"] as? String == FrameComparison.algorithm,
+                          let samples = stability?["samples"] as? Int, samples >= 3,
+                          let observed = stability?["observedForMs"] as? Double, observed.isFinite,
+                          observed >= FrameStability.minimumObservationDuration * 1000,
+                          let elapsed = stability?["elapsedMs"] as? Double, elapsed.isFinite, elapsed >= observed,
+                          response["frame"] is [String: Any], result["frame"] != nil else {
+                        throw IPhoneUseError("missing_stability_facts", "Runner did not confirm input completion and a fresh dynamic observation")
                     }
                 } else {
                     guard execution?["inputCompleted"] as? Bool == true, stability?["stable"] as? Bool == true,

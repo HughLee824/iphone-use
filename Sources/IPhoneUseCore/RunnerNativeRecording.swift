@@ -28,12 +28,14 @@ protocol RunnerRecordingConnection: AnyObject {
     var previewReceiver: NativeRTPReceiver? { get }
     var previewDisplay: NativeDisplay? { get }
     var previewDevice: NativePreviewDevice { get }
+    var previewRefreshReason: String { get }
     func previewNeedsRefresh() throws -> Bool
     func refreshPreview() throws
     func close() -> [String: Any]
 }
 
 extension RunnerRecordingConnection {
+    var previewRefreshReason: String { "display_changed" }
     var previewReceiver: NativeRTPReceiver? { nil }
     var previewDisplay: NativeDisplay? { nil }
     var previewDevice: NativePreviewDevice { .unknown }
@@ -54,6 +56,7 @@ private final class RunnerMediaConnection: RunnerRecordingConnection {
     private(set) var previewDevice = NativePreviewDevice.unknown
     private var receiver: NativeRTPReceiver?
     private var cleanup: [String: Any]?
+    private(set) var previewRefreshReason = "none"
     var source: NativeRecordingSource { receiver! } // Only returned after prepare succeeds.
     var sessionID: String { media!.health()["mediaSessionID"] as! String }
     var rotation: String { display!.rotation }
@@ -136,10 +139,12 @@ private final class RunnerMediaConnection: RunnerRecordingConnection {
         guard media?.health()["healthy"] as? Bool == true else {
             throw IPhoneUseError("native_media_unhealthy", "Preview media connection lost")
         }
-        if current != display { return true }
+        if current != display { previewRefreshReason = "display_metadata_changed"; return true }
         do { try media?.recordingReceiver?.snapshots?.rejectConflictingGeometry(current) }
-        catch { return true }
-        return try previewOrientation.needsRefresh(cli: cli, snapshots: media?.recordingReceiver?.snapshots, display: current)
+        catch { previewRefreshReason = "frame_geometry_conflict: \(error)"; return true }
+        let changed = try previewOrientation.needsRefresh(cli: cli, snapshots: media?.recordingReceiver?.snapshots, display: current)
+        previewRefreshReason = changed ? "frame_rotation_conflict" : "none"
+        return changed
     }
     func refreshPreview() throws {
         guard let media else { throw IPhoneUseError("preview_unavailable", "Media is unavailable") }
@@ -176,6 +181,7 @@ final class RunnerNativeRecording {
     private var preview: NativePreview?
     private var independentOrientationConflicts = 0
     private let previewContinuity = NativePreviewContinuity()
+    private let previewEventsURL: URL
     var previewStatus: [String: Any] {
         var result = preview?.status() ?? ["state": failure == nil ? "stopped" : "failed", "error": failure as Any? ?? NSNull()]
         result["independentOrientationConflicts"] = independentOrientationConflicts
@@ -185,6 +191,7 @@ final class RunnerNativeRecording {
     init(root: URL, cancellation: NativeCancellation,
          previewGeometry: (() throws -> RunnerPreviewGeometry)? = nil,
          connect: @escaping () throws -> RunnerRecordingConnection) {
+        previewEventsURL = root.deletingLastPathComponent().appendingPathComponent("preview-events.jsonl")
         recording = NativeStreamRecording(root: root); self.cancellation = cancellation; self.connect = connect
         self.previewGeometry = previewGeometry
     }
@@ -304,15 +311,20 @@ final class RunnerNativeRecording {
         do {
             let recovery = previewContinuity.needsRecovery(connection.previewReceiver?.snapshots?.status() ?? [:])
             var changed = recovery
-            if !changed { changed = try connection.previewNeedsRefresh() }
+            var reason = recovery ? "decoder_continuity_lost" : "none"
+            if !changed {
+                changed = try connection.previewNeedsRefresh()
+                if changed { reason = connection.previewRefreshReason }
+            }
             if !changed, let previewGeometry, let display = connection.previewDisplay {
                 // CoreDevice can report the SAME stale axes for both its PNG
                 // and display metadata. XCTest supplies only negative evidence;
                 // never derive an input transform or render pixels from this probe.
                 changed = try previewGeometry().conflicts(with: display)
-                if changed { independentOrientationConflicts += 1 }
+                if changed { independentOrientationConflicts += 1; reason = "xctest_geometry_conflict" }
             }
             if changed {
+                previewEvent("refresh_started", reason: reason, connection: connection)
                 preview.suspend(recovery ? "Recovering video continuity" : "Synchronizing rotation")
                 recording.endSegment(reason: recovery ? "media_discontinuity" : "display_changed")
                 try connection.refreshPreview()
@@ -323,6 +335,7 @@ final class RunnerNativeRecording {
                 }
             }
             try attachPreview()
+            if changed { previewEvent("refresh_completed", reason: reason, connection: connection) }
             return changed
         } catch {
             failure = String(describing: error)
@@ -332,6 +345,12 @@ final class RunnerNativeRecording {
             return true
         }
     }
+    private func previewEvent(_ event: String, reason: String, connection: RunnerRecordingConnection) {
+        var facts = connection.source.health()
+        facts["mediaSessionID"] = connection.sessionID; facts["displayRotation"] = connection.rotation
+        NativePreviewEvents.append(to: previewEventsURL, event: event, reason: reason, source: facts)
+    }
+
     func close() -> [String: Any] {
         closed = true
         preview?.close(); preview = nil

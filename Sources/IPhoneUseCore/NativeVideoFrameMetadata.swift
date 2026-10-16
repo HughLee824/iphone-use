@@ -14,16 +14,36 @@ struct NativeVideoFrameMetadata: Equatable {
         guard slices.count == 1, let slice = slices.first, slice.count >= 16 else {
             throw Self.invalid("Expected one complete DisplayService slice")
         }
-        let tail = Array(slice.suffix(14))
-        // Recognized zero-origin rectangle with HEVC emulation prevention and
-        // flags 0x03. Do not search backwards for a plausible pair of dimensions.
-        guard Array(tail[4...8]) == [0, 0, 3, 0, 0], tail[13] == 3 else {
+        // The rectangle is 13 RBSP bytes, not a fixed 14 EBSP bytes. For
+        // example activeHeight=1280 ends in 0x00 and causes a SECOND 0x03
+        // emulation-prevention byte across the following zero-origin field.
+        // Decode a bounded suffix then read the fixed trailing layout; never
+        // search backwards for a plausible rectangle or accept another flags value.
+        let encoded = Array(slice.suffix(32))
+        var decoded: [UInt8] = [], zeros = 0
+        for i in encoded.indices {
+            let byte = encoded[i]
+            if zeros == 2 && byte == 3 {
+                guard i + 1 < encoded.count, encoded[i + 1] <= 3 else {
+                    throw Self.invalid("Invalid HEVC emulation-prevention byte")
+                }
+                zeros = 0; continue
+            }
+            guard zeros != 2 || byte > 2 else {
+                throw Self.invalid("Missing HEVC emulation-prevention byte")
+            }
+            decoded.append(byte)
+            zeros = byte == 0 ? min(2, zeros + 1) : 0
+        }
+        guard decoded.count >= 13 else { throw Self.invalid("Truncated DisplayService frame metadata") }
+        let tail = Array(decoded.suffix(13))
+        guard Array(tail[4...7]) == [0, 0, 0, 0], tail[12] == 3 else {
             throw Self.invalid("Unrecognized DisplayService frame metadata")
         }
         activeWidth = Int(tail[0]) << 8 | Int(tail[1])
         activeHeight = Int(tail[2]) << 8 | Int(tail[3])
-        nativeWidth = Int(tail[9]) << 8 | Int(tail[10])
-        nativeHeight = Int(tail[11]) << 8 | Int(tail[12])
+        nativeWidth = Int(tail[8]) << 8 | Int(tail[9])
+        nativeHeight = Int(tail[10]) << 8 | Int(tail[11])
         guard [activeWidth, activeHeight, nativeWidth, nativeHeight].allSatisfy({ (1...4096).contains($0) }),
               activeWidth % 16 == 0, activeHeight % 16 == 0 else {
             throw Self.invalid("Invalid DisplayService frame dimensions")

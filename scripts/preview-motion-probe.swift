@@ -15,6 +15,9 @@ final class PreviewMotionProbeController: UIViewController {
     private var phase = -1, transition = -1, ticks = 0
     private var lastTick: Double?, largestTickGap = 0.0
     private var failure: String?
+    private var fullVideo = false, paused = false
+    private let videoControls = UIStackView(), videoTitle = UILabel()
+    override var prefersStatusBarHidden: Bool { fullVideo }
 
     override func viewDidLoad() {
         super.viewDidLoad(); view.backgroundColor = .black
@@ -34,7 +37,33 @@ final class PreviewMotionProbeController: UIViewController {
         tap.addAction(UIAction { [weak self, weak tap] _ in
             guard let self else { return }; self.taps += 1; tap?.setTitle("Tap \(self.taps)", for: .normal)
         }, for: .touchUpInside); controls.addArrangedSubview(tap)
-        for child in [titleLabel, controls, motion, card, video, facts] { view.addSubview(child) }
+        let full = UIButton(type: .system); full.setTitle("Full video", for: .normal)
+        full.addAction(UIAction { [weak self] _ in self?.setFullVideo(true) }, for: .touchUpInside)
+        controls.addArrangedSubview(full)
+        videoControls.axis = .horizontal; videoControls.distribution = .equalSpacing
+        for (label, symbol) in [("Back", "chevron.left"), ("Pause", "pause.fill"), ("Portrait", "iphone"), ("Left", "rotate.left"), ("Right", "rotate.right")] {
+            let b = UIButton(type: .system); b.tintColor = .white; b.accessibilityLabel = label
+            b.setImage(UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 24, weight: .bold)), for: .normal)
+            b.addAction(UIAction { [weak self, weak b] _ in
+                guard let self else { return }
+                if label == "Back" { self.setFullVideo(false) }
+                else if label == "Pause" {
+                    self.paused.toggle()
+                    if self.paused { self.player?.pause() } else { self.player?.play() }
+                    b?.setImage(UIImage(systemName: self.paused ? "play.fill" : "pause.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 24, weight: .bold)), for: .normal)
+                    b?.accessibilityLabel = self.paused ? "Play" : "Pause"
+                } else {
+                    self.orientationMask = label == "Portrait" ? .portrait : (label == "Left" ? .landscapeLeft : .landscapeRight)
+                    self.setNeedsUpdateOfSupportedInterfaceOrientations()
+                    self.view.window?.windowScene?.requestGeometryUpdate(.iOS(interfaceOrientations: self.orientationMask)) { [weak self] in self?.failure = $0.localizedDescription }
+                }
+            }, for: .touchUpInside)
+            b.widthAnchor.constraint(equalToConstant: 44).isActive = true; videoControls.addArrangedSubview(b)
+        }
+        videoTitle.text = "OFFLINE VIDEO"; videoTitle.textColor = .white
+        videoTitle.font = .boldSystemFont(ofSize: 18)
+        for child in [titleLabel, controls, motion, card, video, facts, videoControls, videoTitle] { view.addSubview(child) }
+        videoControls.isHidden = true; videoTitle.isHidden = true
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
                 let url = try Self.makeVideo()
@@ -60,6 +89,16 @@ final class PreviewMotionProbeController: UIViewController {
         let stage = CGRect(x: area.minX, y: area.minY + 80, width: area.width, height: max(50, area.height - 190))
         motion.frame = stage; card.frame = stage; video.frame = stage; playerLayer?.frame = video.bounds
         facts.frame = CGRect(x: area.minX, y: stage.maxY + 8, width: area.width, height: 90)
+        if fullVideo { video.frame = view.bounds; playerLayer?.frame = video.bounds; playerLayer?.videoGravity = .resizeAspectFill }
+        else { playerLayer?.videoGravity = .resizeAspect }
+        videoControls.frame = CGRect(x: area.minX, y: area.minY + 12, width: area.width, height: 44)
+        videoTitle.frame = CGRect(x: area.minX + 8, y: area.maxY - 40, width: 200, height: 32)
+    }
+    private func setFullVideo(_ value: Bool) {
+        fullVideo = value; paused = false; phase = -1
+        videoControls.isHidden = !value; videoTitle.isHidden = !value
+        titleLabel.isHidden = value; controls.isHidden = value; facts.isHidden = value
+        setNeedsStatusBarAppearanceUpdate(); view.setNeedsLayout()
     }
     private func loadVideo(_ url: URL) {
         let player = AVQueuePlayer(); self.player = player
@@ -72,7 +111,7 @@ final class PreviewMotionProbeController: UIViewController {
         if let lastTick { largestTickGap = max(largestTickGap, link.timestamp - lastTick) }
         lastTick = link.timestamp; ticks += 1
         let wall = Date().timeIntervalSince1970
-        let next = Int(wall / 20) % 3
+        let next = fullVideo ? 2 : Int(wall / 20) % 3
         if next != phase {
             phase = next; transition = -1
             motion.isHidden = phase != 0; card.isHidden = phase != 1; video.isHidden = phase != 2

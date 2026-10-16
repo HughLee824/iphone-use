@@ -201,8 +201,16 @@ struct FrameStability {
             && capturedAt - startedAt >= Self.minimumObservationDuration
     }
 
+    // A fresh view of a moving page is useful even when it never becomes still.
+    // This is not permission for the next input; its observation guard still runs.
+    var observationReady: Bool {
+        samples >= 3 && lastSampleAt - startedAt >= Self.minimumObservationDuration
+    }
+
     var result: [String: Any] {
-        var value: [String: Any] = ["stable": stable, "samples": samples, "consecutiveFrames": consecutiveFrames,
+        var value: [String: Any] = ["stable": stable,
+            "reason": stable ? "stable" : (observationReady ? "dynamic_or_transitioning" : "insufficient_samples"),
+            "automaticReplayAllowed": false, "samples": samples, "consecutiveFrames": consecutiveFrames,
             "elapsedMs": (processedAt - startedAt) * 1000, "observedForMs": (lastSampleAt - startedAt) * 1000,
             "stableForMs": (lastSampleAt - unchangedSince) * 1000,
             "hash": hash as Any? ?? NSNull(), "algorithm": FrameComparison.algorithm,

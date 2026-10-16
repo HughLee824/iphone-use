@@ -80,7 +80,7 @@ iphone-use --session "$SESSION" swipe o7 --from-x 315 --from-y 685 --to-x 315 --
 
 标准观察和 HID 输入不依赖常驻媒体流；自有媒体只为显式录屏启动，并保留录屏期间的几何校验。方向改变后拒绝旧坐标，录屏方向证据失效时结束片段、确认自有流停止后重取 Apple PNG。详见 [Apple PNG 统一来源](native-apple-png-observation.md)。
 
-现有归一化像素 SHA-256 保留，用于精确帧身份和动作后稳定证据校验；相似度网格是额外的参考特征，不通过 SHA-256 字符差异衡量画面变化，Runner 动作后的判稳规则不变；标准模式使用独立的[15 秒有界判稳](native-post-action-stability.md)。
+现有归一化像素 SHA-256 保留，用于精确帧身份和动作后稳定证据校验；相似度网格是额外的参考特征，不通过 SHA-256 字符差异衡量画面变化，Runner 动作后可返回尚未稳定的动态观察，见[动态页面](dynamic-pages-and-preview.md)；标准模式使用独立的[15 秒有界判稳](native-post-action-stability.md)。
 
 ## 结果与失败
 
@@ -106,3 +106,7 @@ AX 与截图的 observe 采集不是原子的，动作前采样与触摸也不�
 frameStabilityVersion=2 使用动作后的容差判稳（色差、受限光标例外与最短观察窗口）；输入前 screenGuardVersion=1 的规则不变。见 [执行结果](actions.md#执行结果)。
 
 2026-10-03 的 `.7` 边缘误拒绝及面积平均修正见[动画边缘回归](video-rim-area-validation.md)。
+
+## 全屏动态画面的覆盖控件
+
+两种模式新增显式坐标 tap 的 `--dynamic-target` 与 `--dynamic-anchor`，采用 `bounded-overlay-contrast-v1` 校验原位置的目标形状和独立页面锚点。该分支不要求视频背景不变；默认整屏规则、其他动作与文字校验不变。范围、限制及真机证据见[动态页面与预览连续性](dynamic-pages-and-preview.md)。
