@@ -264,7 +264,7 @@ final class NativeHIDAdapter {
         keyboardReady = false; keyboardCleanup = result
         return result
     }
-    func tap(_ point: (UInt16, UInt16), hold: TimeInterval = 0.06, checkHealth: () throws -> Void = {}) throws -> [String: Any] {
+    func tap(_ point: (UInt16, UInt16), hold: TimeInterval = 0.06, onContact: () -> Void = {}, checkHealth: () throws -> Void = {}) throws -> [String: Any] {
         try cancellation.check()
         guard isAvailable, hold.isFinite, (0.01...5).contains(hold) else {
             throw IPhoneUseError("native_hid_unavailable", "Touch state is unavailable; reconnect and observe")
@@ -280,6 +280,7 @@ final class NativeHIDAdapter {
         contact = point
         do {
             try report(contact: true, point: point)
+            onContact()
             let deadline = uptime() + hold
             while uptime() < deadline {
                 try check()
@@ -301,7 +302,7 @@ final class NativeHIDAdapter {
                 result: ["transportStatus": "uncertain", "verificationStatus": "uncertain", "cleanup": cleanup])
         }
     }
-    func doubleTap(_ point: (UInt16, UInt16), checkHealth: () throws -> Void = {}) throws -> [String: Any] {
+    func doubleTap(_ point: (UInt16, UInt16), onContact: () -> Void = {}, checkHealth: () throws -> Void = {}) throws -> [String: Any] {
         try cancellation.check()
         guard isAvailable else { throw IPhoneUseError("native_hid_unavailable", "Touch state is unavailable; reconnect and observe") }
         try checkHealth()
@@ -337,6 +338,7 @@ final class NativeHIDAdapter {
                 attempted += 1; downTimes.append(uptime())
                 let contactDeadline = index == 0 ? secondDownDeadline : deadline
                 try report(contact: true, point: point, timeout: max(0.001, contactDeadline - uptime()))
+                if index == 0 { onContact() }
                 try waitUntil(uptime() + hold)
                 try report(contact: false, point: point, timeout: max(0.001, deadline - uptime()))
                 contact = nil; queued += 1
@@ -357,7 +359,7 @@ final class NativeHIDAdapter {
                 possiblyExecuted: true, requiresObservation: true, result: result)
         }
     }
-    func swipe(_ plan: NativeSwipePlan, checkHealth: () throws -> Void = {}) throws -> [String: Any] {
+    func swipe(_ plan: NativeSwipePlan, onContact: () -> Void = {}, checkHealth: () throws -> Void = {}) throws -> [String: Any] {
         try cancellation.check()
         guard isAvailable else { throw IPhoneUseError("native_hid_unavailable", "Touch state is unavailable; reconnect and observe") }
         try checkHealth()
@@ -386,6 +388,7 @@ final class NativeHIDAdapter {
         }
         do {
             try move(to: plan.start)
+            onContact()
             try waitUntil(uptime() + plan.motion.pressDuration)
             let movementStarted = uptime()
             var nextSample = min(NativeSwipePlan.sampleInterval, plan.movementDuration)
@@ -425,7 +428,7 @@ final class NativeHIDAdapter {
             "payload": ["send": ["_0": NativePinchReport.make(contact: contact, points: points, timestamp: clock()),
                                    "_1": nativeUInt(surface)]]], timeout: timeout)
     }
-    func pinch(_ plan: NativePinchPlan, checkHealth: () throws -> Void = {}) throws -> [String: Any] {
+    func pinch(_ plan: NativePinchPlan, onContact: () -> Void = {}, checkHealth: () throws -> Void = {}) throws -> [String: Any] {
         try cancellation.check()
         guard isAvailable else { throw IPhoneUseError("native_hid_unavailable", "Touch state is unavailable; reconnect and observe") }
         try checkHealth()
@@ -449,6 +452,7 @@ final class NativeHIDAdapter {
         }
         do {
             try move(plan.start)
+            onContact()
             try waitUntil(uptime() + 0.06)
             let moving = uptime(), interval = NativeSwipePlan.sampleInterval
             var next = min(interval, plan.motion.duration)

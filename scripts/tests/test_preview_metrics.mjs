@@ -429,3 +429,16 @@ test('in-flight gesture responses cannot restore history after a visibility chan
     assert.match(p.elements.gestures.innerHTML,/gesture-touch/);
   }
 });
+
+
+test('gesture long polling renews immediately and backs off only on failure or hiding', async () => {
+  const p=fixture();p.layout(444,960);p.elements.device.dataset.ready='true';
+  p.run(`let delays=[];setTimeout=(fn,delay)=>{if(fn===gestures)delays.push(delay);};
+    fetch=async()=>({ok:true,json:async()=>({sequence:0,events:[]})});`);
+  await p.run('gestures()');
+  assert.equal(p.run('delays.at(-1)'),0);
+  await p.run('fetch=async()=>{throw Error()};gestures()');
+  assert.equal(p.run('delays.at(-1)'),200);
+  p.visibility('hidden');await p.run('gestures()');
+  assert.equal(p.run('delays.at(-1)'),1000);
+});

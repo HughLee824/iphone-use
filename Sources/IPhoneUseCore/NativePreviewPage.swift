@@ -323,15 +323,16 @@ enum NativePreviewPage {
       clearTimeout(gestureTimer);gestureTimer=setTimeout(clearGestures,duration);
     }
     async function gestures(){
-      const generation=gestureGeneration;
+      const generation=gestureGeneration;let retry=0;
       if(document.visibilityState==='visible')try{
         const r=await fetch('gestures'+(gestureCursor===null?'':'?after='+gestureCursor),{cache:'no-store',signal:AbortSignal.timeout(1500)});if(!r.ok)throw Error();
         const data=await r.json();if(!Number.isSafeInteger(data.sequence)||!Array.isArray(data.events))throw Error();
         if(generation===gestureGeneration&&document.visibilityState==='visible'){
           if(gestureCursor!==null)showGestures(data.events);gestureCursor=data.sequence;
         }
-      }catch{if(generation===gestureGeneration){gestureCursor=null;clearGestures();}}
-      setTimeout(gestures,document.visibilityState==='visible'?200:1000);
+      }catch{retry=200;if(generation===gestureGeneration){gestureCursor=null;clearGestures();}}
+      // The server waits for dispatch; immediately renew the bounded long poll.
+      setTimeout(gestures,document.visibilityState==='visible'?retry:1000);
     }
     document.addEventListener('visibilitychange',()=>{gestureGeneration++;gestureCursor=null;clearGestures();});
     let sequence = -1;

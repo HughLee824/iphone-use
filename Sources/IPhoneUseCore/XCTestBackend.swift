@@ -13,7 +13,7 @@ protocol SessionBackend: AnyObject {
     func observe() throws -> CapturedObservation
     func observeText(_ options: NativeTextObservationOptions) throws -> CapturedObservation
     func observeAfterAction(textOptions: NativeTextObservationOptions?, ignoring: ScreenRect?, sourceContext: ScreenContext?) throws -> CapturedObservation
-    func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any]
+    func perform(_ action: DeviceAction, target: ObservedTarget, onInputStarted: @escaping () -> Void) throws -> [String: Any]
     func stop() -> [String: Any]
     func cancelCurrent()
     func finishText(transaction: String, observation: [String: Any]) throws -> [String: Any]
@@ -149,13 +149,21 @@ final class XCTestBackend: SessionBackend {
          "launch": "standalone-background", "transport": "usb-loopback", "installationPerformed": false]
     }
 
-    private func request(_ operation: String, fields: [String: Any] = [:], timeout: TimeInterval = 45) throws -> [String: Any] {
+    private func request(_ operation: String, fields: [String: Any] = [:], timeout: TimeInterval = 45, onInputStarted: (() -> Void)? = nil) throws -> [String: Any] {
         guard let transport else { throw IPhoneUseError("backend_unavailable", "Runner is not connected") }
         var request = fields
         request["id"] = UUID().uuidString
         request["token"] = token
         request["op"] = operation
-        let response = try transport.exchange(request, timeout: timeout)
+        if onInputStarted != nil { request["inputProgress"] = true }
+        let response = try transport.exchange(request, timeout: timeout, onProgress: onInputStarted.map { callback in
+            { [identity] progress in
+                guard progress["sessionId"] as? String == identity else {
+                    throw IPhoneUseError("runner_session_changed", "Runner session changed during input dispatch")
+                }
+                callback()
+            }
+        })
         if let identity, response["sessionId"] as? String != identity {
             throw TransportError(description: "Runner session changed; reconnect and observe", possiblySent: true)
         }
@@ -226,10 +234,11 @@ final class XCTestBackend: SessionBackend {
         return try AppCatalog(CoreDevice.read(["device", "info", "apps", "--device", deviceUDID, "--include-all-apps"]))
     }
 
-    func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any] {
+    func perform(_ action: DeviceAction, target: ObservedTarget, onInputStarted: @escaping () -> Void) throws -> [String: Any] {
         recording?.checkDisplay()
         defer { recording?.checkDisplay() }
-        let response = try request("act", fields: Self.actionFields(action, target: target))
+        let response = try request("act", fields: Self.actionFields(action, target: target),
+                                   onInputStarted: target.gesture == nil ? nil : onInputStarted)
         return try ActionReply.decode(XCTestCapture.actionResponse(response, directory: paths.directory,
             expectedGuard: target.gesture?.screenGuard ?? target.textGuard, expectedMotion: target.gesture?.motion,
             expectedPinch: target.gesture?.pinch, expectedPressDuration: action.fields["duration"] as? Double, expectedHome: action.kind == "home",
@@ -237,7 +246,7 @@ final class XCTestBackend: SessionBackend {
     }
 
     static func validateCapabilities(_ result: [String: Any]) throws {
-        let expected = ["observationVersion": 2, "actionVersion": 9, "launchVersion": 2, "frameStabilityVersion": 2, "screenGuardVersion": 1, "previewGeometryVersion": 2]
+        let expected = ["observationVersion": 2, "actionVersion": 9, "launchVersion": 2, "frameStabilityVersion": 2, "screenGuardVersion": 1, "previewGeometryVersion": 2, "inputProgressVersion": 1]
         var differences = expected.keys.sorted().compactMap { key -> String? in
             let actual = result[key] as? Int
             return actual == expected[key] ? nil : "\(key): expected \(expected[key]!), received \(actual.map(String.init) ?? "missing")"

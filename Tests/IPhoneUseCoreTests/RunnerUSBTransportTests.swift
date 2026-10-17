@@ -59,7 +59,24 @@ final class RunnerUSBTransportTests: XCTestCase {
         for failure in ["connect", "closed", "mismatch"] { try exchangeScenario(failure: failure) }
     }
 
-    private func exchangeScenario(failure: String?) throws {
+    func testProgressArrivesBeforeFinalResponseAndNeverReplaysInput() throws {
+        try exchangeScenario(failure: nil, progress: true)
+        for failure in ["progress_id", "progress_duplicate", "progress_kind"] {
+            try exchangeScenario(failure: failure, progress: true)
+        }
+    }
+
+    func testCoalescedProgressAndFinalLinesAreNotLost() throws {
+        let (reader, writer) = try pair(deadline: ProcessInfo.processInfo.systemUptime + 2)
+        defer { reader.close(); writer.close() }
+        try writer.write(Data("progress\nfinal\n".utf8))
+        XCTAssertEqual(String(decoding: try reader.readLine(limit: 100), as: UTF8.self), "progress")
+        XCTAssertEqual(String(decoding: try reader.readLine(limit: 100), as: UTF8.self), "final")
+    }
+
+    private func exchangeScenario(failure: String?, progress: Bool = false) throws {
+        let progressRead = DispatchSemaphore(value: 0)
+        var progressCount = 0
         let finished = expectation(description: "two usbmux connections"); finished.expectedFulfillmentCount = 2
         var connections = 0
         let transport = RunnerUSBTransport(device: "phone", openSocket: { deadline in
@@ -90,6 +107,18 @@ final class RunnerUSBTransportTests: XCTestCase {
                         XCTAssertEqual(line["id"] as? String, "request-1")
                         XCTAssertEqual(line["token"] as? String, "secret")
                         if failure == "closed" { return }
+                        if progress {
+                            let event: [String: Any] = ["id": failure == "progress_id" ? "other" : "request-1",
+                                                       "event": failure == "progress_kind" ? "unknown" : "input_started"]
+                            let wire = try jsonData(event) + Data([10])
+                            if let failure, failure.hasPrefix("progress_") {
+                                try server.write(wire + (failure == "progress_duplicate" ? wire : Data()))
+                                return
+                            }
+                            try server.write(wire)
+                            XCTAssertEqual(progressRead.wait(timeout: .now() + 2), .success,
+                                           "Host must consume progress before the final response is sent")
+                        }
                         try server.write(Data("{\"id\":\"".utf8))
                         try server.write(Data("\(failure == "mismatch" ? "other" : "request-1")\",\"ok\":true}\n".utf8))
                     }
@@ -97,12 +126,17 @@ final class RunnerUSBTransportTests: XCTestCase {
             }
             return client
         })
-        let request: [String: Any] = ["id": "request-1", "op": "act", "token": "secret"]
+        let request: [String: Any] = ["id": "request-1", "op": "act", "token": "secret", "inputProgress": progress]
+        let onProgress: (([String: Any]) throws -> Void)? = progress ? { event in
+            XCTAssertEqual(event["event"] as? String, "input_started")
+            progressCount += 1; progressRead.signal()
+        } : nil
         if let failure {
-            XCTAssertThrowsError(try transport.exchange(request, timeout: 3)) {
+            XCTAssertThrowsError(try transport.exchange(request, timeout: 3, onProgress: onProgress)) {
                 XCTAssertEqual(($0 as? TransportError)?.possiblySent, failure != "connect")
             }
-        } else { XCTAssertEqual(try transport.exchange(request, timeout: 3)["ok"] as? Bool, true) }
+        } else { XCTAssertEqual(try transport.exchange(request, timeout: 3, onProgress: onProgress)["ok"] as? Bool, true) }
+        if progress && failure == nil { XCTAssertEqual(progressCount, 1) }
         XCTAssertEqual(connections, 2) // No reconnect/replay after a transmitted UI command.
         wait(for: [finished], timeout: 4)
     }

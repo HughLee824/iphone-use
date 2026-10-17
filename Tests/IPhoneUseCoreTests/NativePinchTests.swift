@@ -91,7 +91,11 @@ final class NativePinchTests: XCTestCase {
         t.onSend = { times.append(now) }
         let hid = NativeHIDAdapter(transport: t, cancellation: NativeCancellation(), wait: { now += $0 }, uptime: { now })
         try hid.prepare()
-        let result = try hid.pinch(NativePinchPlan(gesture: gesture(), rotation: "rot0"))
+        var contacts = 0
+        let result = try hid.pinch(NativePinchPlan(gesture: gesture(), rotation: "rot0"), onContact: {
+            contacts += 1; XCTAssertEqual(t.reports.count, 1); XCTAssertEqual(now, 10)
+        })
+        XCTAssertEqual(contacts, 1)
         XCTAssertGreaterThan(t.reports.count, 4)
         XCTAssertTrue(t.reports.dropLast().allSatisfy { $0[1] == 2 && $0[3] == 0xc2 && $0[8] == 0xc3 && $0[40] == 2 && $0[41] == 3 })
         XCTAssertEqual(t.reports.last?[3], 2); XCTAssertEqual(t.reports.last?[8], 3)

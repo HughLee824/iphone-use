@@ -560,7 +560,7 @@ final class AppleDeviceBackend: SessionBackend {
         }
         return CapturedObservation(nodes: captured.nodes, metadata: metadata, screenshot: captured.screenshot)
     }
-    func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any] {
+    func perform(_ action: DeviceAction, target: ObservedTarget, onInputStarted: @escaping () -> Void) throws -> [String: Any] {
         releaseRecordingMediaIfFinished()
         let typing = action.kind == "type" && action.reference.node == nil
         let pressing = action.kind == "press" && action.reference.node == nil
@@ -713,14 +713,14 @@ final class AppleDeviceBackend: SessionBackend {
             result = try hid.press(key) { try checkInputCanContinue() }
         } else if action.kind == "double-tap" {
             let point = try NativeCoordinateMapper.map(target.gesture!.start, screen: screenGuard.context.screen, rotation: rotation)
-            result = try hid.doubleTap(point) { try checkInputCanContinue() }
+            result = try hid.doubleTap(point, onContact: onInputStarted) { try checkInputCanContinue() }
         } else if let pinch {
-            result = try hid.pinch(pinch) { try checkInputCanContinue() }
+            result = try hid.pinch(pinch, onContact: onInputStarted) { try checkInputCanContinue() }
         } else if let swipe {
-            result = try hid.swipe(swipe) { try checkInputCanContinue() }
+            result = try hid.swipe(swipe, onContact: onInputStarted) { try checkInputCanContinue() }
         } else {
             let point = try NativeCoordinateMapper.map(target.gesture!.start, screen: screenGuard.context.screen, rotation: rotation)
-            result = try hid.tap(point, hold: action.fields["duration"] as? Double ?? 0.06) { try checkInputCanContinue() }
+            result = try hid.tap(point, hold: action.fields["duration"] as? Double ?? 0.06, onContact: onInputStarted) { try checkInputCanContinue() }
         }
         result["sourceObservationID"] = action.reference.observation
         result["inputTiming"] = timing.result
