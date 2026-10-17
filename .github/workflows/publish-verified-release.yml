@@ -1,0 +1,99 @@
+name: Publish verified release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Existing draft version without v'
+        required: true
+        type: string
+      archive_sha256:
+        description: 'SHA-256 of the exact archive accepted on the physical iPhone'
+        required: true
+        type: string
+      acceptance_summary:
+        description: 'Device acceptance results and limitations (no personal data)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'HughLee824/iphone-use' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ inputs.version }}
+      ARCHIVE_SHA256: ${{ inputs.archive_sha256 }}
+      ACCEPTANCE_SUMMARY: ${{ inputs.acceptance_summary }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Validate inputs
+        run: |
+          python3 - <<'PY'
+          import os, re
+          if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', os.environ['VERSION']):
+              raise SystemExit('Choose a stable numeric version.')
+          if not re.fullmatch(r'[a-f0-9]{64}', os.environ['ARCHIVE_SHA256']):
+              raise SystemExit('Supply the accepted archive SHA-256.')
+          if not os.environ['ACCEPTANCE_SUMMARY'].strip():
+              raise SystemExit('Device acceptance must be recorded before publication.')
+          PY
+      - name: Require successful main CI and the existing draft
+        run: |
+          gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+            -f head_sha="$GITHUB_SHA" -f event=push -f per_page=1 > "$RUNNER_TEMP/ci.json"
+          gh release view "v$VERSION" --json isDraft,targetCommitish,body > "$RUNNER_TEMP/draft.json"
+          git ls-remote --tags origin "refs/tags/v$VERSION" "refs/tags/v$VERSION^{}" > "$RUNNER_TEMP/tag-refs.txt"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          runs = json.loads((root / 'ci.json').read_text())['workflow_runs']
+          draft = json.loads((root / 'draft.json').read_text())
+          if not runs or runs[0]['head_sha'] != os.environ['GITHUB_SHA'] or runs[0]['head_branch'] != 'main' or runs[0]['conclusion'] != 'success':
+              raise SystemExit('This main commit must have successful push CI.')
+          refs = dict(line.split()[::-1] for line in (root / 'tag-refs.txt').read_text().splitlines())
+          tag = 'refs/tags/v' + os.environ['VERSION']
+          tag_sha = refs.get(tag + '^{}', refs.get(tag))
+          if not draft['isDraft'] or draft['targetCommitish'] != os.environ['GITHUB_SHA'] or tag_sha not in (None, os.environ['GITHUB_SHA']):
+              raise SystemExit('Only a draft from this exact main commit may be published; any existing tag must match.')
+          PY
+      - name: Verify the accepted archive without rebuilding
+        run: |
+          gh release download "v$VERSION" --dir "$RUNNER_TEMP/assets" \
+            --pattern "iphone-use-$VERSION-macos-arm64.tar.gz" \
+            --pattern "iphone-use-$VERSION-macos-arm64.tar.gz.sha256"
+          python3 scripts/verify-release.py "$RUNNER_TEMP/assets/iphone-use-$VERSION-macos-arm64.tar.gz" \
+            --require-clean --no-execute > "$RUNNER_TEMP/verified.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          verified = json.loads((root / 'verified.json').read_text())
+          if (verified['version'], verified['sourceCommit'], verified['sha256']) != (os.environ['VERSION'], os.environ['GITHUB_SHA'], os.environ['ARCHIVE_SHA256']):
+              raise SystemExit('Archive identity differs from the accepted version, source or digest.')
+          body = json.loads((root / 'draft.json').read_text())['body']
+          start = body.index('## Local device acceptance — pending')
+          end = body.index('## Installation', start)
+          acceptance = '## Local device acceptance — passed\n\n' + os.environ['ACCEPTANCE_SUMMARY'].strip() + '\n\n'
+          acceptance += f"Accepted archive SHA-256: `{verified['sha256']}`. Published without rebuilding.\n\n"
+          (root / 'notes.md').write_text(body[:start] + acceptance + body[end:])
+          PY
+      - name: Publish the verified draft
+        run: |
+          gh release edit "v$VERSION" --notes-file "$RUNNER_TEMP/notes.md" --draft=false --latest
+          echo "Published v$VERSION from $GITHUB_SHA with accepted SHA-256 $ARCHIVE_SHA256." >> "$GITHUB_STEP_SUMMARY"
