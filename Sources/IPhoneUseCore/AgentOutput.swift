@@ -65,6 +65,7 @@ public enum AgentOutput {
         var summary: [String: Any] = ["automaticReplayAllowed": false]
         summary["outcome"] = action["outcome"]
         summary["transportStatus"] = details["transportStatus"]
+        summary["screenGuardPreparation"] = details["screenGuardPreparation"]
         summary["preflightStages"] = stages.isEmpty ? nil : stages
         if let guardValue = details["screenGuard"] as? [String: Any] {
             summary["comparison"] = comparison(guardValue)
@@ -72,7 +73,9 @@ public enum AgentOutput {
         let errorCode = (action["error"] as? [String: Any])?["code"] as? String
         let mismatches = (summary["comparison"] as? [String: Any])?["mismatches"] as? [String] ?? []
         if action["outcome"] as? String == "not_dispatched" {
-            if details["preInputDeadlineExceeded"] as? Bool == true || errorCode == "input_preflight_timeout" {
+            if ["dynamic_target_unusable", "dynamic_anchor_unusable"].contains(errorCode ?? "") {
+                summary["recoveryHint"] = "Input was not sent: dynamic baseline preparation failed, before live screen comparison. Inspect screenGuardPreparation (component, rectangle in screen_points) and the current image. Check the dimensions of the image actually viewed, map its coordinates to screen points, and tightly bound the complete visible target or a separate recognizable page landmark. A local crop may help, but account for its origin and scale. Do not merely refresh the observation and reuse unchanged rectangles, run input probes, or loosen thresholds. Make at most one corrected attempt only with new visual evidence; otherwise report the blocker."
+            } else if details["preInputDeadlineExceeded"] as? Bool == true || errorCode == "input_preflight_timeout" {
                 summary["recoveryHint"] = "Input was not sent because execution-time validation exceeded its budget, not because the Agent took too long to think. Inspect the current observation and timing diagnostics; do not loop on an unchanged timeout."
             } else if ["stale_observation", "screen_changed"].contains(errorCode ?? ""), !mismatches.isEmpty {
                 if (summary["comparison"] as? [String: Any])?["validationScope"] as? String == "explicit_target_and_anchor" {

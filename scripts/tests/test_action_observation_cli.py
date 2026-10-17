@@ -14,7 +14,7 @@ CLI = Path(__file__).resolve().parents[2] / ".build/debug/iphone-use"
 
 @unittest.skipUnless(CLI.is_file(), "Run swift build or swift test before CLI integration tests")
 class ActionObservationCLITests(unittest.TestCase):
-    def run_cli(self, args, outcome="completed", refresh=None, capture_ok=True, stdin=None, lose_action=False, attached=None, details=None):
+    def run_cli(self, args, outcome="completed", refresh=None, capture_ok=True, stdin=None, lose_action=False, attached=None, details=None, action_error=None):
         with tempfile.TemporaryDirectory(prefix="as-cli-", dir="/private/tmp") as root:
             session = "s" + "a" * 32
             directory = Path(root) / session
@@ -45,6 +45,8 @@ class ActionObservationCLITests(unittest.TestCase):
                                         response["error"] = {"code": "capture_failed"}
                                 else:
                                     response.update(ok=outcome in ("completed", "prepared"), outcome=outcome, result=details if details is not None else {"inputFact": "preserved"})
+                                    if action_error is not None:
+                                        response["error"] = action_error
                                     if attached is not None:
                                         response["observation"] = attached
                                     if refresh is not None:
@@ -148,6 +150,32 @@ class ActionObservationCLITests(unittest.TestCase):
             self.assertEqual(raw["action"]["result"]["screenGuard"], guard)
         finally:
             shutil.rmtree(receipt.parent)
+
+    def test_dynamic_baseline_failure_preserves_diagnostics_without_an_extra_action(self):
+        for component in ("target", "anchor"):
+            diagnostic = {"stage": "baseline_preparation", "component": component,
+                          "reason": "insufficient_shape_features", "coordinateSpace": "screen_points",
+                          "rect": {"x": 12, "y": 100, "width": 32, "height": 32}}
+            attached = {"ok": True, "result": {"observation": "o2", "screenshot": "/fixture/o2.png"}}
+            code, response, requests = self.run_cli(
+                ["tap", "o1", "--x", "28", "--y", "116", "--dynamic-target", "12,100,32,32",
+                 "--dynamic-anchor", "80,700,100,30", "--observe", "--agent-output"],
+                outcome="not_dispatched", attached=attached,
+                details={"screenGuardPreparation": diagnostic}, action_error={"code": f"dynamic_{component}_unusable"})
+            receipt = Path(response["receipt"])
+            try:
+                self.assertNotEqual(code, 0)
+                self.assertEqual(len(requests), 1)
+                self.assertEqual(response["action"]["outcome"], "not_dispatched")
+                self.assertEqual(response["observation"], attached)
+                self.assertEqual(response["agentSummary"]["screenGuardPreparation"], diagnostic)
+                self.assertNotIn("comparison", response["agentSummary"])
+                self.assertIn("recoveryHint", response["agentSummary"])
+                raw = json.loads(receipt.read_text())
+                self.assertEqual(raw["action"]["result"]["screenGuardPreparation"], diagnostic)
+                self.assertNotIn("agentSummary", raw)
+            finally:
+                shutil.rmtree(receipt.parent)
 
     def test_default_output_retains_all_diagnostics(self):
         details = {"preInputChecks": [{"mediaPhaseSamples": ["unchanged"]}]}

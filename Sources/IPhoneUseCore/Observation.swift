@@ -276,7 +276,11 @@ final class ObservationCache {
         rects += try action.protectedReferences.map { ScreenRect(try visibleRect($0)) }
         let guardValue: ScreenGuard
         do { guardValue = try ScreenGuard(png: capture.screenshot, context: context, rects: rects, policy: action.guardPolicy, ignoring: action.ignoredScreenRect, dynamicRects: action.dynamicRects) }
-        catch {
+        catch let failure as ScreenGuard.DynamicBaselineFailure {
+            throw ActionFailure(code: failure.code, description: failure.message,
+                                possiblyExecuted: false, requiresObservation: true,
+                                result: ["screenGuardPreparation": failure.diagnostics])
+        } catch {
             throw ActionFailure(code: (error as? ScreenGuard.Failure)?.rawValue ?? "screen_guard_unavailable",
                                 description: action.ignoredScreenRect == nil ? "Cannot prepare a screen guard from this observation; observe again"
                                     : "Ignored rectangle must be inside this screenshot, cover at most 25%, and not overlap any protected touch, path or context region",
