@@ -15,7 +15,7 @@ Start with **standard mode**: screenshots and native HID, without Runner install
 
 ## Install the CLI
 
-Install the public package with `brew install HughLee824/tap/iphone-use`, or download and verify the 0.2.1 archive from [GitHub Releases](https://github.com/HughLee824/iphone-use/releases/tag/v0.2.1). When migrating from the old `agentsoma` formula, disconnect active sessions and uninstall that formula first because both commands conflict. If Homebrew refuses to read the legacy conflict formula as untrusted, review it and explicitly trust only that formula before retrying; see [Homebrew trust and installation](install.md#homebrew-单公式信任). For a manual package, retain its `bin` and `libexec` layout and add `bin` to PATH. It can run outside the source repository. Local candidate packages and `swift build` remain separate development paths.
+Install the public package with `brew install HughLee824/tap/iphone-use`, or download and verify the 0.2.1 archive from [GitHub Releases](https://github.com/HughLee824/iphone-use/releases/tag/v0.2.1). For this historical 0.2.1 package (current source no longer ships the alias or conflict declaration), when migrating from the old `agentsoma` formula, disconnect active sessions and uninstall that formula first because both commands conflict. If Homebrew refuses to read the legacy conflict formula as untrusted, review it and explicitly trust only that formula before retrying; see [Homebrew trust and installation](install.md#homebrew-单公式信任). For a manual package, retain its `bin` and `libexec` layout and add `bin` to PATH. It can run outside the source repository. Local candidate packages and `swift build` remain separate development paths.
 
 ```sh
 command -v iphone-use

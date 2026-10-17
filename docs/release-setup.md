@@ -9,7 +9,6 @@
 ```text
 iphone-use-<version>-macos-<architecture>/
   bin/iphone-use
-  bin/agentsoma             # 同字节兼容入口
   libexec/iphone-use/runner/
     manifest.json
     Runner.xctestrun

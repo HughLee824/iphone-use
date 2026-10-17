@@ -62,7 +62,7 @@ public enum RunnerSetup {
         // Only explicit setup deploys the signed app. Ordinary connect reuses it
         // and verifies the live protocol without resetting per-app permissions.
         do {
-            let sessionRoot = try SessionPaths.stateRoot(environment: ProcessInfo.processInfo.environment)
+            let sessionRoot = SessionPaths.stateRoot(environment: ProcessInfo.processInfo.environment)
             try SessionPaths.secureDirectory(sessionRoot)
             let deploymentLock = try SessionDeviceLock(root: sessionRoot, device: udid)
             defer { withExtendedLifetime(deploymentLock) {} }
@@ -171,17 +171,7 @@ public enum RunnerSetup {
         let records = FileManager.default.fileExists(atPath: devices.path)
             ? try FileManager.default.contentsOfDirectory(at: devices, includingPropertiesForKeys: nil)
                 .filter { $0.pathExtension == "json" } : []
-        guard !records.isEmpty else {
-            // Renamed Runner products and bundle IDs require a fresh setup. Never
-            // reuse old signing payloads, nor silently turn an old Runner user into standard.
-            let oldDevices = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Library/Application Support/AgentSoma/devices")
-            if root == stateDirectory, FileManager.default.fileExists(atPath: oldDevices.path),
-               try FileManager.default.contentsOfDirectory(atPath: oldDevices.path).contains(where: { $0.hasSuffix(".json") }) {
-                throw IPhoneUseError("mode_selection_required", "Old AgentSoma Runner setup found. Choose config set mode runner, then run iphone-use setup for the new bundle ID; or explicitly choose standard")
-            }
-            return false
-        }
+        guard !records.isEmpty else { return false }
         do {
             let package = try package()
             let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601

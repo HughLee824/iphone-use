@@ -73,7 +73,7 @@ public struct SessionPaths {
         guard session.range(of: "^s[0-9a-f]{32}$", options: .regularExpression) != nil else {
             throw IPhoneUseError("invalid_session", "Use the session identifier returned by connect")
         }
-        let root = try Self.stateRoot(environment: ProcessInfo.processInfo.environment)
+        let root = Self.stateRoot(environment: ProcessInfo.processInfo.environment)
         try Self.secureDirectory(root)
         directory = root.appendingPathComponent(session, isDirectory: true)
         guard socket.utf8.count < 104 else {
@@ -81,16 +81,10 @@ public struct SessionPaths {
         }
     }
 
-    // Preserve the old namespace so active sessions remain addressable after upgrading.
-    static var legacyRoot: URL { URL(fileURLWithPath: "/private/tmp/agentsoma-\(getuid())", isDirectory: true) }
+    static var defaultRoot: URL { URL(fileURLWithPath: "/private/tmp/iphone-use-\(getuid())", isDirectory: true) }
 
-    static func stateRoot(environment: [String: String]) throws -> URL {
-        let current = environment["IPHONE_USE_STATE_DIR"].map { URL(fileURLWithPath: $0).standardizedFileURL }
-        let legacy = environment["AGENTSOMA_STATE_DIR"].map { URL(fileURLWithPath: $0).standardizedFileURL }
-        if let current, let legacy, current.resolvingSymlinksInPath() != legacy.resolvingSymlinksInPath() {
-            throw IPhoneUseError("state_directory_conflict", "IPHONE_USE_STATE_DIR and AGENTSOMA_STATE_DIR select different session directories")
-        }
-        return current ?? legacy ?? legacyRoot
+    static func stateRoot(environment: [String: String]) -> URL {
+        environment["IPHONE_USE_STATE_DIR"].map { URL(fileURLWithPath: $0).standardizedFileURL } ?? defaultRoot
     }
 
     init(directory: URL) { self.directory = directory }
@@ -131,16 +125,16 @@ final class DeviceLock {
     deinit { Darwin.close(descriptor) }
 }
 
-// Hold the selected session-root lock plus the legacy default lock. New environment
-// overrides must not bypass a device owned by an older CLI using the default root.
+// Hold the default-root lock as well as any selected-root lock so environment
+// overrides cannot let separate sessions control the same device.
 final class SessionDeviceLock {
     private let locks: [DeviceLock]
 
     init(root: URL, device: String) throws {
-        let legacy = SessionPaths.legacyRoot
-        try SessionPaths.secureDirectory(legacy)
-        var held = [try DeviceLock(root: legacy, device: device)]
-        if root.resolvingSymlinksInPath() != legacy.resolvingSymlinksInPath() {
+        let defaultRoot = SessionPaths.defaultRoot
+        try SessionPaths.secureDirectory(defaultRoot)
+        var held = [try DeviceLock(root: defaultRoot, device: device)]
+        if root.resolvingSymlinksInPath() != defaultRoot.resolvingSymlinksInPath() {
             held.append(try DeviceLock(root: root, device: device))
         }
         locks = held

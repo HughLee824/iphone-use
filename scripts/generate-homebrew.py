@@ -25,7 +25,6 @@ class IphoneUse < Formula
   version %s
   sha256 %s
   license "MIT"
-  conflicts_with "agentsoma", because: "both install the agentsoma compatibility command"
 
   depends_on arch: :arm64
   depends_on macos: :sequoia
@@ -36,7 +35,6 @@ class IphoneUse < Formula
   def install
     libexec.install "bin", "libexec"
     bin.install_symlink libexec/"bin/iphone-use"
-    bin.install_symlink libexec/"bin/iphone-use" => "agentsoma"
     prefix.install "README.md", "LICENSE", "build-info.json"
     (pkgshare/"licenses").install "licenses/SwiftArgumentParser.txt"
   end

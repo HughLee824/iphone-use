@@ -195,7 +195,7 @@ Standard observations and pre-input image checks use Apple CoreDevice PNG exclus
 
 `connect` starts the host and fixes the selected mode. Standard connects to Apple native services and owns its HID connection and any explicitly requested recording/preview stream; Runner starts the already-installed XCTest app in the background and sends authenticated commands through USB loopback. Deployment belongs to explicit `setup`. The host retains the connection between CLI calls, serializes requests, caches observations and manages cleanup. It never switches control routes automatically.
 
-Session files default to `/private/tmp/agentsoma-<uid>` with directory permissions `0700`; `IPHONE_USE_STATE_DIR` can select an alternative path. Packaged Runner preparation lives in `~/Library/Application Support/iphone-use`. Signing private keys stay in Keychain; the device token stays in host memory and the XCTest subprocess environment.
+Session files default to `/private/tmp/iphone-use-<uid>` with directory permissions `0700`; `IPHONE_USE_STATE_DIR` can select an alternative path. Packaged Runner preparation lives in `~/Library/Application Support/iphone-use`. Signing private keys stay in Keychain; the device token stays in host memory and the XCTest subprocess environment.
 
 | Location | Responsibility |
 | --- | --- |

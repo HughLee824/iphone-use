@@ -35,8 +35,7 @@ print(String(decoding: try JSONSerialization.data(withJSONObject: result), as: U
                                    check=True, capture_output=True, text=True, timeout=120)
                     (keg / "bin/iphone-use").symlink_to("../libexec/bin/iphone-use")
                     (prefix / "bin/iphone-use").symlink_to("../Cellar/iphone-use/0.3.1/bin/iphone-use")
-                    (prefix / "bin/agentsoma").symlink_to("../Cellar/iphone-use/0.3.1/bin/iphone-use")
-                    for entry in [binary, keg / "bin/iphone-use", prefix / "bin/iphone-use", prefix / "bin/agentsoma"]:
+                    for entry in [binary, keg / "bin/iphone-use", prefix / "bin/iphone-use"]:
                         with self.subTest(entry=entry.relative_to(prefix)):
                             result = json.loads(subprocess.check_output([str(entry)], cwd=root, text=True, timeout=10))
                             self.assertEqual(Path(result["directory"]).resolve(), assets.resolve())

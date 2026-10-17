@@ -47,7 +47,6 @@ public struct ModeConfiguration {
     }
     private let directory: URL
     private let legacyRunner: () throws -> Bool
-    private let legacyDirectory: URL?
     private var file: URL { directory.appendingPathComponent("config.json") }
 
     public init(environment: [String: String] = ProcessInfo.processInfo.environment) throws {
@@ -55,20 +54,18 @@ public struct ModeConfiguration {
             guard path.hasPrefix("/"), !path.utf8.contains(0) else {
                 throw IPhoneUseError("invalid_configuration_directory", "IPHONE_USE_CONFIG_DIR must be an absolute directory path")
             }
-            // An explicitly isolated preference store must not import the real
-            // user's old configuration or infer its mode from prepared Runners.
+            // An explicitly isolated preference store must not infer its mode
+            // from the real user's prepared Runners.
             self.init(directory: URL(fileURLWithPath: path).standardizedFileURL, legacyRunner: { false })
             return
         }
         let home = FileManager.default.homeDirectoryForCurrentUser
         self.init(directory: home.appendingPathComponent(".iphone-use"),
-                  legacyDirectory: home.appendingPathComponent(".agentsoma"),
                   legacyRunner: { try RunnerSetup.hasValidLegacyConfiguration() })
     }
 
-    init(directory: URL, legacyDirectory: URL? = nil, legacyRunner: @escaping () throws -> Bool) {
+    init(directory: URL, legacyRunner: @escaping () throws -> Bool) {
         self.directory = directory
-        self.legacyDirectory = legacyDirectory
         self.legacyRunner = legacyRunner
     }
 
@@ -126,10 +123,6 @@ public struct ModeConfiguration {
     }
 
     private func initialSelection() throws -> ModeSelection {
-        if let legacyDirectory,
-           let mode = try ModeConfiguration(directory: legacyDirectory, legacyRunner: { false }).read() {
-            return ModeSelection(mode: mode, source: "legacy_configuration_migration")
-        }
         let legacy = try legacyRunner()
         return ModeSelection(mode: legacy ? .runner : .standard,
                              source: legacy ? "legacy_runner_migration" : "default")

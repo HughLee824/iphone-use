@@ -218,7 +218,7 @@ final class LiveSessionTests: XCTestCase {
         let op = command["op"] as? String ?? ""
         if op == "ping" {
             let hostManaged = ProcessInfo.processInfo.environment["IPHONE_USE_HOST_MANAGED"] == "1"
-            return ["protocol": "agentsoma-spike-jsonl-v1", "lifecycleOwner": hostManaged ? "host" : "spike",
+            return ["protocol": "iphone-use-spike-jsonl-v1", "lifecycleOwner": hostManaged ? "host" : "spike",
                     "lifetimeLimitSeconds": hostManaged ? NSNull() : 900, "observationVersion": 2,
                     "actionVersion": 9, "launchVersion": 2, "startupGuard": RunnerStartupGuard.facts(), "frameStabilityVersion": 2, "screenGuardVersion": 1, "previewGeometryVersion": 2,
                     "applicationStateTimeoutSupported": stateTimeout != nil]
