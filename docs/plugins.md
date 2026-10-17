@@ -96,6 +96,27 @@ dsh --profile desktop --dump-config
 
 npm 发布命令成功返回后，仍须确认公开 registry 的 `latest` 和 tarball 已可用再执行包名安装验收。发布前扫描期间可能暂时出现 `0.0.0-stage` 占位版本；该版本不是可用插件，不能据此认定发布验收通过。
 
+## 通用 skill（Cursor / OpenCode）
+
+通用 skill 与三个插件使用同一个 `skills/iphone-use` 源。`iphone-use-skill` 是独立的 npm 安装器，`dsh-iphone-use` 仍是 DeepSeek Harness bundle；它们不互相替代。Node.js 20+：
+
+```sh
+npx iphone-use-skill install --agent cursor
+npx iphone-use-skill check --agent cursor
+npx iphone-use-skill update --agent cursor
+npx iphone-use-skill uninstall --agent cursor
+```
+
+OpenCode 使用 `--agent opencode`。默认安装到当前项目 `.cursor/skills/iphone-use` 或 `.opencode/skills/iphone-use`；可指定 `--project /absolute/project/path`。加 `--global` 才写入用户专用目录 `~/.cursor/skills/iphone-use` 或 `$XDG_CONFIG_HOME/opencode/skills/iphone-use`（XDG 默认 `~/.config`）。即使全局安装，也应从实际工作项目运行检查，以覆盖项目副本。安装器不会写共享的 `.agents/skills`，不会修改插件清单、配置或缓存。
+
+相同内容重复安装直接返回 `already-installed`；不同内容要求显式 `update`，禁止降级。扫描目标客户端的已知用户级、祖先项目级和嵌套项目级 skill 目录，发现同名 `iphone-use` 或旧 `agentsoma` 时打印路径并拒绝安装/更新。嵌套分类目录、已知兼容目录和符号链接别名也参与检查。未管理目录、本地改动/新增文件和链接目标不会被覆盖或卸载；没有强制覆盖参数。`check` 发现冲突或本地改动退出 2，扫描/操作异常退出 1，完成且无冲突退出 0。
+
+指定 Codex、Claude Code、DeepSeek Harness 作为安装目标会被拒绝并提示使用现有插件，避免同一个客户端增加第二份 skill。这些插件可以与独立安装在 Cursor/OpenCode 专用目录中的 skill 共存。安装器无法枚举组织下发、远程、自定义目录或显式加载的插件；在新会话检查实际 skill 列表，保留一个启用来源。扫描失败不会被视为无冲突。迁移必须显式处理已有来源，安装器不自动卸载或禁用其他工具管理的内容。
+
+不建议用第三方 `npx skills add ...` 替代上述命令：它不会运行我们的冲突检查，且目标 agent 参数不一定阻止共享目录被其他客户端扫描。通用 adapter 要求本机 shell、完整命令状态及真实 PNG 读图工具；云端 agent 或只有多模态模型但没有文件读图工具的客户端不满足真机操作条件。预览默认由 CLI 打开本机浏览器；设备会话和清理规则保持一致。
+
+安装器源码在 `packages/iphone-use-skill`，发布包通过 `python3 scripts/build-skill-package.py NEW_OUTPUT_DIRECTORY` 从共享源生成，再在输出目录执行 `npm pack --ignore-scripts`。不要直接发布缺少 skill 资源的源码子目录。自动化测试覆盖打包后的 npm exec、重复安装、兼容目录冲突、更新、卸载和文件保留。安装成功、agent 实际加载成功、真机任务成功须分别验收；不能把一个客户端的结果视为全部客户端的真机兼容承诺。
+
 ## 首个任务
 
 先按[设备准备](first-task.md#before-you-start)完成信任和解锁，在新会话调用上述 skill。标准模式直接发现设备并连接；Runner 才按提示 setup。可发送：

@@ -1,0 +1,12 @@
+{
+  "name": "iphone-use-skill",
+  "version": "0.1.12",
+  "description": "Install the portable iPhone-use agent skill with duplicate and conflict checks.",
+  "type": "module",
+  "bin": { "iphone-use-skill": "bin/iphone-use-skill.mjs" },
+  "files": ["bin/", "skills/", "LICENSE"],
+  "engines": { "node": ">=20" },
+  "repository": { "type": "git", "url": "git+https://github.com/HughLee824/iphone-use.git", "directory": "packages/iphone-use-skill" },
+  "homepage": "https://iphone-use.com",
+  "license": "MIT"
+}
