@@ -1,6 +1,6 @@
-# Codex / Claude Code / DeepSeek Harness 插件
+# Agent 插件与通用 skill
 
-> CLI / Homebrew 0.3.3 已发布，0.3.4 仍为发布草稿。插件 0.1.10 新增 DeepSeek Harness bundle，并保留 0.1.9 的动态页面操作指引。动态目标/锚点选项要求 CLI 和 Runner 0.3.4；既有正式版附件不变。DeepSeek 的安装验收与模型驱动的真机任务验收分别记录，后者仍待完成。
+> 工作流 0.1.12 新增通用 adapter，与 Cursor/OpenCode 的独立 npm 安装器共用同一 skill。Codex、Claude Code、DeepSeek Harness 保留插件入口。CLI 与 skill 分别升级；安装、模型加载及真机任务的验收范围分别记录。
 
 
 [公开网站](https://iphone-use.com) → [安装 CLI](install.md) → 安装本页插件 → [选择模式并连接](first-task.md#connect-in-standard-mode) → 首个真机任务。完整英文路径见 [First task](first-task.md)。
@@ -9,7 +9,7 @@
 
 ## 先检查环境
 
-新安装使用已发布的 CLI 0.3.3。旧 `agentsoma` formula 用户先断开会话、卸载旧 formula，再安装新 formula；遇到 Tap Trust 拒绝时按[单公式信任提示](install.md#homebrew-单公式信任)处理，不默认信任整个 Tap。
+新安装使用已发布的 CLI。旧 `agentsoma` formula 用户先断开会话、卸载旧 formula，再安装新 formula；遇到 Tap Trust 拒绝时按[单公式信任提示](install.md#homebrew-单公式信任)处理，不默认信任整个 Tap。
 
 ```sh
 brew install HughLee824/tap/iphone-use
@@ -140,9 +140,11 @@ OpenCode 使用 `--agent opencode`。默认安装到当前项目 `.cursor/skills
 
 示例：“用 runner 打开设置并进入通用，让我在电脑上看操作过程”；或“打开设置并进入通用，不要预览”。首次默认开页无需再问一次偏好，但仍遵守客户端命令权限。
 
+安装、冲突处理和 Cursor 模型驱动真机结果见[通用 skill 验收记录](universal-skill-acceptance.md)。
+
 ## 升级生效与卸载
 
-新插件身份为 `iphone-use@iphone-use`。启用前停用旧 AgentSoma 插件，避免同一手机任务重复匹配；若曾另行安装 `~/.codex/skills/agentsoma`，还需在 Codex 的技能配置中单独停用这份独立 skill，插件停用不会影响它；确认新插件可用后再按需移除旧插件。CLI 与插件版本号独立：CLI / Homebrew 当前正式版为 0.3.3，0.3.4 草稿配套的插件候选版本为 0.1.10。只升级 Homebrew 不会更新插件。各端更新插件后需开始新会话，确认安装缓存中的 workflow version 为 0.1.10，并包含 `dynamic_or_transitioning` 和 `--dynamic-target` 指引。旧会话不会自动替换已加载的 skill；不要修改已发布版本的附件。
+新插件身份为 `iphone-use@iphone-use`。启用前停用旧 AgentSoma 插件，避免同一手机任务重复匹配；若曾另行安装 `~/.codex/skills/agentsoma`，还需在 Codex 的技能配置中单独停用这份独立 skill，插件停用不会影响它；确认新插件可用后再按需移除旧插件。CLI 与插件版本号独立：本分支的插件/通用 skill 工作流版本为 0.1.12。只升级 Homebrew 不会更新插件。各端更新插件后需开始新会话，确认安装缓存中的 workflow version 为 0.1.12，并包含 `dynamic_or_transitioning` 和 `--dynamic-target` 指引。旧会话不会自动替换已加载的 skill；不要修改已发布版本的附件。
 
 先断开活跃设备会话，再 `brew update` / `brew upgrade iphone-use`。插件另外更新：
 
