@@ -101,6 +101,60 @@ final class DynamicTargetGuardTests: XCTestCase {
             XCTAssertThrowsError(try DeviceAction(operation: "double-tap", request: base, allowScreenText: native))
         }
     }
+    func testUnusableBaselineIdentifiesComponentAndRecoversOnlyWithCorrectedGeometry() throws {
+        for native in [false, true] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try SessionPaths.secureDirectory(directory)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let cache = ObservationCache(directory: directory)
+            let fixture = try observationFixture()
+            var metadata = fixture.metadata
+            if native { metadata["backend"] = "apple-native" }
+            let capture = CapturedObservation(nodes: fixture.nodes, metadata: metadata, screenshot: try frame())
+            for component in ["target", "anchor"] {
+                // Both bad rectangles are valid geometry but contain only background.
+                let targetString = component == "target" ? "12,100,32,32" : "12,50,32,32"
+                let anchorString = component == "anchor" ? "80,740,100,30" : "80,700,100,30"
+                for _ in 0..<2 {
+                    let stored = try cache.store(capture)
+                    let ref = try XCTUnwrap(stored["observation"] as? String)
+                    let action = try DeviceAction(operation: "tap", request: ["reference": ref, "x": 28,
+                        "y": component == "target" ? 116 : 66,
+                        "dynamicTarget": targetString, "dynamicAnchor": anchorString], allowScreenText: native)
+                    XCTAssertThrowsError(try cache.resolveTarget(for: action)) { error in
+                        guard let failure = error as? ActionFailure else { return XCTFail("Unexpected: \(error)") }
+                        XCTAssertEqual(failure.code, "dynamic_\(component)_unusable")
+                        XCTAssertFalse(failure.possiblyExecuted)
+                        let diagnostic = failure.result?["screenGuardPreparation"] as? [String: Any]
+                        XCTAssertEqual(diagnostic?["component"] as? String, component)
+                        XCTAssertEqual(diagnostic?["stage"] as? String, "baseline_preparation")
+                        XCTAssertEqual(diagnostic?["reason"] as? String, "insufficient_shape_features")
+                        XCTAssertEqual(diagnostic?["coordinateSpace"] as? String, "screen_points")
+                        XCTAssertNotNil(diagnostic?["rect"])
+                    }
+                }
+            }
+            let stored = try cache.store(capture)
+            let corrected = try DeviceAction(operation: "tap", request: ["reference": stored["observation"]!,
+                "x": 28, "y": 66, "dynamicTarget": "12,50,32,32", "dynamicAnchor": "80,700,100,30"], allowScreenText: native)
+            let guardValue = try XCTUnwrap(cache.resolveTarget(for: corrected).gesture?.screenGuard)
+            XCTAssertTrue(try guardValue.check(png: frame(background: [160, 80, 40]), context: screenTestContext()).accepted)
+        }
+    }
+
+    func testMalformedGeometryAndImageAreNotMisdiagnosedAsWeakFeatures() throws {
+        for rects in [[target], [target, target], [target, ScreenRect(CGRect(x: 80, y: 840, width: 100, height: 30))]] {
+            XCTAssertThrowsError(try ScreenGuard(png: screenPNG(), context: screenTestContext(), rects: [target],
+                                                policy: .init(), dynamicRects: rects)) { error in
+                XCTAssertEqual(error as? ScreenGuard.Failure, .invalidGuard)
+            }
+        }
+        XCTAssertThrowsError(try ScreenGuard(png: Data(), context: screenTestContext(), rects: [target],
+                                            policy: .init(), dynamicRects: [target, anchor])) { error in
+            XCTAssertFalse(error is ScreenGuard.DynamicBaselineFailure)
+        }
+    }
+
     func testSerializedGuardCannotExpandScopeOrRemoveOneLandmark() throws {
         let expected = try makeGuard()
         let encoded = try JSONEncoder().encode(expected)

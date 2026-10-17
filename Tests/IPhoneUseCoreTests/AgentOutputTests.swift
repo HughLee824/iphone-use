@@ -17,6 +17,32 @@ final class AgentOutputTests: XCTestCase {
                 "recovery": ["automaticReplayAllowed": false]]], "observation": observation]
     }
 
+    func testBaselineDiagnosticsSurviveSummaryAndReceiptWithoutInventingComparison() throws {
+        for component in ["target", "anchor"] {
+            let failure = ScreenGuard.DynamicBaselineFailure(component: component,
+                rect: ScreenRect(CGRect(x: 12, y: 100, width: 32, height: 32)))
+            for outcome in ["not_dispatched", "unknown"] {
+                let raw: [String: Any] = ["ok": false, "action": ["ok": false, "outcome": outcome,
+                    "error": ["code": failure.code, "message": failure.message],
+                    "result": ["screenGuardPreparation": failure.diagnostics]], "observation": observation]
+                let compact = AgentOutput.render(raw)
+                let receipt = URL(fileURLWithPath: try XCTUnwrap(compact["receipt"] as? String))
+                defer { try? FileManager.default.removeItem(at: receipt.deletingLastPathComponent()) }
+                let saved = try jsonObject(Data(contentsOf: receipt))
+                XCTAssertEqual(try jsonData(saved), try jsonData(raw))
+                let summary = try XCTUnwrap(compact["agentSummary"] as? [String: Any])
+                XCTAssertEqual(summary["outcome"] as? String, outcome)
+                XCTAssertEqual(summary["automaticReplayAllowed"] as? Bool, false)
+                XCTAssertEqual(try jsonData(summary["screenGuardPreparation"] as! [String: Any]), try jsonData(failure.diagnostics))
+                XCTAssertNil(summary["comparison"])
+                XCTAssertNil(summary["preflightStages"])
+                if outcome == "not_dispatched" {
+                    XCTAssertNotNil(summary["recoveryHint"])
+                } else { XCTAssertNil(summary["recoveryHint"]) }
+            }
+        }
+    }
+
     func testCaptureBudgetDiagnosticsRemainVisibleWithoutRawMediaState() throws {
         let checks: [[String: Any]] = [["stage": "before_input", "attempt": 1,
             "preparationMs": 9000.0, "validationAndCheckMs": 2000.0,

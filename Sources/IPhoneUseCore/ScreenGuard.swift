@@ -66,6 +66,22 @@ struct ScreenGuard: Codable {
         case contextChanged = "screen_context_changed"
     }
 
+    // A baseline failure happens before any live comparison or input dispatch.
+    struct DynamicBaselineFailure: Error {
+        let component: String
+        let rect: ScreenRect
+
+        var code: String { "dynamic_\(component)_unusable" }
+        var message: String {
+            "Input was not sent: the dynamic \(component) rectangle has insufficient visible shape features in the baseline screenshot. Check screenshot-to-screen-point mapping and tightly bound the complete visible control or page landmark. A fresh observation with unchanged rectangles will not repair this; do not loosen thresholds."
+        }
+        var diagnostics: [String: Any] {
+            ["stage": "baseline_preparation", "component": component,
+             "reason": "insufficient_shape_features", "coordinateSpace": "screen_points",
+             "rect": ["x": rect.x, "y": rect.y, "width": rect.width, "height": rect.height]]
+        }
+    }
+
     struct Check {
         let screenChange: Double
         let regionChanges: [Double]
@@ -189,7 +205,23 @@ struct ScreenGuard: Codable {
         let image = try ScreenImage(png: png)
         try image.validateMapping(to: context.screen)
         algorithm = dynamicRects == nil ? (ignoredRect == nil ? Self.algorithm : Self.maskedAlgorithm) : Self.dynamicAlgorithm
-        dynamicOverlay = try dynamicRects.map { try $0.map { try OverlayGlyph(image: image, rect: $0, screen: context.screen) } }
+        if let dynamicRects {
+            // Reject malformed geometry/policy separately from an unusable image template.
+            guard dynamicRects.count == 2, ignoredRect == nil,
+                  policy.maxScreenChange == 0.01, policy.maxRegionChange == 0,
+                  dynamicRects.allSatisfy({ $0.valid && context.scope.cgRect.contains($0.cgRect)
+                      && $0.width <= 256 && $0.height <= 96 }),
+                  dynamicRects[0].width <= 96,
+                  !dynamicRects[0].cgRect.intersects(dynamicRects[1].cgRect) else { throw Failure.invalidGuard }
+        }
+        dynamicOverlay = try dynamicRects.map { rects in
+            try rects.enumerated().map { index, rect in
+                do { return try OverlayGlyph(image: image, rect: rect, screen: context.screen) }
+                catch Failure.invalidGuard {
+                    throw DynamicBaselineFailure(component: index == 0 ? "target" : "anchor", rect: rect)
+                }
+            }
+        }
         self.ignoredRect = ignoredRect
         self.context = context
         self.policy = policy
