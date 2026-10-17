@@ -385,10 +385,10 @@ struct TypeText: ParsableCommand {
     static let configuration = CommandConfiguration(commandName: "type", abstract: "Insert, replace, or append in a text input.")
     @OptionGroup var options: SessionOptions
     @OptionGroup var observation: ActionObservationOptions
-    @Argument(help: "Runner uses a current oN:eN text input reference; multiline requires text_view. apple-native uses oN after visual focus confirmation for every mode. Single-line ASCII uses HID (64 characters); Unicode or multiline text temporarily uses the device clipboard and one HID Paste shortcut (4096 UTF-8 bytes).") var reference: String
+    @Argument(help: "touch-paste uses current oN in either mode and only stages the clipboard. Other Runner methods use a current oN:eN text input reference; multiline requires text_view. apple-native uses oN after visual focus confirmation for every mode. Single-line ASCII uses HID (64 characters); Unicode or multiline text temporarily uses the device clipboard and one HID Paste shortcut (4096 UTF-8 bytes).") var reference: String
     @Option(help: "insert uses the current caret/selection; replace selects all (XCTest also focuses the referenced field); Runner append reads validated non-secure text and replaces it with the concatenated result; native append requests document end. Native modes never focus implicitly.") var mode: String
     @Option(help: "Literal text up to 4096 UTF-8 bytes; Runner text_view accepts LF; native auto/paste accepts LF/CR, other control keys are unsupported. Empty text clears in replace mode.") var text: String?
-    @Option(help: "apple-native only: auto uses keys for single-line ASCII and paste for Unicode or multiline text; keys sends up to 64 US-mapped ASCII characters through the active layout; paste inserts literal text via the device clipboard (up to 4096 UTF-8 bytes).") var method: String?
+    @Option(help: "Both modes: touch-paste only stages literal text, without keyboard events; use oN and --mode insert, then long-press/tap the visible Paste menu and text-finish after verification. Standard only: auto uses keys for single-line ASCII and paste for Unicode or multiline text; keys sends up to 64 US-mapped ASCII characters through the active layout; paste inserts literal text via the device clipboard (up to 4096 UTF-8 bytes).") var method: String?
     @Option(help: "Native type oN only: complete input field x,y,width,height in screen points; single-frame field comparison; use --caret-rect to confirm a visible caret exception and the default whole-screen guard. Does not focus. Omit to protect the whole screen.") var fieldRect: String?
     @Option(help: "Native only: visually confirmed visible caret x,y,width,height in the referenced oN, inside --field-rect. Width <=4, height 8...80 points. Excludes those fixed pixels from comparison for this action; no color or opacity inference, never reused after editing.") var caretRect: String?
     @Option(help: "Native type/press with --field-rect only: exclude one video/animation rectangle x,y,width,height outside the complete field, at most 25% of screen. This action only.") var ignoreRect: String?
@@ -439,11 +439,11 @@ struct TextPrepare: ParsableCommand {
 }
 
 struct TextFinish: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "text-finish", abstract: "After visually verifying native text input and resolving any paste dialog, restore this transaction's clipboard backup without disconnecting.")
+    static let configuration = CommandConfiguration(commandName: "text-finish", abstract: "After visually verifying clipboard input (touch-paste in either mode, or native paste) and resolving any paste dialog, restore this transaction's clipboard backup without disconnecting.")
     @OptionGroup var options: SessionOptions
     @OptionGroup var presentation: AgentOutputOptions
     @Argument(help: "Current screenshot oN captured after the text action; confirms that you have checked its result.") var reference: String
-    @Option(help: "Pending result.pasteboard.transactionID returned by native type or status.") var transaction: String
+    @Option(help: "Pending result.pasteboard.transactionID returned by type, or status.touchPaste.transactionID for touch-paste.") var transaction: String
 
     mutating func run() throws {
         let session = try options.requiredSession()

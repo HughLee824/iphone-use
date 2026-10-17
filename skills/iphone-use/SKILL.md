@@ -9,7 +9,7 @@ Use the local `iphone-use` CLI for iPhone observation and input. The agent inter
 
 ## Start once
 
-Workflow version: **0.1.10**. Public packages require **CLI 0.1.0 or later**. The plugin contains instructions, not the CLI or a signed Runner.
+Workflow version: **0.1.11**. Public packages require **CLI 0.1.0 or later**. The plugin contains instructions, not the CLI or a signed Runner.
 
 1. Run `sh scripts/preflight.sh` with its absolute path resolved relative to **this SKILL.md**, not the working directory. It checks the CLI, full Xcode and supported command forms; it does not prove phone readiness. If missing, follow the [first-task guide](https://github.com/HughLee824/iphone-use/blob/main/docs/first-task.md) (`brew install HughLee824/tap/iphone-use`). Restart the client after PATH changes. For an explicitly supplied development build use `--source`, or `--candidate` for a local prerelease package, with `IPHONE_USE_CLI` set to that exact executable. Use that same binary throughout; do not silently switch builds.
 2. Read only the adapter for the actual client: [Codex calls](references/codex-calls.md) when `functions.exec` exposes `tools.exec_command`, [Claude Code calls](references/claude-code.md) in Claude Code, or [DeepSeek Harness calls](references/deepseek-harness.md) in DeepSeek Harness. In Codex, use the start template to execute **one selected command and display its attached screenshot in the same tool call**. Do not split those into separate calls when the template is available. Native execution tools and other clients should preserve completion fields and use their image reader.
@@ -28,7 +28,7 @@ Read connection `mode`, `backend`, `modeSource`, `result.support` and readiness/
 
 Discover unknown app IDs with `apps --query NAME` and use the returned bundle ID. Do not guess a macOS ID or select a similarly named app. Desktop computer-use tools do not control this iPhone.
 
-These common forms follow `iphone-use --session SESSION`; replace placeholders from actual results. When supported, add `--agent-output` only to input actions (such as open/tap/type) and native text-prepare/text-finish. It is not a global flag; do not add it to devices/connect/apps/observe/inspect/disconnect.
+These common forms follow `iphone-use --session SESSION`; replace placeholders from actual results. When supported, add `--agent-output` only to input actions (such as open/tap/type) and text-prepare/text-finish. It is not a global flag; do not add it to devices/connect/apps/observe/inspect/disconnect.
 
 | Intent | Command |
 | --- | --- |
@@ -45,6 +45,7 @@ Screenshot dimensions are pixels; action coordinates are `screen_points`. Map us
 
 Read `action.outcome` independently of `observation.ok`:
 
+- `prepared`: touch-paste clipboard staging completed; no text was inserted. Follow the returned touch workflow, never re-stage automatically.
 - `completed`: input completed; verify the UI before claiming task success.
 - `unknown`: input may have happened. Inspect the attached observation (capture only if missing); never automatically replay input. Repeated `unknown` codes alone do not mean repeated failures. Choose the next action from the visible result, including the bounded UI recovery below.
 - `not_dispatched`: input was not sent. Inspect any attached rejection frame and correct the evidenced cause. `requiresObservation=true` is satisfied by reading an attached successful current observation; it does not demand another capture.
@@ -65,7 +66,7 @@ After `stale_observation` / `screen_changed`, inspect `agentSummary.comparison.m
 
 For a full-screen video with visible overlay controls, both modes support a coordinate `tap oN --x X --y Y --dynamic-target X,Y,W,H --dynamic-anchor X,Y,W,H`. First inspect the original screenshot. Tightly bound the complete target icon/text and a separate, recognizable page landmark; these are **two local shape checks**, not full-screen identity or app verification. The target must contain the tap (at most 96×96 points); the anchor must not overlap it (at most 256×96 points). Keep default thresholds and do not combine with ignore/protect options. Shapes must remain at the same coordinates; hidden controls, a blank video surface, low contrast, changing text, or significant background edges can be rejected. Do not use an unrelated status-bar icon as the page landmark, or use this reduced scope for submissions, purchases or destructive actions. After rejection, inspect the new frame: one new decision is reasonable when the same safe target is visibly intact; otherwise stop and report the limitation. Rotation invalidates old rectangles. Older CLI/Runner packages do not support these options; do not substitute threshold bypasses.
 
-For **standard text**, read [native text](references/native-text.md) before the first input. Prepare the keyboard once, then inspect the field and focus it if needed; current builds reuse the built-in CoreDevice keyboard. The reference covers complete field coordinates, replace/append/insert and clipboard restoration. For **Runner text**, use `type oN:eN --mode replace --text TEXT --observe` with an observed target; no native clipboard commands. Read [wheel guidance](references/wheels.md) only when adjusting picker wheels.
+For explicit **touch-paste** in either mode, first read [touch paste](references/touch-paste.md); it stages the clipboard without keyboard events, then you operate the visible Paste menu. Check `result.support.textMethods` for availability; never substitute the older `paste` shortcut if unavailable. For other **standard text**, read [native text](references/native-text.md) before the first input. Prepare the keyboard once, then inspect the field and focus it if needed; current builds reuse the built-in CoreDevice keyboard. The reference covers complete field coordinates, replace/append/insert and clipboard restoration. For ordinary **Runner text**, use `type oN:eN --mode replace --text TEXT --observe` with an observed target; do not use native keyboard preparation. Read [wheel guidance](references/wheels.md) only when adjusting picker wheels.
 
 `--agent-output` keeps action/observation facts while saving full diagnostics to a private `receipt`. Read that file only for a concrete unanswered question. A direct pixel match needs no caret exception. Native text accepts an Agent-confirmed `--caret-rect` bound to the current `oN`; pixels inside that fixed narrow box are excluded, without background or opacity inference. Inspect the complete field and follow `references/native-text.md`. Each pre-input stage uses one Apple PNG, with no blink-cycle retry.
 

@@ -5,6 +5,7 @@ final class SessionHost {
     private let paths: SessionPaths
     private let config: HostConfiguration
     private let backend: SessionBackend
+    private let touchPaste: TouchPasteSession
     private let observations: ObservationCache
     private let control = DispatchQueue(label: "iphone-use.host.control")
     private let work = DispatchQueue(label: "iphone-use.host.device")
@@ -17,10 +18,11 @@ final class SessionHost {
     private var signals: [DispatchSourceSignal] = []
     private var backendInfo: [String: Any] = [:]
 
-    init(config: HostConfiguration, paths: SessionPaths, backend: SessionBackend) {
+    init(config: HostConfiguration, paths: SessionPaths, backend: SessionBackend, touchPaste: TouchPasteSession? = nil) {
         self.config = config
         self.paths = paths
         self.backend = backend
+        self.touchPaste = touchPaste ?? TouchPasteSession(config: config)
         observations = ObservationCache(directory: paths.directory)
         lifecycle = SessionLifecycle(timeout: config.idleTimeoutSeconds)
         backend.setEventDeliveryQueue(work)
@@ -150,14 +152,14 @@ final class SessionHost {
             return
         }
         if requestedOperation == "type-with-method", request["textMethod"] == nil {
-            reject("invalid_text_method", "Explicit native text requests require a method")
+            reject("invalid_text_method", "Explicit text requests require a method")
             return
         }
         if operation == "text-finish" {
             do {
-                guard config.backend == "apple-native", let transaction = request["transaction"] as? String,
+                guard let transaction = request["transaction"] as? String,
                       UUID(uuidString: transaction) != nil else {
-                    throw IPhoneUseError("invalid_text_transaction", "text-finish requires apple-native and a pasteboard transaction ID")
+                    throw IPhoneUseError("invalid_text_transaction", "text-finish requires a pasteboard transaction ID")
                 }
                 reference = try ObservationReference(request["reference"] as? String ?? "")
                 guard reference?.node == nil else { throw IPhoneUseError("invalid_reference", "Use the current screenshot oN") }
@@ -195,11 +197,20 @@ final class SessionHost {
             var previousObservation: String?
             var effective = appAction
             do {
+                if touchPaste.pending, appAction || operation == "text-prepare" || operation == "type" || operation == "press" {
+                    throw IPhoneUseError("touch_paste_pending", "Inspect the pending touch-paste transaction and text-finish before another text or app action")
+                }
+                if touchPaste.pending, ["tap", "double-tap", "long-press"].contains(operation) {
+                    try touchPaste.checkOwnership()
+                }
                 switch operation {
                 case "status":
                     var status = try backend.status()
                     status.merge(config.modeSelection.result) { _, selected in selected }
                     status["support"] = config.modeSelection.mode.support
+                    status["touchPaste"] = touchPaste.status
+                    status["textMethodSelection"] = config.modeSelection.mode.support["textMethods"]
+                    status["textFinishSupported"] = true
                     response["result"] = status
                 case "apps":
                     response["result"] = try backend.apps().page(query: request["query"] as? String, offset: request["offset"] as! Int)
@@ -253,11 +264,20 @@ final class SessionHost {
                     response["outcome"] = "completed"
                     response["requiresObservation"] = true
                 case "text-finish":
-                    let metadata = try observations.resolveTextConfirmation(reference!)
+                    let metadata = try observations.resolveTextConfirmation(reference!, nativeOnly: config.backend == "apple-native")
                     if let raw = metadata["textObservationOptions"] as? [String: Any] {
                         textObservationOptions = try JSONDecoder().decode(NativeTextObservationOptions.self, from: jsonData(raw))
                     }
-                    let result = try backend.finishText(transaction: request["transaction"] as! String, observation: metadata)
+                    let transaction = request["transaction"] as! String
+                    let result: [String: Any]
+                    if touchPaste.pending || touchPaste.owns(transaction) {
+                        result = try touchPaste.finish(transaction: transaction, observedAt: metadata["hostStoredAtUptime"] as! Double)
+                    } else {
+                        guard config.backend == "apple-native" else {
+                            throw IPhoneUseError("invalid_text_transaction", "No matching touch-paste transaction exists in this Runner session")
+                        }
+                        result = try backend.finishText(transaction: transaction, observation: metadata)
+                    }
                     response["result"] = result
                     effective = true
                     let restored = result["pasteboardRestoreAcknowledged"] as? Bool == true
@@ -269,6 +289,21 @@ final class SessionHost {
                             "message": "Clipboard restoration was not confirmed; no restorative write will be replayed. Inspect clipboard status and close the session."]
                     }
                 case "tap", "double-tap", "long-press", "pinch", "swipe", "home", "type", "press":
+                    if action!.touchPaste {
+                        _ = try observations.resolveTextConfirmation(action!.reference, nativeOnly: false)
+                        if config.backend == "apple-native",
+                           let pasteboard = try backend.status()["pasteboard"] as? [String: Any],
+                           pasteboard["restorePending"] as? Bool == true || pasteboard["writeUncertain"] as? Bool == true {
+                            throw IPhoneUseError("native_pasteboard_pending", "Finish the existing native clipboard transaction before touch-paste")
+                        }
+                        previousObservation = observations.beginAction()
+                        effective = true
+                        response["result"] = try touchPaste.stage(action!.fields["text"] as! String, observation: action!.reference.observation)
+                        observations.finishAction(previous: previousObservation, dispatched: true)
+                        response["outcome"] = "prepared"
+                        response["requiresObservation"] = true
+                        break
+                    }
                     let target = try observations.resolveTarget(for: action!)
                     if config.backend == "apple-native", let raw = target.context["screenContext"] as? [String: Any] {
                         postActionSourceContext = try JSONDecoder().decode(ScreenContext.self, from: jsonData(raw))
@@ -333,12 +368,12 @@ final class SessionHost {
             }
             // Native actions always return a new observation while still holding the device
             // work queue. Capture failure preserves the action's execution facts.
-            if config.backend == "apple-native", appAction || action != nil || operation == "text-finish" || operation == "text-prepare",
+            if config.backend == "apple-native" || action?.touchPaste == true, appAction || action != nil || operation == "text-finish" || operation == "text-prepare",
                response["outcome"] as? String != "not_dispatched" {
                 observations.invalidate("post_action_capture")
                 do {
                     let capture: CapturedObservation
-                    if operation == "text-finish" {
+                    if operation == "text-finish" || action?.touchPaste == true {
                         capture = try textObservationOptions.map { try backend.observeText($0) } ?? backend.observe()
                     } else {
                         capture = try backend.observeAfterAction(textOptions: textObservationOptions,
@@ -363,6 +398,11 @@ final class SessionHost {
                     if let failure = error as? IPhoneUseError {
                         response["observation"] = ["ok": false, "error": failure.description,
                             "errorCode": failure.code, "diagnostics": failure.diagnostics]
+                    }
+                    if action?.touchPaste == true, response["outcome"] as? String == "prepared" {
+                        response["ok"] = false
+                        response["error"] = ["code": "touch_paste_observation_failed",
+                            "message": "Clipboard staging completed but capture failed; observe before touching Paste. Do not stage again."]
                     }
                     if operation == "text-prepare" {
                         // Preparation completed, but there is no usable input baseline.
@@ -417,12 +457,14 @@ final class SessionHost {
             // Native health and HID availability may have changed since startup.
             // Its status is local; do not add a Runner request to XCTest teardown.
             let finalBackendInfo = config.backend == "apple-native" ? (try? backend.status()) ?? backendInfo : backendInfo
+            let touchPasteCleanup = touchPaste.close()
             var cleanup = backend.stop()
+            cleanup["touchPaste"] = touchPasteCleanup
             do { try observations.clear(); cleanup["observationCacheRemoved"] = true }
             catch { cleanup["observationCacheRemoved"] = false; cleanup["cacheError"] = String(describing: error) }
             let stopped = config.backend == "apple-native" ? cleanup["backendStopped"] as? Bool == true
                 : cleanup["runnerProcessExited"] as? Bool == true
-            let clean = stopped && cleanup["shutdownAcknowledged"] as? Bool == true && cleanup["observationCacheRemoved"] as? Bool == true
+            let clean = stopped && touchPasteCleanup["pasteboardRestoreAcknowledged"] as? Bool == true && touchPasteCleanup["connectionsClosed"] as? Bool == true && cleanup["shutdownAcknowledged"] as? Bool == true && cleanup["observationCacheRemoved"] as? Bool == true
             let result: [String: Any] = ["session": config.session, "reason": reason,
                 "hostPid": ProcessInfo.processInfo.processIdentifier, "backend": finalBackendInfo,
                 "cleanup": cleanup, "endedAt": Date().timeIntervalSince1970]

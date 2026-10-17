@@ -577,14 +577,110 @@ final class HostTests: XCTestCase {
         XCTAssertEqual(backend.inputCount, 0)
     }
 
-    private func host(timeout: Double, backend: ControlledBackend, native: Bool = false) throws -> (SessionPaths, String, XCTestExpectation) {
+    func testTouchPasteStagesAndFinishesInBothModesWithoutBackendKeyboardInput() throws {
+        for native in [true, false] {
+            let backend = ControlledBackend(); backend.nativeTextFixture = native
+            let io = TouchPasteTestIO(), original = io.items
+            var closed = false
+            let clipboard = TouchPasteSession { .init(io: io, close: { closed = true; return true }) }
+            let (paths, session, finished) = try host(timeout: 5, backend: backend, native: native, touchPaste: clipboard)
+            defer { _ = try? call(paths, session: session, op: "disconnect"); wait(for: [finished], timeout: 3); XCTAssertTrue(closed) }
+            _ = try call(paths, session: session, op: "observe")
+            let stage = try call(paths, session: session, op: "type-with-method", fields: ["reference": "o1", "mode": "insert", "textMethod": "touch-paste", "text": "中文\nEnglish"])
+            XCTAssertEqual(stage["ok"] as? Bool, true)
+            XCTAssertEqual(stage["outcome"] as? String, "prepared")
+            let result = stage["result"] as! [String: Any]
+            XCTAssertEqual(result["textInserted"] as? Bool, false)
+            XCTAssertEqual(result["afterObservationID"] as? String, "o2")
+            XCTAssertEqual(backend.actionCount, 0)
+            XCTAssertEqual(backend.prepareCount, 0)
+            let token = (result["pasteboard"] as! [String: Any])["transactionID"] as! String
+            let stale = try call(paths, session: session, op: "text-finish", fields: ["reference": "o1", "transaction": token])
+            XCTAssertEqual(stale["outcome"] as? String, "not_dispatched")
+            let blocked = try call(paths, session: session, op: "type", fields: ["reference": native ? "o2" : "o2:e27", "mode": "insert", "text": "duplicate"])
+            XCTAssertEqual((blocked["error"] as? [String: Any])?["code"] as? String, "touch_paste_pending")
+            XCTAssertEqual(io.writes, 1)
+            // The explicit UI step still goes through the selected backend's guard.
+            _ = try call(paths, session: session, op: "long-press", fields: ["reference": "o2", "x": 100, "y": 200])
+            XCTAssertEqual(backend.inputCount, 1)
+            let observed = try call(paths, session: session, op: "observe")
+            let current = (observed["result"] as! [String: Any])["observation"] as! String
+            let finish = try call(paths, session: session, op: "text-finish", fields: ["reference": current, "transaction": token])
+            XCTAssertEqual(finish["ok"] as? Bool, true)
+            XCTAssertEqual(backend.finishCount, 0)
+            XCTAssertEqual(io.items, original)
+            XCTAssertEqual(backend.inputCount, 1)
+        }
+    }
+
+    func testTouchPasteCaptureFailureRetainsTransactionAndDisconnectRestores() throws {
+        for native in [true, false] {
+            let backend = ControlledBackend(); backend.nativeTextFixture = native
+            let io = TouchPasteTestIO(), original = io.items
+            let clipboard = TouchPasteSession { .init(io: io, close: { true }) }
+            let (paths, session, finished) = try host(timeout: 5, backend: backend, native: native, touchPaste: clipboard)
+            _ = try call(paths, session: session, op: "observe")
+            backend.failObservation = true
+            let stage = try call(paths, session: session, op: "type-with-method", fields: ["reference": "o1", "mode": "insert", "textMethod": "touch-paste", "text": "中文"])
+            XCTAssertEqual(stage["ok"] as? Bool, false)
+            XCTAssertEqual(stage["outcome"] as? String, "prepared")
+            XCTAssertEqual((stage["error"] as? [String: Any])?["code"] as? String, "touch_paste_observation_failed")
+            XCTAssertEqual(io.writes, 1)
+            XCTAssertEqual(backend.inputCount, 0)
+            let stop = try call(paths, session: session, op: "disconnect")
+            wait(for: [finished], timeout: 3)
+            XCTAssertEqual(stop["ok"] as? Bool, true)
+            XCTAssertEqual(io.items, original)
+        }
+    }
+
+    func testTouchPasteUncertainWriteAndCaptureFailurePreserveOriginalError() throws {
+        for native in [true, false] {
+            let backend = ControlledBackend(); backend.nativeTextFixture = native
+            let io = TouchPasteTestIO(); io.failWrite = true
+            let clipboard = TouchPasteSession { .init(io: io, close: { true }) }
+            let (paths, session, finished) = try host(timeout: 5, backend: backend, native: native, touchPaste: clipboard)
+            defer { _ = try? call(paths, session: session, op: "disconnect"); wait(for: [finished], timeout: 3) }
+            _ = try call(paths, session: session, op: "observe")
+            backend.failObservation = true
+            let stage = try call(paths, session: session, op: "type-with-method", fields: ["reference": "o1", "mode": "insert", "textMethod": "touch-paste", "text": "中文"])
+            XCTAssertEqual(stage["ok"] as? Bool, false)
+            XCTAssertEqual(stage["outcome"] as? String, "unknown")
+            XCTAssertEqual((stage["error"] as? [String: Any])?["code"] as? String, "touch_paste_stage_failed")
+            XCTAssertEqual((stage["observation"] as? [String: Any])?["ok"] as? Bool, false)
+            XCTAssertEqual(io.writes, 1)
+            XCTAssertEqual(backend.inputCount, 0)
+        }
+    }
+
+    func testTouchPasteDoesNotMixWithNativeClipboardOrPasteForeignContent() throws {
+        let backend = ControlledBackend(); backend.nativeTextFixture = true
+        let io = TouchPasteTestIO()
+        let clipboard = TouchPasteSession { .init(io: io, close: { true }) }
+        let (paths, session, finished) = try host(timeout: 5, backend: backend, native: true, touchPaste: clipboard)
+        defer { _ = try? call(paths, session: session, op: "disconnect"); wait(for: [finished], timeout: 3) }
+        _ = try call(paths, session: session, op: "observe")
+        let fields: [String: Any] = ["reference": "o1", "mode": "insert", "textMethod": "touch-paste", "text": "中文"]
+        backend.statusInfo = ["pasteboard": ["restorePending": true]]
+        let rejected = try call(paths, session: session, op: "type-with-method", fields: fields)
+        XCTAssertEqual((rejected["error"] as? [String: Any])?["code"] as? String, "native_pasteboard_pending")
+        XCTAssertEqual(io.writes, 0)
+        backend.statusInfo = nil
+        _ = try call(paths, session: session, op: "type-with-method", fields: fields)
+        io.count += 1
+        let tap = try call(paths, session: session, op: "tap", fields: ["reference": "o2", "x": 100, "y": 200])
+        XCTAssertEqual((tap["error"] as? [String: Any])?["code"] as? String, "native_pasteboard_changed")
+        XCTAssertEqual(backend.inputCount, 0)
+    }
+
+    private func host(timeout: Double, backend: ControlledBackend, native: Bool = false, touchPaste: TouchPasteSession? = nil) throws -> (SessionPaths, String, XCTestExpectation) {
         let directory = URL(fileURLWithPath: "/private/tmp/as-test-\(UUID().uuidString.prefix(8))")
         try SessionPaths.secureDirectory(directory)
         let paths = SessionPaths(directory: directory)
         let session = "test-session"
         let config = HostConfiguration(session: session, device: "test", xctestrun: "/unused", idleTimeoutSeconds: timeout,
                                        backend: native ? "apple-native" : nil)
-        let host = SessionHost(config: config, paths: paths, backend: backend)
+        let host = SessionHost(config: config, paths: paths, backend: backend, touchPaste: touchPaste)
         let finished = expectation(description: "host exited")
         DispatchQueue.global().async {
             do { try host.run() } catch { XCTFail("Host failed: \(error)") }

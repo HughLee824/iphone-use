@@ -44,7 +44,7 @@ class ActionObservationCLITests(unittest.TestCase):
                                     if not capture_ok:
                                         response["error"] = {"code": "capture_failed"}
                                 else:
-                                    response.update(ok=outcome == "completed", outcome=outcome, result=details if details is not None else {"inputFact": "preserved"})
+                                    response.update(ok=outcome in ("completed", "prepared"), outcome=outcome, result=details if details is not None else {"inputFact": "preserved"})
                                     if attached is not None:
                                         response["observation"] = attached
                                     if refresh is not None:
@@ -74,6 +74,26 @@ class ActionObservationCLITests(unittest.TestCase):
                 self.assertEqual(failures, [])
             self.assertTrue(result.stdout, f"CLI returned no JSON: exit={result.returncode}, stderr={result.stderr!r}, requests={requests!r}")
             return result.returncode, json.loads(result.stdout), requests
+
+    def test_touch_paste_is_explicit_staging_and_keeps_prepared_receipt(self):
+        details = {"phase": "awaiting_touch_paste", "textInserted": False, "inputReportsSent": 0,
+                   "pasteboard": {"transactionID": "touch-token", "restorePending": True}}
+        attached = {"ok": True, "result": {"observation": "o2", "screenshot": "/fixture/o2.png"}}
+        code, response, requests = self.run_cli(
+            ["type", "o1", "--mode", "insert", "--method", "touch-paste", "--stdin", "--observe", "--agent-output"],
+            outcome="prepared", attached=attached, details=details, stdin="中文\r\nEnglish".encode())
+        try:
+            self.assertEqual(code, 0)
+            self.assertEqual(len(requests), 1)
+            self.assertEqual(requests[0]["op"], "type-with-method")
+            self.assertEqual(requests[0]["textMethod"], "touch-paste")
+            self.assertEqual(requests[0]["text"], "中文\r\nEnglish")
+            self.assertEqual(response["action"]["outcome"], "prepared")
+            self.assertFalse(response["agentSummary"]["textInserted"])
+            self.assertEqual(response["agentSummary"]["nextStep"], "inspect_then_touch_paste_and_verify_before_text_finish")
+        finally:
+            if "receipt" in response:
+                shutil.rmtree(Path(response["receipt"]).parent)
 
     def test_agent_output_keeps_attached_observations_without_another_host_call(self):
         attached = {"ok": True, "phase": "pre_input_rejection", "result": {

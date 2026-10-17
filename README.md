@@ -114,6 +114,8 @@ Use `iphone-use --help` or `iphone-use <command> --help` for all options. Sessio
 | `press REF --key KEY` | Send an editing key to an already focused text input; see [supported keys](docs/runner-editing-keys.md). |
 | `disconnect` | Finish accepted commands and clean up the session. |
 
+Both modes also support `type oN --mode insert --method touch-paste --text TEXT`: stage the clipboard without keyboard events, touch the visible Paste menu, verify, then `text-finish`. See [the workflow](docs/actions.md#纯剪贴板与触摸粘贴两种模式).
+
 Coordinates use **screen points**, not screenshot pixels. Swipe direction describes finger movement. Text input does not submit automatically; use a separate `press` when appropriate. See [actions](docs/actions.md) for text limits, dragging, and examples.
 
 ## Local live preview (source experiment)

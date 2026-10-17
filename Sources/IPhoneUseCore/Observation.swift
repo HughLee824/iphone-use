@@ -48,6 +48,7 @@ final class ObservationCache {
         let capture: CapturedObservation
         let directory: URL
         var validity: String
+        let storedAtUptime: TimeInterval
     }
     private let directory: URL
     private var entries: [Entry] = []
@@ -97,7 +98,7 @@ final class ObservationCache {
             throw error
         }
         invalidate("superseded")
-        entries.append(Entry(id: id, capture: capture, directory: location, validity: "current"))
+        entries.append(Entry(id: id, capture: capture, directory: location, validity: "current", storedAtUptime: ProcessInfo.processInfo.systemUptime))
         currentID = id
         if entries.count > 2 {
             try FileManager.default.removeItem(at: entries[0].directory)
@@ -209,13 +210,15 @@ final class ObservationCache {
         return ObservedTarget(context: entry.capture.metadata, path: path)
     }
 
-    func resolveTextConfirmation(_ reference: ObservationReference) throws -> [String: Any] {
+    func resolveTextConfirmation(_ reference: ObservationReference, nativeOnly: Bool = true) throws -> [String: Any] {
         guard reference.node == nil,
               let entry = entries.first(where: { $0.id == reference.observation }), currentID == entry.id,
-              entry.capture.metadata["backend"] as? String == "apple-native" else {
-            throw IPhoneUseError("stale_reference", "Use the current native screenshot oN after visually checking the text result")
+              (!nativeOnly || entry.capture.metadata["backend"] as? String == "apple-native") else {
+            throw IPhoneUseError("stale_reference", "Use the current screenshot oN after visually checking the text result")
         }
-        return entry.capture.metadata
+        var metadata = entry.capture.metadata
+        metadata["hostStoredAtUptime"] = entry.storedAtUptime
+        return metadata
     }
 
     private func coordinateTarget(for action: DeviceAction, capture: CapturedObservation) throws -> ObservedTarget {

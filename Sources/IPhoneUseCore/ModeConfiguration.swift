@@ -12,14 +12,14 @@ public enum ControlMode: String, Codable {
             return ["operations": common + ["text-prepare", "text-finish"],
                     "observationSources": ["screenshot"],
                     "actionTargets": ["tap": ["screen_point"], "swipe": ["screen_path"],
-                                      "type": ["visually_focused_input"], "press": ["visually_focused_input"]],
-                    "textModes": ["insert", "replace", "append"], "textMethods": ["auto", "keys", "paste"],
+                                      "type": ["visually_focused_input", "touch_paste_staging"], "press": ["visually_focused_input"]],
+                    "textModes": ["insert", "replace", "append"], "textMethods": ["auto", "keys", "paste", "touch-paste"], "touchPasteModes": ["insert"],
                     "pressKeys": NativePressKey.allCases.map(\.rawValue)]
         }
-        return ["operations": common, "observationSources": ["screenshot", "available_elements"],
+        return ["operations": common + ["text-finish"], "observationSources": ["screenshot", "available_elements"],
                 "actionTargets": ["tap": ["screen_point", "element"], "swipe": ["screen_path", "element"],
-                                  "type": ["element"], "press": ["element"]],
-                "textModes": ["insert", "replace", "append"], "textMethods": [String](), "pressKeys": RunnerPressKey.allCases.map(\.rawValue)]
+                                  "type": ["element", "touch_paste_staging"], "press": ["element"]],
+                "textModes": ["insert", "replace", "append"], "textMethods": ["touch-paste"], "touchPasteModes": ["insert"], "pressKeys": RunnerPressKey.allCases.map(\.rawValue)]
     }
 
     static func parse(_ value: String) throws -> ControlMode {
