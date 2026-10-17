@@ -1,7 +1,11 @@
 import importlib.util
+import contextlib
+import io
+import subprocess
 import unittest
 import urllib.error
 from pathlib import Path
+from unittest.mock import Mock
 
 
 def module(name):
@@ -16,6 +20,39 @@ publication = module('verify-skill-publication')
 
 
 class SkillReleaseTests(unittest.TestCase):
+    def test_installation_retries_only_registry_propagation_errors(self):
+        for code in ['ETARGET', 'E404']:
+            with self.subTest(code=code):
+                unavailable = subprocess.CompletedProcess(['npx'], 1, '', f'npm error code {code}\n')
+                success = subprocess.CompletedProcess(['npx'], 0, '{"result":"installed"}', '')
+                run = Mock(side_effect=[unavailable, success])
+                sleep = Mock()
+                with contextlib.redirect_stderr(io.StringIO()) as errors, contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(publication.run_npx(['npx'], run=run, sleep=sleep), success)
+                self.assertIn(code, errors.getvalue())
+                self.assertEqual(run.call_count, 2)
+                sleep.assert_called_once_with(20)
+
+    def test_installer_errors_are_reported_without_retry(self):
+        failure = subprocess.CompletedProcess(['npx'], 1, '', 'Conflicting skills: preserve this directory')
+        run = Mock(return_value=failure)
+        sleep = Mock()
+        with contextlib.redirect_stderr(io.StringIO()) as errors:
+            with self.assertRaises(subprocess.CalledProcessError):
+                publication.run_npx(['npx'], run=run, sleep=sleep)
+        self.assertIn('Conflicting skills', errors.getvalue())
+        run.assert_called_once()
+        sleep.assert_not_called()
+
+    def test_registry_retries_are_bounded(self):
+        run = Mock(return_value=subprocess.CompletedProcess(['npx'], 1, '', 'npm error code ETARGET\n'))
+        sleep = Mock()
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(subprocess.CalledProcessError):
+                publication.run_npx(['npx'], attempts=2, run=run, sleep=sleep)
+        self.assertEqual(run.call_count, 2)
+        sleep.assert_called_once_with(20)
+
     def test_only_matching_stable_portable_version_is_accepted(self):
         manifest = {'name': 'iphone-use-skill', 'version': '0.1.13'}
         release.validate('0.1.13', manifest)
