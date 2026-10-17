@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import { cp, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, parse, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const markerName = '.iphone-use-install.json';
@@ -136,9 +136,10 @@ export async function run({ command, agent, project = process.cwd(), global = fa
   const directory = global && agent === 'opencode' && process.env.XDG_CONFIG_HOME
     ? resolve(process.env.XDG_CONFIG_HOME, 'opencode/skills') : join(base, relative);
   const target = join(directory, 'iphone-use');
-  // An explicit external XDG config root is a separate user-selected scope.
+  // A new external XDG root need not exist yet. Check every existing ancestor
+  // so linked roots cannot redirect installation outside the selected path.
   const scope = global && agent === 'opencode' && process.env.XDG_CONFIG_HOME
-    ? await realpath(process.env.XDG_CONFIG_HOME) : base;
+    ? parse(directory).root : base;
   await noSymlinkParents(scope, directory);
   const inspect = async () => ({
     agent, target, ...await managedState(target, agent),

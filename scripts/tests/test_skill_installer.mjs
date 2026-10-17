@@ -123,6 +123,26 @@ test('an existing lock prevents a second mutation', async (t) => {
   assert.equal((await f.call('check')).state, 'managed');
 });
 
+test('OpenCode can create a new XDG config root but refuses a linked root', async (t) => {
+  const f = await fixture(t);
+  const previous = process.env.XDG_CONFIG_HOME;
+  try {
+    const config = join(f.root, 'new-config');
+    process.env.XDG_CONFIG_HOME = config;
+    const result = await f.call('install', { agent: 'opencode', global: true });
+    assert.equal(result.target, join(config, 'opencode/skills/iphone-use'));
+    assert.equal((await f.call('check', { agent: 'opencode', global: true })).state, 'managed');
+    await f.call('uninstall', { agent: 'opencode', global: true });
+    const alias = join(f.root, 'linked-config');
+    await symlink(config, alias);
+    process.env.XDG_CONFIG_HOME = alias;
+    await assert.rejects(f.call('install', { agent: 'opencode', global: true }), /linked destination/);
+  } finally {
+    if (previous === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previous;
+  }
+});
+
 test('packed installer works through npm exec outside the checkout', async (t) => {
   const f = await fixture(t);
   const staging = join(f.root, 'package');
