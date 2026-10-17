@@ -1,6 +1,6 @@
 {
   "name": "iphone-use-skill",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Install the portable iPhone-use agent skill with duplicate and conflict checks.",
   "type": "module",
   "bin": { "iphone-use-skill": "bin/iphone-use-skill.mjs" },

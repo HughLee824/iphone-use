@@ -67,6 +67,10 @@ final class AgentOutputTests: XCTestCase {
         XCTAssertTrue(hint.contains("screen comparison failed"))
         XCTAssertTrue(hint.contains("Only for a visually identified video"))
         XCTAssertTrue(hint.contains("protected neighborhoods"))
+        XCTAssertTrue(hint.contains("--dynamic-target"))
+        XCTAssertTrue(hint.contains("--dynamic-anchor"))
+        XCTAssertTrue(hint.contains("25%"))
+        XCTAssertTrue(hint.contains("not submissions, purchases or destructive actions"))
         XCTAssertEqual(summary["outcome"] as? String, "not_dispatched")
         XCTAssertEqual(summary["automaticReplayAllowed"] as? Bool, false)
         XCTAssertEqual(summary["nextStep"] as? String, "inspect_attached_observation")
@@ -89,6 +93,52 @@ final class AgentOutputTests: XCTestCase {
             XCTAssertTrue(hint.contains("execution-time validation exceeded its budget"))
             XCTAssertFalse(hint.contains("--ignore-rect"))
             XCTAssertEqual((summary["comparison"] as? [String: Any])?["mismatches"] as? [String], ["screen_changed"])
+        }
+    }
+
+    func testDynamicComparisonUsesTargetAndAnchorInsteadOfWholeScreenMotion() throws {
+        for matches in [[true, true], [false, true], [true, false], [false, false]] {
+            let check = ScreenGuard.Check(screenChange: 0.265625, regionChanges: [],
+                                          policy: .init(), dynamicMatches: matches).result
+            for outcome in ["completed", "unknown", "not_dispatched"] {
+                let source: [String: Any] = ["action": ["outcome": outcome,
+                    "error": ["code": "screen_changed"],
+                    "result": ["screenGuard": check, "preInputChecks": [["stage": "before_input", "screenGuard": check]]]],
+                    "observation": observation]
+                let compact = AgentOutput.summarize(source)
+                let summary = try XCTUnwrap(compact["agentSummary"] as? [String: Any])
+                let comparison = try XCTUnwrap(summary["comparison"] as? [String: Any])
+                let expected = zip(matches, ["dynamic_target_changed", "dynamic_anchor_changed"]).compactMap { $0 ? nil : $1 }
+                XCTAssertEqual(comparison["mismatches"] as? [String], expected)
+                XCTAssertEqual(comparison["accepted"] as? Bool, matches.allSatisfy { $0 })
+                XCTAssertEqual(comparison["algorithm"] as? String, ScreenGuard.dynamicAlgorithm)
+                XCTAssertEqual(comparison["validationScope"] as? String, "explicit_target_and_anchor")
+                XCTAssertEqual(comparison["dynamicMatches"] as? [Bool], matches)
+                XCTAssertEqual(comparison["screenChange"] as? Double, 0.265625)
+                let stages = try XCTUnwrap(summary["preflightStages"] as? [[String: Any]])
+                XCTAssertEqual(try jsonData(stages[0]["comparison"] as! [String: Any]), try jsonData(comparison))
+                XCTAssertEqual(summary["outcome"] as? String, outcome)
+                XCTAssertEqual(summary["automaticReplayAllowed"] as? Bool, false)
+                XCTAssertEqual(try jsonData(compact["observation"] as! [String: Any]), try jsonData(observation))
+                if outcome == "not_dispatched" && !expected.isEmpty {
+                    let hint = try XCTUnwrap(summary["recoveryHint"] as? String)
+                    XCTAssertTrue(hint.contains("target or page anchor did not match"))
+                    XCTAssertFalse(hint.contains("--ignore-rect"))
+                } else {
+                    XCTAssertNil(summary["recoveryHint"])
+                }
+            }
+        }
+    }
+
+    func testDynamicScopeWithoutBothMatchesDoesNotImplySuccess() {
+        for matches: Any in [[true], [], "invalid"] {
+            let check: [String: Any] = ["accepted": false, "validationScope": "explicit_target_and_anchor",
+                "dynamicMatches": matches, "screenChange": 0.3, "maxScreenChange": 0.01]
+            let summary = AgentOutput.summarize(["result": ["screenGuard": check]])["agentSummary"] as! [String: Any]
+            let comparison = summary["comparison"] as! [String: Any]
+            XCTAssertEqual(comparison["accepted"] as? Bool, false)
+            XCTAssertEqual(comparison["mismatches"] as? [String], ["dynamic_match_evidence_unavailable"])
         }
     }
 

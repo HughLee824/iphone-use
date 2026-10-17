@@ -126,6 +126,29 @@ class ActionObservationCLITests(unittest.TestCase):
                     finally:
                         shutil.rmtree(receipt.parent)
 
+    def test_dynamic_tap_summary_and_raw_receipt_keep_distinct_formats(self):
+        guard = {"accepted": True, "algorithm": "bounded-overlay-contrast-v1",
+                 "validationScope": "explicit_target_and_anchor", "dynamicMatches": [True, True],
+                 "screenChange": 0.265625, "maxScreenChange": 0.01, "regionChanges": []}
+        attached = {"ok": True, "result": {"observation": "o2", "screenshot": "/fixture/o2.png"}}
+        code, response, requests = self.run_cli(
+            ["tap", "o1", "--x", "337", "--y", "793", "--dynamic-target", "321,778,31,31",
+             "--dynamic-anchor", "58,656,84,26", "--observe", "--agent-output"],
+            attached=attached, details={"screenGuard": guard})
+        receipt = Path(response["receipt"])
+        try:
+            self.assertEqual(code, 0)
+            self.assertEqual(len(requests), 1)
+            self.assertEqual(response["action"]["outcome"], "completed")
+            self.assertEqual(response["observation"], attached)
+            self.assertEqual(response["agentSummary"]["comparison"]["mismatches"], [])
+            self.assertEqual(response["agentSummary"]["comparison"]["dynamicMatches"], [True, True])
+            raw = json.loads(receipt.read_text())
+            self.assertNotIn("agentSummary", raw)
+            self.assertEqual(raw["action"]["result"]["screenGuard"], guard)
+        finally:
+            shutil.rmtree(receipt.parent)
+
     def test_default_output_retains_all_diagnostics(self):
         details = {"preInputChecks": [{"mediaPhaseSamples": ["unchanged"]}]}
         code, response, requests = self.run_cli(["text-prepare"], details=details)
