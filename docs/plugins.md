@@ -80,11 +80,21 @@ dsh --profile desktop --dump-config
 
 若桌面安装尚未将 `dsh` 加入 PATH，可将上面的 `dsh` 替换为 `"/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"`。使用当前桌面 runtime 附带的 CLI，避免另一个版本的 `npx` 命令管理同一 profile。
 
-仓库根目录的 `package.json` 直接暴露现有 `plugins/iphone-use` bundle，无需子目录参数、额外仓库、安装脚本或本地构建。根清单由 `scripts/sync-plugin.py` 从插件清单生成，发布的 npm 包只包含公开插件文件。Git 来源跟随仓库默认分支；需要固定版本时可指定已经存在的提交 SHA。npm 来源可用 `dsh-iphone-use@0.1.10` 固定版本。
+仓库根目录的 `package.json` 直接暴露现有 `plugins/iphone-use` bundle，无需子目录参数、额外仓库、安装脚本或本地构建。根清单由 `scripts/sync-plugin.py` 从插件清单生成，发布的 npm 包只包含公开插件文件。Git 来源跟随仓库默认分支；需要固定版本时可指定已经存在的提交 SHA。npm 来源可用 `dsh-iphone-use@0.1.13` 固定版本。
 
 重启 Harness 并开始新会话，要求“使用 iphone-use skill 打开我的 iPhone 设置，进入通用，读图验证并断开”。注册名称为 `iphone-use`，不使用 Codex/Claude 的冒号命名空间。模型通过 `skill` 工具加载指引，截图使用 **read_image**，文本参考文件使用 **read**。完整差异见 [DeepSeek adapter](../skills/iphone-use/references/deepseek-harness.md)。
 
-本地开发仍可安装 `./plugins/iphone-use`，该方式链接到 checkout，须保留目录；独立 ZIP 解压后的 `iphone-use` 目录也可安装。npm 发布从仓库根目录执行，先运行 `python3 scripts/sync-plugin.py --check`、测试与 `npm pack --ignore-scripts`，核对包内文件后发布同一 tarball。
+本地开发仍可安装 `./plugins/iphone-use`，该方式链接到 checkout，须保留目录；独立 ZIP 解压后的 `iphone-use` 目录也可安装。npm 发布仅通过下述 CI 工作流执行；本机可以打包与验收，不执行 `npm publish`。
+
+### DeepSeek Harness npm 发布
+
+维护者在功能分支修改，经 PR 与必需 CI 合入 main，再等待同一 main 提交的 CI 成功。在 GitHub Actions 手动运行 **Publish DeepSeek Harness plugin**（`publish-dsh.yml`），输入根 `package.json` 的新版本。该流程独立于通用 skill 的 npm 发布，不重新发布 `iphone-use-skill`。
+
+Trusted Publisher 配置为 npm 包 `dsh-iphone-use`、仓库 `HughLee824/iphone-use`、工作流 `publish-dsh.yml`、环境 `npm`，允许 publish。GitHub 的 `npm` 环境仅允许 main，job 使用 `id-token: write`，无需 npm 写入 token。配置方法见 [npm 官方文档](https://docs.npmjs.com/trusted-publishers/)。
+
+CI 校验版本与未发布状态、同步插件，测试并打包根目录的 npm 包，再安装和测试同一个 tgz，通过 OIDC 发布并附带 provenance。`dsh-plugin-package` artifact 保存 tgz 和 `dsh-pack.json`。随后以全新 npm cache 从公开 registry 安装固定版本，核对 integrity、注册、资源和释放，再卸载。云端注册检查使用测试 registry；真实 Harness CLI/profile 和 Cordis/SkillRegistry 安装验收需在本机另行完成，不能据此声称真机操作通过。
+
+npm 接受发布后若验证失败，不可重发同版本。先检查公开包；可勾选 **verify_only** 重新运行工作流，仍需 main CI 成功及重建归档 integrity 与公开包一致，但跳过发布。脚本 `python3 scripts/dsh-release.py verify /path/to/dsh-pack.json` 也只验证和临时安装，不发布。版本详情与安装索引可能分批可见，安装仅对 npm `E404`/`ETARGET` 有限重试；其他错误立即失败并输出原始错误。
 
 更新第三方插件时，先在 Plugin Manager 卸载，再通过原来源重装；或使用 `dsh plugin --profile desktop remove dsh-iphone-use` 后执行对应安装命令，再重启 Harness。这些操作只管理插件，不卸载 CLI。
 
