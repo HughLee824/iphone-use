@@ -141,7 +141,7 @@ test('packed installer works through npm exec outside the checkout', async (t) =
 test('update refuses downgrade and permission errors do not become clean scans', async (t) => {
   const f = await fixture(t); await f.call('install');
   const path = join(f.source, 'SKILL.md');
-  await writeFile(path, (await readFile(path, 'utf8')).replace('Workflow version: **0.1.12**', 'Workflow version: **0.1.11**'));
+  await writeFile(path, (await readFile(path, 'utf8')).replace(/Workflow version: \*\*[\d.]+\*\*/, 'Workflow version: **0.0.0**'));
   await assert.rejects(f.call('update'), /Refusing downgrade/);
   // A dangling link in a discovery root is unresolved, not proof of no conflict.
   await mkdir(join(f.home, '.agents/skills'), { recursive: true });
