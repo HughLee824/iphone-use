@@ -154,7 +154,15 @@ Start a new client session and invoke `$iphone-use:iphone-use` in Codex or `/iph
 
 DeepSeek Harness can use the `dsh-iphone-use` bundle in the same package, reusing this skill. In Add plugin, enter `dsh-iphone-use` or `https://github.com/HughLee824/iphone-use`; see [Harness installation and validation scope](docs/plugins.md#deepseek-harness-安装).
 
-Manual skill installation remains available: copy the entire `skills/iphone-use` folder into your client's skill directory (for Codex, `$CODEX_HOME/skills` or `~/.codex/skills`) and invoke `$iphone-use` in a new task. Use the plugin's namespaced invocation if both copies are present. For an explicitly selected source workflow, the prerequisite check accepts `--source`; only Runner needs signing. For a supplied local prerelease package, use `--candidate` and set `IPHONE_USE_CLI` to its exact executable path.
+For Cursor and OpenCode, use the portable skill installer with conflict checks:
+
+```sh
+npx iphone-use-skill install --agent cursor
+npx iphone-use-skill check --agent cursor
+# OpenCode: replace cursor with opencode. Default scope is this project.
+```
+
+See [portable skill installation](docs/plugins.md#通用-skillcursor--opencode) for scope, updates, duplicate handling, and verification limits. Keep the existing plugin in Codex, Claude Code and DeepSeek Harness; do not add a second standalone copy. Manual copying or third-party skill installers do not run these conflict checks.
 
 Add `--observe` to `open`, `tap`, `swipe`, `type`, or `press` to return one JSON object containing separate `action` and `observation` responses. Exit code zero requires both to succeed; an observation failure never overwrites the action's outcome or replays input. A confirmed rejection without a refresh requirement skips observation. This client-side sequence uses the existing host protocol, including older hosts; it does not reserve the device between requests. Read `observation.result.text` and its `screenshot` before choosing the next input. See [the contract and examples](docs/actions.md#动作后观察).
 

@@ -255,3 +255,12 @@ CI 没有真实 iPhone。涉及设备行为的改动还需重新构建 Runner，
 ## 许可证
 
 [MIT](LICENSE) © iPhone-use contributors。
+
+### 通用 skill（Cursor / OpenCode）
+
+```sh
+npx iphone-use-skill install --agent cursor
+npx iphone-use-skill check --agent cursor
+```
+
+OpenCode 将 `cursor` 换成 `opencode`。默认安装到当前项目的客户端专用目录，重复安装及升级前会检查冲突。Codex、Claude Code 和 DeepSeek Harness 继续使用现有插件。详见[安装范围、更新与冲突处理](docs/plugins.md#通用-skillcursor--opencode)。
