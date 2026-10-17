@@ -90,6 +90,12 @@ dsh --profile desktop --dump-config
 
 2026-10-17 本地验证：使用桌面版附带的 Harness 0.2.1-rc.1，在隔离的 `DSH_HOME` 中分别安装本地目录与 npm tarball，`--dump-config` 确认插件层；使用真实 Cordis 和 SkillRegistry 验证迁移后的包可注册、加载并卸载 skill，参考文件仍从包内解析。npm 文件清单、ZIP 自包含与可复现检查已通过。这不包含模型驱动的真机操作或 Plugin Manager 图标的视觉验收。
 
+2026-10-17 公开分发验证：从完整 GitHub 仓库地址安装到全新的隔离 profile，解析到提交 `54cd0d59505a4e0b788698161a0f445b8d2b6171`、插件版本 `0.1.10`。真实 Harness runtime 验证 skill 注册、包内参考文件/脚本/图标/语言资源读取和释放；CLI 卸载后配置层与包目录均已移除。[对应 CI](https://github.com/HughLee824/iphone-use/actions/runs/39015577838)通过。
+
+同日通过纯包名 `dsh-iphone-use` 从官方 npm registry 安装到另一全新 profile/cache，解析到 `0.1.10`，通过相同的真实 runtime 检查，CLI 卸载后配置层与包目录均已移除。公开 tarball 的 SHA-1 为 `ef57fc351371f57ebe16b65604a211bfb8fcd351`，SHA-512 integrity 与发布前打包文件及安装后的 lockfile 一致。两种来源均未使用本地目录或本地 tarball 代替公开下载。
+
+npm 发布命令成功返回后，仍须确认公开 registry 的 `latest` 和 tarball 已可用再执行包名安装验收。发布前扫描期间可能暂时出现 `0.0.0-stage` 占位版本；该版本不是可用插件，不能据此认定发布验收通过。
+
 ## 首个任务
 
 先按[设备准备](first-task.md#before-you-start)完成信任和解锁，在新会话调用上述 skill。标准模式直接发现设备并连接；Runner 才按提示 setup。可发送：
@@ -164,6 +170,8 @@ DSH_RUNTIME_MODULES='/Applications/DeepSeek Harness.app/Contents/Resources/app.a
 ```
 
 该测试使用临时插件副本，不连接设备或启动模型，也不修改用户 profile。
+
+对通过公开渠道安装的包，使用同一个真实 runtime 运行 `scripts/verify-dsh-install.mjs /absolute/path/to/profile/node_modules/dsh-iphone-use`，验证已安装文件而非 checkout。分别为 npm 与 GitHub 来源创建隔离的 `DSH_HOME`/profile，安装后用 `--dump-config` 核对 bundle 层，再执行该脚本，最后通过 CLI 卸载并确认配置层与包目录消失。若安装时指定了 `--store-dir`，卸载时也传入同一个目录。
 
 独立 ZIP 包含 Codex/Claude 清单、DeepSeek 的 package.json、patch、注册入口与中英文显示元数据、README、MIT LICENSE 和完整 skill。不要将插件目录外的共享文件或软链接当成已打包依赖。正式发布验收必须覆盖各客户端的实际分发渠道、任务和升级，不能用本地加载成功代替公开分发验收。
 
