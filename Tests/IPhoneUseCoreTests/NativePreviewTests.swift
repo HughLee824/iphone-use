@@ -246,6 +246,41 @@ final class NativePreviewTests: XCTestCase {
         try body(receiver, send)
     }
 
+    func testGestureLongPollWakesOnDispatchWithoutWaitingForInputCompletion() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = ObservationCache(directory: directory)
+        _ = try cache.store(observationFixture())
+        let action = try DeviceAction(operation: "tap", request: ["reference": "o1", "x": 100, "y": 200])
+        let gesture = try XCTUnwrap(NativePreviewGesture(action: action, target: cache.resolveTarget(for: action)))
+        try withPreviewReceiver { receiver, _ in
+            let preview = try NativePreview(); defer { preview.close() }
+            preview.attach(receiver, display: try NativeDisplay(["backlightState": "activeOn", "displays": [["primary": true,
+                "displayId": 1, "bounds": [[0,0],[390,844]], "pointScale": 1, "currentOrientation": "rot0", "nativeOrientation": "rot0"]]]))
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.15) { preview.showGesture(gesture) }
+            let started = ProcessInfo.processInfo.systemUptime
+            let response = try get(try XCTUnwrap(URL(string: preview.url + "gestures?after=0")))
+            let elapsed = ProcessInfo.processInfo.systemUptime - started
+            let result = try jsonObject(response.1)
+            XCTAssertEqual(response.0, 200)
+            XCTAssertEqual((result["events"] as? [[String: Any]])?.count, 1)
+            XCTAssertGreaterThan(elapsed, 0.1, "An idle poll must remain pending until a gesture arrives")
+            XCTAssertLessThan(elapsed, 0.9, "Dispatch must wake the poll rather than waiting for its one-second timeout")
+        }
+    }
+
+    func testSuspendedGesturePollRemainsBoundedWithoutBusyRetrying() throws {
+        let preview = try NativePreview(); defer { preview.close() }
+        preview.suspend("video unavailable")
+        let started = ProcessInfo.processInfo.systemUptime
+        let response = try get(try XCTUnwrap(URL(string: preview.url + "gestures?after=0")))
+        let elapsed = ProcessInfo.processInfo.systemUptime - started
+        XCTAssertEqual(response.0, 200)
+        XCTAssertTrue(try XCTUnwrap(jsonObject(response.1)["events"] as? [[String: Any]]).isEmpty)
+        XCTAssertGreaterThanOrEqual(elapsed, 0.9, "Video errors must not turn gesture renewal into a busy loop")
+        XCTAssertLessThan(elapsed, 2, "An idle gesture poll must still expire")
+    }
+
     func testGestureHTTPDeliveryClearsOnRotationAndSuspendWithoutReplayingHistory() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

@@ -90,7 +90,7 @@ struct Connect: ParsableCommand {
 }
 
 struct Configuration: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "config", abstract: "Read or set defaults in ~/.iphone-use/config.json (IPHONE_USE_CONFIG_DIR overrides the directory without legacy migration).",
+    static let configuration = CommandConfiguration(commandName: "config", abstract: "Read or set defaults in ~/.iphone-use/config.json (IPHONE_USE_CONFIG_DIR overrides the directory without Runner mode inference).",
                                                      subcommands: [Get.self, Set.self])
     struct Get: ParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Read the effective default mode without creating configuration or connecting a device.")

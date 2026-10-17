@@ -23,6 +23,8 @@ private final class ControlledBackend: SessionBackend {
     var liveScreen: Data?
     var actionFailure: ActionFailure?
     var blockAction = false
+    var blockAfterInput = false
+    let inputStarted = DispatchSemaphore(value: 0)
     var failObservation = false
     var observationFailure: IPhoneUseError?
     var nativeSend = false
@@ -108,7 +110,7 @@ private final class ControlledBackend: SessionBackend {
         prepareCount += 1
         return ["keyboardPrepared": true, "inputReportsSent": 0]
     }
-    func perform(_ action: DeviceAction, target: ObservedTarget) throws -> [String: Any] {
+    func perform(_ action: DeviceAction, target: ObservedTarget, onInputStarted: @escaping () -> Void) throws -> [String: Any] {
         lastTextMethod = action.fields["textMethod"] as? String
         lastTextMode = action.fields["mode"] as? String
         actionCount += 1
@@ -123,11 +125,35 @@ private final class ControlledBackend: SessionBackend {
             }
         }
         inputCount += 1
+        onInputStarted()
+        inputStarted.signal()
+        if blockAfterInput { _ = releaseAction.wait(timeout: .now() + 5) }
         return nativeSend ? ["kind": action.kind, "transportStatus": "sent", "verificationStatus": "not_checked"] : ["kind": action.kind]
     }
 }
 
 final class HostTests: XCTestCase {
+    func testPreviewGestureIsPublishedBeforeBackendCompletionInBothModes() throws {
+        for native in [false, true] {
+            let backend = ControlledBackend()
+            backend.blockAfterInput = true
+            let (paths, session, finished) = try host(timeout: 5, backend: backend, native: native)
+            defer { _ = try? call(paths, session: session, op: "disconnect"); wait(for: [finished], timeout: 3) }
+            _ = try call(paths, session: session, op: "observe")
+            let returned = expectation(description: "action returns after release")
+            DispatchQueue.global().async {
+                defer { returned.fulfill() }
+                do { _ = try self.call(paths, session: session, op: "tap", fields: ["reference": "o1", "x": 100, "y": 200]) }
+                catch { XCTFail("Action failed: \(error)") }
+            }
+            XCTAssertEqual(backend.inputStarted.wait(timeout: .now() + 2), .success)
+            XCTAssertEqual(backend.previewGestures.count, 1, "Must publish during input, before backend completion")
+            backend.releaseAction.signal()
+            wait(for: [returned], timeout: 3)
+            XCTAssertEqual(backend.previewGestures.count, 1, "Completion must not replay the gesture")
+        }
+    }
+
     func testAppLifecycleAdmissionObservationAndUnknownFacts() throws {
         for native in [false, true] {
             let backend = ControlledBackend()

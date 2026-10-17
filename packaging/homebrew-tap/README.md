@@ -22,9 +22,11 @@ brew upgrade iphone-use
 brew uninstall iphone-use
 ```
 
-Disconnect active sessions before upgrading. When moving from the old `agentsoma` formula, uninstall it before installing `iphone-use`: both expose the compatibility command and conflict. Local configuration is retained. Renamed Runner deployments require new setup; standard mode does not. Uninstalling the formula leaves local signing state and installed iPhone apps intact.
+Disconnect active sessions before upgrading. Current source generates a formula that installs only `iphone-use`, without an `agentsoma` alias or conflict declaration. Old AgentSoma preferences and Runner state are ignored and left untouched; select the desired mode explicitly and prepare the current Runner if needed. Standard mode does not require Runner setup. Uninstalling the formula leaves local signing state and installed iPhone apps intact.
 
-## Formula-scoped trust
+## Historical formula-scoped trust
+
+The following applies only to earlier published formulas that included the old-command conflict. Newly generated formulas do not require this step.
 
 On Homebrew versions enforcing Tap Trust, installation may fail while loading the legacy `agentsoma` formula for the compatibility-command conflict check, even after the old package is uninstalled. Review [that formula](https://github.com/HughLee824/homebrew-tap/blob/main/Formula/agentsoma.rb); if you trust it, explicitly grant trust to that formula only and retry:
 

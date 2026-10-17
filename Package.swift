@@ -4,8 +4,7 @@ import PackageDescription
 let package = Package(
     name: "iphone-use",
     platforms: [.macOS(.v13)],
-    products: [.executable(name: "iphone-use", targets: ["IPhoneUse"]),
-               .executable(name: "agentsoma", targets: ["IPhoneUse"])],
+    products: [.executable(name: "iphone-use", targets: ["IPhoneUse"])],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.5.0")
     ],

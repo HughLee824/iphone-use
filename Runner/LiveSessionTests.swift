@@ -96,6 +96,13 @@ private final class CommandServer {
         }
     }
 
+    // Advisory only: delivery must not gate or replay device input.
+    func progress(_ body: [String: Any], to request: Request) {
+        guard var data = try? JSONSerialization.data(withJSONObject: body) else { return }
+        data.append(10)
+        request.connection.send(content: data, completion: .contentProcessed { _ in })
+    }
+
     func reply(_ body: [String: Any], to request: Request) async throws {
         var data = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
         data.append(10)
@@ -119,6 +126,7 @@ final class LiveSessionTests: XCTestCase {
     private var currentBundleID: String?
     private var commandIssues: [String] = []
     private var handlingCommand = false
+    private var inputProgress: (() -> Void)?
     private var executionStarted = false
     private var inputCompleted = false
     private var inputSessionUncertain = false
@@ -160,6 +168,7 @@ final class LiveSessionTests: XCTestCase {
             handlingCommand = true
             lifecycleFacts = nil
             executionStarted = false
+            inputProgress = nil
             inputCompleted = false
             postInputTextFields = []
             postInputContext = nil
@@ -176,6 +185,12 @@ final class LiveSessionTests: XCTestCase {
             var stopping = false
             do {
                 guard command["token"] as? String == token else { throw CommandError("unauthorized") }
+                if command["op"] as? String == "act", command["inputProgress"] as? Bool == true {
+                    inputProgress = {
+                        server.progress(["id": command["id"] ?? NSNull(), "sessionId": sessionID,
+                                         "event": "input_started"], to: request)
+                    }
+                }
                 response["result"] = try await execute(command)
                 try checkIssues()
                 response["ok"] = true
@@ -186,6 +201,7 @@ final class LiveSessionTests: XCTestCase {
                 response["errorCode"] = (error as? CommandError)?.code ?? "xctest_error"
                 response["requiresObservation"] = (error as? CommandError)?.requiresObservation ?? true
             }
+            inputProgress = nil
             handlingCommand = false
             if ["launch", "app-lifecycle"].contains(command["op"] as? String ?? "") {
                 if let lifecycleFacts { response["result"] = lifecycleFacts }
@@ -218,9 +234,9 @@ final class LiveSessionTests: XCTestCase {
         let op = command["op"] as? String ?? ""
         if op == "ping" {
             let hostManaged = ProcessInfo.processInfo.environment["IPHONE_USE_HOST_MANAGED"] == "1"
-            return ["protocol": "agentsoma-spike-jsonl-v1", "lifecycleOwner": hostManaged ? "host" : "spike",
+            return ["protocol": "iphone-use-spike-jsonl-v1", "lifecycleOwner": hostManaged ? "host" : "spike",
                     "lifetimeLimitSeconds": hostManaged ? NSNull() : 900, "observationVersion": 2,
-                    "actionVersion": 9, "launchVersion": 2, "startupGuard": RunnerStartupGuard.facts(), "frameStabilityVersion": 2, "screenGuardVersion": 1, "previewGeometryVersion": 2,
+                    "actionVersion": 9, "launchVersion": 2, "startupGuard": RunnerStartupGuard.facts(), "frameStabilityVersion": 2, "screenGuardVersion": 1, "previewGeometryVersion": 2, "inputProgressVersion": 1,
                     "applicationStateTimeoutSupported": stateTimeout != nil]
         }
         if op == "shutdown" { return ["stopped": true] }
@@ -325,10 +341,17 @@ final class LiveSessionTests: XCTestCase {
         if !commandIssues.isEmpty { throw CommandError("xctest_error", message: commandIssues.joined(separator: "\n")) }
     }
 
+    private func publishInputStarted() {
+        let notify = inputProgress
+        inputProgress = nil
+        notify?()
+    }
+
     @MainActor
     private func event(_ body: () -> Void) throws {
         try checkIssues()
         guard let stateTimeout else { throw CommandError("unsupported_xctest_runtime") }
+        publishInputStarted()
         executionStarted = true // Before entering any API that can send input, including focus/select-all.
         let began = ProcessInfo.processInfo.systemUptime
         // Idle may exceed this short budget during normal deceleration. Avoid synchronous
@@ -570,6 +593,7 @@ final class LiveSessionTests: XCTestCase {
                 eventRecord = prepared
             } catch { throw CommandError("unsupported_pinch_runtime", message: String(describing: error)) }
             try checkIssues()
+            publishInputStarted()
             executionStarted = true
             do { try eventRecord.send(timeout: pinch.duration + 5); try checkIssues() }
             catch {

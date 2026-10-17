@@ -24,6 +24,7 @@ final class NativePreview {
     private var contexts = (0..<2).map { _ in CIContext(options: [.cacheIntermediates: false, .useSoftwareRenderer: true]) }
     private var timer: DispatchSourceTimer?
     private var waiting: [ObjectIdentifier: (sequence: Int, deadline: Double)] = [:]
+    private var waitingGestures: [ObjectIdentifier: (sequence: Int, deadline: Double)] = [:]
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private var receiver: NativeRTPReceiver?
     private var display: NativeDisplay?
@@ -99,6 +100,7 @@ final class NativePreview {
             guard let self, !self.closed, let display = self.display,
                   display.rotation == gesture.rotation else { return }
             self.gestures.append(gesture, now: ProcessInfo.processInfo.systemUptime)
+            self.flushWaitingGestures()
         }
     }
 
@@ -218,7 +220,7 @@ final class NativePreview {
         connections[id] = connection
         connection.stateUpdateHandler = { [weak self] state in
             switch state {
-            case .failed, .cancelled: self?.connections.removeValue(forKey: id); self?.waiting.removeValue(forKey: id)
+            case .failed, .cancelled: self?.connections.removeValue(forKey: id); self?.waiting.removeValue(forKey: id); self?.waitingGestures.removeValue(forKey: id)
             default: break
             }
         }
@@ -257,7 +259,9 @@ final class NativePreview {
             case "/\(self.token)/gestures":
                 let query = URLComponents(string: "http://localhost" + String(parts[1]))?.queryItems
                 let after = query?.first(where: { $0.name == "after" })?.value.flatMap(Int.init)
-                self.send(connection, type: "application/json", data: (try? jsonData(self.gestures.response(after: after, now: ProcessInfo.processInfo.systemUptime))) ?? Data())
+                if let after, after == self.gestures.sequence {
+                    self.waitingGestures[ObjectIdentifier(connection)] = (after, ProcessInfo.processInfo.systemUptime + 1)
+                } else { self.sendGestures(connection, after: after) }
             case "/\(self.token)/frame":
                 let query = URLComponents(string: "http://localhost" + String(parts[1]))?.queryItems
                 if let after = query?.first(where: { $0.name == "after" })?.value.flatMap(Int.init),
@@ -277,10 +281,24 @@ final class NativePreview {
     }
 
     private func flushWaiting() {
+        flushWaitingGestures()
         let now = ProcessInfo.processInfo.systemUptime
         for (id, request) in waiting where request.sequence != encodedFrames || request.deadline <= now || error != nil {
             waiting.removeValue(forKey: id)
             if let connection = connections[id] { sendFrame(connection) }
+        }
+    }
+
+    private func sendGestures(_ connection: NWConnection, after: Int?) {
+        send(connection, type: "application/json", data: (try? jsonData(
+            gestures.response(after: after, now: ProcessInfo.processInfo.systemUptime))) ?? Data())
+    }
+
+    private func flushWaitingGestures() {
+        let now = ProcessInfo.processInfo.systemUptime
+        for (id, request) in waitingGestures where request.sequence != gestures.sequence || request.deadline <= now {
+            waitingGestures.removeValue(forKey: id)
+            if let connection = connections[id] { sendGestures(connection, after: request.sequence) }
         }
     }
 
@@ -294,7 +312,7 @@ final class NativePreview {
         queue.sync {
             guard !closed else { return }
             closed = true; bindingGeneration += 1; timer?.cancel(); timer = nil; receiver = nil; jpeg = nil
-            listener.cancel(); connections.values.forEach { $0.cancel() }; connections.removeAll(); waiting.removeAll()
+            listener.cancel(); connections.values.forEach { $0.cancel() }; connections.removeAll(); waiting.removeAll(); waitingGestures.removeAll()
         }
     }
 

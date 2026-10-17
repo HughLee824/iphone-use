@@ -63,7 +63,7 @@ struct RunnerUSBTransport {
         return Int(word(0)) - 16
     }
 
-    func exchange(_ request: [String: Any], timeout: TimeInterval) throws -> [String: Any] {
+    func exchange(_ request: [String: Any], timeout: TimeInterval, onProgress: (([String: Any]) throws -> Void)? = nil) throws -> [String: Any] {
         var possiblySent = false
         do {
             let deadline = ProcessInfo.processInfo.systemUptime + timeout
@@ -81,11 +81,21 @@ struct RunnerUSBTransport {
             wire.append(10)
             possiblySent = true
             try socket.write(wire)
-            let response = try jsonObject(socket.readLine(limit: JSONTransport.limit))
-            guard let expected = request["id"] as? String, response["id"] as? String == expected else {
-                throw IPhoneUseError("mismatched_response", "Response request ID does not match")
+            var receivedProgress = false
+            while true {
+                let response = try jsonObject(socket.readLine(limit: JSONTransport.limit))
+                guard let expected = request["id"] as? String, response["id"] as? String == expected else {
+                    throw IPhoneUseError("mismatched_response", "Response request ID does not match")
+                }
+                guard response["event"] != nil else { return response }
+                guard response["event"] as? String == "input_started", !receivedProgress,
+                      request["op"] as? String == "act", request["inputProgress"] as? Bool == true,
+                      let onProgress else {
+                    throw IPhoneUseError("invalid_progress", "Unexpected Runner input progress; no automatic replay")
+                }
+                receivedProgress = true
+                try onProgress(response)
             }
-            return response
         } catch {
             throw TransportError(description: String(describing: error), possiblySent: possiblySent)
         }
@@ -97,6 +107,7 @@ struct RunnerUSBTransport {
 final class RunnerSocket {
     private var fd: Int32
     private let deadline: TimeInterval
+    private var lineBuffer = Data()
 
     init(ownedDescriptor: Int32, deadline: TimeInterval) throws {
         fd = ownedDescriptor
@@ -180,16 +191,15 @@ final class RunnerSocket {
     }
 
     func readLine(limit: Int) throws -> Data {
-        var data = Data()
         while true {
-            let part = try chunk(maximum: min(65536, limit - data.count + 1))
-            if let end = part.firstIndex(of: 10) {
-                data.append(part[..<end])
-                guard data.count <= limit else { throw IPhoneUseError("response_too_large", "Runner response exceeds size limit") }
-                return data
+            if let end = lineBuffer.firstIndex(of: 10) {
+                let line = Data(lineBuffer[..<end])
+                guard line.count <= limit else { throw IPhoneUseError("response_too_large", "Runner response exceeds size limit") }
+                lineBuffer = Data(lineBuffer[lineBuffer.index(after: end)...])
+                return line
             }
-            data.append(part)
-            guard data.count <= limit else { throw IPhoneUseError("response_too_large", "Runner response exceeds size limit") }
+            guard lineBuffer.count <= limit else { throw IPhoneUseError("response_too_large", "Runner response exceeds size limit") }
+            lineBuffer.append(try chunk(maximum: min(65536, limit - lineBuffer.count + 1)))
         }
     }
 }

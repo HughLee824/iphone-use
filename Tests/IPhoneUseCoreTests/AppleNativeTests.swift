@@ -311,7 +311,11 @@ final class AppleNativeTests: XCTestCase {
         let transport = ScriptedTransport(), cancel = NativeCancellation()
         let hid = NativeHIDAdapter(transport: transport, cancellation: cancel, clock: { 12345 })
         try hid.prepare()
-        let result = try hid.tap((12, 34), hold: 0.01)
+        var contacts = 0
+        let result = try hid.tap((12, 34), hold: 0.01, onContact: {
+            contacts += 1; XCTAssertEqual(self.reports(transport).map { $0[3] }, [0xc2])
+        })
+        XCTAssertEqual(contacts, 1)
         XCTAssertEqual(result["transportStatus"] as? String, "sent")
         XCTAssertEqual(reports(transport).map { $0[3] }, [0xc2, 2])
         let payload = (transport.sends[0]["payload"] as! [String: Any])["send"] as! [String: Any]
@@ -323,7 +327,11 @@ final class AppleNativeTests: XCTestCase {
         transport.onSend = { _ in sentAt.append(now) }
         let hid = NativeHIDAdapter(transport: transport, cancellation: NativeCancellation(), wait: { now += $0 }, uptime: { now })
         try hid.prepare()
-        let result = try hid.doubleTap((123, 456))
+        var contacts = 0
+        let result = try hid.doubleTap((123, 456), onContact: {
+            contacts += 1; XCTAssertEqual(self.reports(transport).count, 1); XCTAssertEqual(now, 10)
+        })
+        XCTAssertEqual(contacts, 1)
         let values = reports(transport)
         XCTAssertEqual(values.map { $0[3] }, [0xc2, 2, 0xc2, 2])
         XCTAssertTrue(values.allSatisfy { Array($0[4...7]) == [123, 0, 200, 1] })
@@ -492,7 +500,11 @@ final class AppleNativeTests: XCTestCase {
         transport.onSend = { _ in times.append(now) }
         let hid = NativeHIDAdapter(transport: transport, cancellation: NativeCancellation(), wait: { now += $0 }, uptime: { now })
         try hid.prepare()
-        let result = try hid.swipe(plan)
+        var contacts = 0
+        let result = try hid.swipe(plan, onContact: {
+            contacts += 1; XCTAssertEqual(self.reports(transport).count, 1); XCTAssertEqual(now, 100)
+        })
+        XCTAssertEqual(contacts, 1)
         let packets = reports(transport), points = packets.map(point)
         XCTAssertEqual(points.first, [Int(plan.start.0), Int(plan.start.1)])
         XCTAssertEqual(points.suffix(2), [[Int(plan.end.0), Int(plan.end.1)], [Int(plan.end.0), Int(plan.end.1)]])

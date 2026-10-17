@@ -80,14 +80,12 @@ def inspect_archive(archive, *, require_clean=False):
             seen.add(path)
             if member.isfile():
                 files[path.relative_to(root).as_posix()] = tar.extractfile(member).read()
-    required = ["bin/iphone-use", "bin/agentsoma", "README.md", "LICENSE", "licenses/SwiftArgumentParser.txt",
+    required = ["bin/iphone-use", "README.md", "LICENSE", "licenses/SwiftArgumentParser.txt",
                 "build-info.json", RUNNER + "manifest.json"]
     if any(name not in files for name in required):
         raise ValueError("Release archive is missing its binary, instructions, licences or metadata")
     if any(name not in required and not name.startswith(RUNNER) and not name.startswith(PREVIEW) for name in files):
         raise ValueError("Release archive contains an unexpected file outside the Runner payload")
-    if files["bin/agentsoma"] != files["bin/iphone-use"]:
-        raise ValueError("Legacy command must be an exact copy of iphone-use")
     manifest = json.loads(files[RUNNER + "manifest.json"])
     build = json.loads(files["build-info.json"])
     artwork = {name.removeprefix(PREVIEW): sha256(data) for name, data in files.items() if name.startswith(PREVIEW)}

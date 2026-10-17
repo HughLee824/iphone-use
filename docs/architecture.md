@@ -116,7 +116,7 @@ Ignore rules do not remove files already tracked by Git. Use `git rm --cached` f
 
 ## Runtime storage
 
-Session files default to `/private/tmp/agentsoma-<uid>`; `IPHONE_USE_STATE_DIR` can choose a different, short path. Directory permissions are `0700`. A device lock is scoped to the state directory and is released when its holder exits.
+Session files default to `/private/tmp/iphone-use-<uid>`; `IPHONE_USE_STATE_DIR` can choose a different, short path. Directory permissions are `0700`. Every host holds a device lock in the default root plus its selected state directory when different, preventing concurrent device ownership across custom roots. Locks are released when their holder exits.
 
 Packaged Runner preparation is stored in `~/Library/Application Support/iphone-use`, separate from the source checkout and install directory. It contains locally re-signed artifacts and the user's provisioning profile. Private keys remain in Keychain. The device token stays in host memory and the XCTest subprocess environment rather than configuration files or CLI output.
 

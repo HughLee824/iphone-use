@@ -134,8 +134,6 @@ def main():
         run(["/usr/bin/strip", "-S", str(staged / "bin/iphone-use")], cwd=root)
         # Ad-hoc signing keeps the local arm64 binary executable; this is not Developer ID signing.
         run(["/usr/bin/codesign", "--force", "--sign", "-", "--timestamp=none", str(staged / "bin/iphone-use")], cwd=root)
-        # Archive links are forbidden; ship an exact byte copy for the legacy command.
-        shutil.copy2(staged / "bin/iphone-use", staged / "bin/agentsoma")
         preview = staged / PREVIEW
         preview.mkdir(parents=True)
         preview_files = preview_asset_files((root / "assets/preview/catalog.json").read_bytes())

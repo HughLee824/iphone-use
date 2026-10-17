@@ -57,9 +57,6 @@ def main():
                     raise ValueError("Relocated CLI did not retain the selected mode")
             libraries = check_linked_libraries(subprocess.check_output(
                 ["/usr/bin/otool", "-L", str(moved / "bin/iphone-use")], text=True, timeout=15))
-            alias_version = subprocess.check_output([str(moved / "bin/agentsoma"), "--version"], text=True, timeout=15)
-            if alias_version.strip() != result["version"]:
-                raise ValueError("Legacy command does not identify this release")
             subprocess.run(["/usr/bin/codesign", "--verify", "--strict", str(moved / "bin/iphone-use")],
                            check=True, capture_output=True, timeout=15)
     print(json.dumps({"version": result["version"], "architecture": result["architecture"],

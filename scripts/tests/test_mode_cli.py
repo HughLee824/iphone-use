@@ -22,7 +22,7 @@ class ModeCLITests(unittest.TestCase):
     def test_config_directory_override_ignores_existing_preferences_and_preparation(self):
         with tempfile.TemporaryDirectory(prefix="ip-isolated-", dir="/private/tmp") as temporary:
             root = Path(temporary)
-            # Deliberately unreadable documents would fail normal migration.
+            # Malformed current preferences and Runner records must not affect the isolated store.
             existing = [root / ".iphone-use/config.json", root / ".agentsoma/config.json",
                         root / "Library/Application Support/iphone-use/devices/fixture.json"]
             for path in existing:
@@ -112,46 +112,45 @@ class ModeCLITests(unittest.TestCase):
                 self.assertEqual(reply["error"]["code"], "runner_not_built")
             self.assertFalse((Path(temporary) / ".iphone-use/config.json").exists())
 
-    def test_old_command_reads_new_config_and_old_preference_is_visible(self):
-        with tempfile.TemporaryDirectory(prefix="ip-use-", dir="/private/tmp") as temporary:
-            home = Path(temporary)
-            code, reply = self.call(["config", "get", "mode"], home)
-            self.assertEqual(code, 0)
-            self.assertEqual(Path(reply["result"]["configPath"]).resolve(), (home / ".iphone-use/config.json").resolve())
-            old = home / ".agentsoma/config.json"
-            old.parent.mkdir(mode=0o700)
-            old.write_text('{"version":1,"mode":"runner"}')
-            code, reply = self.call(["config", "get", "mode"], home)
-            self.assertEqual(code, 0)
-            self.assertEqual(reply["result"]["modeSource"], "legacy_configuration_migration")
-            self.assertFalse((home / ".iphone-use/config.json").exists())
-            code, _ = self.call(["config", "set", "mode", "standard"], home)
-            self.assertEqual(code, 0)
-            result = subprocess.run([str(CLI.with_name("agentsoma")), "config", "get", "mode"],
-                                    env={**os.environ, "CFFIXED_USER_HOME": str(home)}, capture_output=True, timeout=10)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(json.loads(result.stdout)["result"]["mode"], "standard")
-            self.assertEqual(json.loads(old.read_text())["mode"], "runner")
+    def test_old_preferences_are_ignored_and_preserved(self):
+        for contents in ['{"version":1,"mode":"runner"}', 'invalid JSON']:
+            with self.subTest(contents=contents), tempfile.TemporaryDirectory(prefix="ip-use-", dir="/private/tmp") as temporary:
+                home = Path(temporary)
+                old = home / ".agentsoma/config.json"
+                old.parent.mkdir(mode=0o700)
+                old.write_text(contents)
+                code, reply = self.call(["config", "get", "mode"], home)
+                self.assertEqual(code, 0)
+                current = home / ".iphone-use/config.json"
+                self.assertEqual(Path(reply["result"]["configPath"]).resolve(), current.resolve())
+                self.assertEqual(reply["result"]["mode"], "standard")
+                self.assertEqual(reply["result"]["modeSource"], "default")
+                self.assertFalse(current.exists())
+                code, _ = self.call(["config", "set", "mode", "runner"], home)
+                self.assertEqual(code, 0)
+                code, reply = self.call(["config", "get", "mode"], home)
+                self.assertEqual(code, 0)
+                self.assertEqual(reply["result"]["mode"], "runner")
+                self.assertEqual(reply["result"]["modeSource"], "configuration")
+                self.assertEqual(old.read_text(), contents)
 
-    def test_old_runner_preparation_never_silently_selects_standard(self):
+    def test_old_runner_preparation_is_ignored_and_preserved(self):
         with tempfile.TemporaryDirectory(prefix="ip-use-", dir="/private/tmp") as temporary:
             home = Path(temporary)
-            _, reply = self.call(["config", "get", "mode"], home)
-            self.assertEqual(Path(reply["result"]["configPath"]).resolve(), (home / ".iphone-use/config.json").resolve())
             old = home / "Library/Application Support/AgentSoma/devices"
             old.mkdir(parents=True)
-            (old / "old-device.json").write_text('{}')
+            record = old / "old-device.json"
+            record.write_text('{}')
             for empty_new_directory in [False, True]:
                 if empty_new_directory:
                     (home / "Library/Application Support/iphone-use/devices").mkdir(parents=True)
                 code, reply = self.call(["config", "get", "mode"], home)
-                self.assertNotEqual(code, 0)
-                self.assertEqual(reply["error"]["code"], "mode_selection_required")
-            code, _ = self.call(["config", "set", "mode", "runner"], home)
-            self.assertEqual(code, 0)
-            code, reply = self.call(["config", "get", "mode"], home)
-            self.assertEqual(code, 0)
-            self.assertEqual(reply["result"]["mode"], "runner")
+                self.assertEqual(code, 0)
+                self.assertEqual(Path(reply["result"]["configPath"]).resolve(), (home / ".iphone-use/config.json").resolve())
+                self.assertEqual(reply["result"]["mode"], "standard")
+                self.assertEqual(reply["result"]["modeSource"], "default")
+                self.assertFalse((home / ".iphone-use/config.json").exists())
+            self.assertEqual(record.read_text(), '{}')
 
     def test_bad_config_and_keys_fail_closed(self):
         with tempfile.TemporaryDirectory(prefix="as-mode-", dir="/private/tmp") as temporary:
