@@ -7,6 +7,11 @@ on:
         description: 'New stable skill version already merged into main'
         required: true
         type: string
+      verify_only:
+        description: 'Verify an existing publication without publishing (archive integrity must match)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -27,6 +32,7 @@ jobs:
       id-token: write
     env:
       VERSION: ${{ inputs.version }}
+      VERIFY_ONLY: ${{ inputs.verify_only }}
       GH_TOKEN: ${{ github.token }}
       npm_config_registry: https://registry.npmjs.org
     steps:
@@ -53,8 +59,13 @@ jobs:
           )):
               raise SystemExit('The latest push CI for this main commit must finish successfully before publishing.')
           PY
-      - name: Validate version and refuse an existing registry version
-        run: python3 scripts/check-skill-release.py "$VERSION"
+      - name: Validate version and publication mode
+        run: |
+          if [ "$VERIFY_ONLY" = true ]; then
+            python3 scripts/check-skill-release.py "$VERSION" --verify-only
+          else
+            python3 scripts/check-skill-release.py "$VERSION"
+          fi
       - name: Check the source and installer
         run: |
           python3 scripts/sync-plugin.py --check
@@ -77,12 +88,17 @@ jobs:
             ${{ runner.temp }}/iphone-use-skill-*.tgz
             ${{ runner.temp }}/skill-pack.json
       - name: Publish through npm OIDC trusted publishing
+        if: ${{ !inputs.verify_only }}
         run: npm publish "$RUNNER_TEMP/iphone-use-skill-$VERSION.tgz" --ignore-scripts --access public --provenance
       - name: Verify registry integrity and public installation
         run: python3 scripts/verify-skill-publication.py "$RUNNER_TEMP/skill-pack.json"
       - name: Record the published source
         run: |
           {
-            echo "Published iphone-use-skill@$VERSION from $GITHUB_SHA."
+            if [ "$VERIFY_ONLY" = true ]; then
+              echo "Verified existing iphone-use-skill@$VERSION against source $GITHUB_SHA; no publication performed."
+            else
+              echo "Published iphone-use-skill@$VERSION from $GITHUB_SHA."
+            fi
             echo 'Registry integrity and public installation passed. Physical-device acceptance is recorded separately.'
           } >> "$GITHUB_STEP_SUMMARY"

@@ -32,6 +32,9 @@ def require_unpublished(version, fetch=urllib.request.urlopen):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('version')
-    version = parser.parse_args().version
+    parser.add_argument('--verify-only', action='store_true', help='Validate an existing version for read-only publication recovery')
+    args = parser.parse_args()
+    version = args.version
     validate(version, json.loads((ROOT / 'packages/iphone-use-skill/package.json').read_text()))
-    require_unpublished(version)
+    if not args.verify_only:
+        require_unpublished(version)

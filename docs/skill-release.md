@@ -12,6 +12,10 @@
 
 失败后先判断是否已经被 npm 接受。包处理或安装核验失败不意味着发布失败；禁止直接重发或改写已发布版本。可下载该运行的 `portable-skill-package` artifact 核对归档与 integrity，并用其中的 `npm pack --json` 输出运行发布核验脚本：`python3 scripts/verify-skill-publication.py /path/to/skill-pack.json`。本脚本会临时安装并卸载 skill，但不会发布、改 dist-tag 或操作手机。
 
+若包已发布但 CI 验证失败，可在同一个工作流勾选 **verify_only**，输入已发布版本。它仍要求当前 main 的 CI 成功及版本匹配，重新构建归档并核对公开包的完整性，但跳过发布步骤。只有打包内容与已发布包完全相同才会通过；这次验证的源码提交不会替换原发布的 provenance。普通发布模式仍拒绝已存在的版本。
+
+npm 的版本详情、安装索引及 tarball 可能分批可见。验证脚本输出 npm 原始错误，仅对 `ETARGET`/`E404` 做最多 16 次、间隔 20 秒的安装重试，并强制重新检查在线索引；冲突或其他安装错误立即失败。
+
 ## 一次性 Trusted Publisher 配置
 
 本仓库未存储 npm 写入 token。发布前需要以下配置；仅提交工作流不代表 OIDC 已经生效：
