@@ -147,6 +147,8 @@ claude plugin install iphone-use@iphone-use
 
 在新会话中分别调用 Codex 的 `$iphone-use:iphone-use` 或 Claude Code 的 `/iphone-use:iphone-use`。插件共用设备规则，包含只读前置检查、[Codex 模板](skills/iphone-use/references/codex-calls.md)及 [Claude Code Bash/Read 指引](skills/iphone-use/references/claude-code.md)。它不安装 CLI 或准备签名。Xcode、setup、首个任务和升级步骤见[插件指南](docs/plugins.md)与[完整首次任务路径](docs/first-task.md)。自有 marketplace 分发不代表已进入官方目录。
 
+DeepSeek Harness 可通过同目录中的 `dsh-iphone-use` bundle 接入，复用上述 skill。在 Add plugin 中填写 `dsh-iphone-use` 或 `https://github.com/HughLee824/iphone-use` 即可选择安装来源，验证范围见[DeepSeek Harness 安装](docs/plugins.md#deepseek-harness-安装)。
+
 仍支持手动将完整 `skills/iphone-use` 复制到客户端 skill 目录（Codex 为 `$CODEX_HOME/skills`，未设置时为 `~/.codex/skills`），在新任务中调用 `$iphone-use`。同时安装了两种形式时，用插件的命名空间调用避免混淆。明确选择源码流程时，前置检查支持 `--source`，连接使用已提供的签名 `.xctestrun`。
 
 在 `open/tap/swipe/type/press` 后添加 `--observe`，即可返回包含独立 `action` 与 `observation` 回执的单个 JSON。两者均成功才退出 0；观察失败不会覆盖动作结果或重放输入。明确未派发且无需刷新时跳过观察。客户端顺序调用既有协议，兼容旧宿主，但不在两次请求之间独占设备。读取 `observation.result.text` 和其中的 `screenshot` 后再选择下一动作。详见[契约与示例](docs/actions.md#动作后观察)。
@@ -238,13 +240,13 @@ iPhone-use 处于早期开发阶段。真机验收覆盖上述实测环境，不
 ```sh
 swift test
 python3 -m unittest discover -s scripts/tests -v
-node --test scripts/tests/test_agent_templates.mjs
+node --test scripts/tests/test_dsh_plugin.mjs scripts/tests/test_agent_templates.mjs
 python3 scripts/sync-plugin.py --check
 ```
 
 Python 3.9+ 仅用于发布工具和开发测试，不是已安装 CLI 的运行依赖。按上述顺序执行：CLI 集成测试使用 Swift 构建生成的 `.build/debug/iphone-use`，缺失时会跳过。唯一 Swift 包依赖为 [Swift ArgumentParser](https://github.com/apple/swift-argument-parser/tree/1.5.0)，锁定版本 `1.5.0`。
 
-CI 使用 Node.js 22+ 将文档中的调用模板用于受控工具响应；Node 仅为开发测试所需。修改 canonical skill 后运行 `python3 scripts/sync-plugin.py` 更新包内副本；发布变更时同步提升两份插件清单版本。CI 还会无签名编译 Runner，并打包插件供审阅。官网源码、测试和 Cloudflare 部署独立维护于 [iphone-use-website](https://github.com/HughLee824/iphone-use-website)。具体命令和真机验收要求见[公开接入发布检查](docs/public-access-release.md)。
+CI 使用 Node.js 22+ 将文档中的调用模板用于受控工具响应；Node 仅为开发测试所需。修改 canonical skill 后运行 `python3 scripts/sync-plugin.py` 更新包内副本；发布变更时同步提升三份插件清单版本。CI 还会无签名编译 Runner，并打包插件供审阅。官网源码、测试和 Cloudflare 部署独立维护于 [iphone-use-website](https://github.com/HughLee824/iphone-use-website)。具体命令和真机验收要求见[公开接入发布检查](docs/public-access-release.md)。
 
 CI 没有真实 iPhone。涉及设备行为的改动还需重新构建 Runner，并在真机验证受影响流程。问题报告应包含 Mac/Xcode/iOS 版本、复现步骤、预期行为和相关错误。分享日志前移除私人画面内容、provisioning profile 和签名资料。修改公共使用说明时，请同步更新中英文 README。新增文件请遵循[目录约定](docs/architecture.md#repository-layout)，本地实验和设备记录不进入 Git。
 

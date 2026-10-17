@@ -1,0 +1,23 @@
+{
+  "name": "dsh-iphone-use",
+  "version": "0.1.10",
+  "description": "Observe and operate a connected physical iPhone with the iPhone-use CLI.",
+  "type": "module",
+  "main": "deepseek.js",
+  "exports": {
+    ".": "./deepseek.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./skills/iphone-use/assets/iphone-use-mark.svg"
+  },
+  "files": ["deepseek.js", "cordis.patch.yml", "locale/*.json", "skills/", "README.md", "LICENSE"],
+  "engines": { "dsh": ">=0.2.1-rc.1 <0.3.0" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "homepage": "https://iphone-use.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HughLee824/iphone-use.git",
+    "directory": "plugins/iphone-use"
+  },
+  "license": "MIT",
+  "keywords": ["dsh-plugin", "iphone", "ios", "automation"]
+}

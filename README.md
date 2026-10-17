@@ -150,6 +150,8 @@ claude plugin install iphone-use@iphone-use
 
 Start a new client session and invoke `$iphone-use:iphone-use` in Codex or `/iphone-use:iphone-use` in Claude Code. Follow [the first-task guide](docs/first-task.md) for Xcode, signing, setup, verification, and upgrades. The plugin contains shared device rules, a read-only prerequisite check, [Codex call templates](skills/iphone-use/references/codex-calls.md), and [Claude Code Bash/Read instructions](skills/iphone-use/references/claude-code.md). It does not install the CLI or prepare signing. Distribution through this project's marketplace is separate from an official-directory listing.
 
+DeepSeek Harness can use the `dsh-iphone-use` bundle in the same package, reusing this skill. In Add plugin, enter `dsh-iphone-use` or `https://github.com/HughLee824/iphone-use`; see [Harness installation and validation scope](docs/plugins.md#deepseek-harness-安装).
+
 Manual skill installation remains available: copy the entire `skills/iphone-use` folder into your client's skill directory (for Codex, `$CODEX_HOME/skills` or `~/.codex/skills`) and invoke `$iphone-use` in a new task. Use the plugin's namespaced invocation if both copies are present. For an explicitly selected source workflow, the prerequisite check accepts `--source`; only Runner needs signing. For a supplied local prerelease package, use `--candidate` and set `IPHONE_USE_CLI` to its exact executable path.
 
 Add `--observe` to `open`, `tap`, `swipe`, `type`, or `press` to return one JSON object containing separate `action` and `observation` responses. Exit code zero requires both to succeed; an observation failure never overwrites the action's outcome or replays input. A confirmed rejection without a refresh requirement skips observation. This client-side sequence uses the existing host protocol, including older hosts; it does not reserve the device between requests. Read `observation.result.text` and its `screenshot` before choosing the next input. See [the contract and examples](docs/actions.md#动作后观察).
@@ -241,13 +243,13 @@ Run the same checks configured in [CI](.github/workflows/ci.yml):
 ```sh
 swift test
 python3 -m unittest discover -s scripts/tests -v
-node --test scripts/tests/test_agent_templates.mjs
+node --test scripts/tests/test_dsh_plugin.mjs scripts/tests/test_agent_templates.mjs
 python3 scripts/sync-plugin.py --check
 ```
 
 Python 3.9+ is used for release tooling and development tests, not the installed CLI runtime. Run the commands in the order shown: CLI integration tests use `.build/debug/iphone-use` from the Swift build and are skipped when it is absent. The only Swift package dependency is [Swift ArgumentParser](https://github.com/apple/swift-argument-parser/tree/1.5.0), pinned to `1.5.0`.
 
-Node.js 22+ runs the documented call templates against controlled tool responses in CI; it is only needed for development tests. After changing the canonical skill, run `python3 scripts/sync-plugin.py` to update its packaged copy and bump both plugin manifest versions when releasing changed instructions. CI also compiles the Runner without signing and packages the plugin for review. Website source, tests and Cloudflare deployment are maintained separately in [iphone-use-website](https://github.com/HughLee824/iphone-use-website). See [public-access release checks](docs/public-access-release.md) for the exact commands and hardware acceptance requirements.
+Node.js 22+ runs the documented call templates against controlled tool responses in CI; it is only needed for development tests. After changing the canonical skill, run `python3 scripts/sync-plugin.py` to update its packaged copy and bump all three plugin manifest versions when releasing changed instructions. CI also compiles the Runner without signing and packages the plugin for review. Website source, tests and Cloudflare deployment are maintained separately in [iphone-use-website](https://github.com/HughLee824/iphone-use-website). See [public-access release checks](docs/public-access-release.md) for the exact commands and hardware acceptance requirements.
 
 CI does not have a physical iPhone. For device-facing changes, also build a fresh Runner and verify the affected workflow on hardware. Include Mac/Xcode/iOS versions, reproduction steps, expected behavior, and relevant errors in reports. Remove private screen content, provisioning profiles, and signing material before sharing logs. Keep the English and Chinese READMEs in sync when changing shared instructions. Follow the [repository layout](docs/architecture.md#repository-layout) when adding files; local experiments and device records stay outside Git.
 

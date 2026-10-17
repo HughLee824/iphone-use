@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "iPhone-use",
+    "description": "观察并操作连接的真实 iPhone。需要在连接设备的 Mac 上安装 iPhone-use CLI 和 Xcode。"
+  }
+}

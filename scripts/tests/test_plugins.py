@@ -29,6 +29,8 @@ class PluginPackageTests(unittest.TestCase):
         manifests = [json.loads((PLUGIN / directory / "plugin.json").read_text())
                      for directory in (".codex-plugin", ".claude-plugin")]
         self.assertEqual(manifests[0]["version"], manifests[1]["version"])
+        deepseek = json.loads((PLUGIN / "package.json").read_text())
+        self.assertEqual(deepseek["version"], manifests[0]["version"])
         for manifest in manifests:
             self.assertEqual(manifest["name"], PLUGIN.name)
             self.assertEqual(manifest["skills"], "./skills/")
@@ -37,6 +39,17 @@ class PluginPackageTests(unittest.TestCase):
         self.assertIn(f'Workflow version: **{manifests[0]["version"]}**',
                       (PLUGIN / "skills/iphone-use/SKILL.md").read_text())
         sync_plugin.sync(check=True)
+        sync_plugin.sync_repository_manifest(check=True)
+
+    def test_repository_bundle_points_to_the_same_packaged_resources(self):
+        manifest = json.loads((ROOT / "package.json").read_text())
+        self.assertEqual(manifest, sync_plugin.repository_manifest())
+        self.assertEqual(manifest["name"], "dsh-iphone-use")
+        for reference in [manifest["main"], manifest["dsh"]["bundle"]["patch"],
+                          manifest["exports"]["./icon"]]:
+            resolved = (ROOT / reference).resolve()
+            self.assertTrue(resolved.is_relative_to(PLUGIN))
+            self.assertTrue(resolved.is_file())
 
     def test_archive_is_reproducible_and_usable_after_relocation(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -57,6 +70,11 @@ class PluginPackageTests(unittest.TestCase):
                 bundle.extractall(output / "relocated")
             relocated = (output / "relocated/iphone-use").resolve()
             self.assertTrue((relocated / "LICENSE").is_file())
+            deepseek = json.loads((relocated / "package.json").read_text())
+            self.assertEqual(deepseek["name"], "dsh-iphone-use")
+            for relative in [deepseek["main"], deepseek["dsh"]["bundle"]["patch"],
+                             deepseek["exports"]["./icon"], "locale/en.json", "locale/zh.json"]:
+                self.assertTrue((relocated / relative).is_file(), relative)
             self.assertTrue((relocated / "skills/iphone-use/scripts/preflight.sh").is_file())
             interface = json.loads((relocated / ".codex-plugin/plugin.json").read_text())["interface"]
             for field in ("logo", "logoDark", "composerIcon", "composerIconDark"):

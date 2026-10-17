@@ -1,11 +1,11 @@
-# Codex / Claude Code 插件
+# Codex / Claude Code / DeepSeek Harness 插件
 
-> CLI / Homebrew 0.3.3 已发布，0.3.4 仍为发布草稿。本分支准备插件 0.1.9，将两种模式的动态页面操作指引纳入独立版本，避免沿用 0.1.8 的客户端缓存。动态目标/锚点选项要求 CLI 和 Runner 0.3.4；既有正式版附件不变。
+> CLI / Homebrew 0.3.3 已发布，0.3.4 仍为发布草稿。插件 0.1.10 新增 DeepSeek Harness bundle，并保留 0.1.9 的动态页面操作指引。动态目标/锚点选项要求 CLI 和 Runner 0.3.4；既有正式版附件不变。DeepSeek 的安装验收与模型驱动的真机任务验收分别记录，后者仍待完成。
 
 
 [公开网站](https://iphone-use.com) → [安装 CLI](install.md) → 安装本页插件 → [选择模式并连接](first-task.md#connect-in-standard-mode) → 首个真机任务。完整英文路径见 [First task](first-task.md)。
 
-插件是 **CLI + skill** 封装，共用设备操作契约，分别适配 Codex 的命令执行、后台续读和图片工具，以及 Claude Code 的 Bash、TaskOutput 和 Read。它不含 CLI、不创建开发签名、不自动接入手机，也不要求 MCP 服务。
+插件是 **CLI + skill** 封装，共用设备操作契约，分别适配 Codex 的命令执行、后台续读和图片工具，Claude Code 的 Bash、TaskOutput 和 Read，以及 DeepSeek Harness 的 bash、job_output 和 read_image。它不含 CLI、不创建开发签名、不自动接入手机，也不要求 MCP 服务。
 
 ## 先检查环境
 
@@ -53,6 +53,43 @@ claude plugin list --json
 
 添加 marketplace 时使用整个 Git 仓库或本地根目录，不使用 GitHub raw JSON 地址：单独下载索引不会携带相对路径下的插件文件。
 
+## DeepSeek Harness 安装
+
+使用官方 [bundle 打包与安装机制](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.md)：`package.json` 声明 `dsh.bundle.patch`，`cordis.patch.yml` 插入 skill 插件，插件通过 `ctx.skills.register` 注册共用的 `iphone-use`。包内 JavaScript 可直接运行，无 npm 依赖、构建步骤或安装脚本。官方 [skill 接口](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/skills.md)提供资源根路径和卸载生命周期。
+
+当前适配目标为 **DeepSeek Harness 0.2.1-rc.1**，清单声明 `>=0.2.1-rc.1 <0.3.0`；其他版本仍需验证。先安装 CLI，并确认 Harness 的 shell 与图片读取工具都运行在连接 iPhone 的 Mac 上。
+
+在 **Add plugin** 输入框填写以下任意一项，两种来源安装的是同名插件，选一种即可：
+
+| 安装来源 | 输入内容 |
+| --- | --- |
+| Package name（选择 Official npm registry） | `dsh-iphone-use` |
+| GitHub repository address | `https://github.com/HughLee824/iphone-use` |
+
+终端对应命令如下。桌面应用使用 `desktop` profile，Web 用户换成自己的 `web` profile：
+
+```sh
+# npm 包名
+dsh plugin --profile desktop add dsh-iphone-use
+
+# 或直接使用 GitHub 仓库地址
+dsh plugin --profile desktop add https://github.com/HughLee824/iphone-use
+
+dsh --profile desktop --dump-config
+```
+
+若桌面安装尚未将 `dsh` 加入 PATH，可将上面的 `dsh` 替换为 `"/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"`。使用当前桌面 runtime 附带的 CLI，避免另一个版本的 `npx` 命令管理同一 profile。
+
+仓库根目录的 `package.json` 直接暴露现有 `plugins/iphone-use` bundle，无需子目录参数、额外仓库、安装脚本或本地构建。根清单由 `scripts/sync-plugin.py` 从插件清单生成，发布的 npm 包只包含公开插件文件。Git 来源跟随仓库默认分支；需要固定版本时可指定已经存在的提交 SHA。npm 来源可用 `dsh-iphone-use@0.1.10` 固定版本。
+
+重启 Harness 并开始新会话，要求“使用 iphone-use skill 打开我的 iPhone 设置，进入通用，读图验证并断开”。注册名称为 `iphone-use`，不使用 Codex/Claude 的冒号命名空间。模型通过 `skill` 工具加载指引，截图使用 **read_image**，文本参考文件使用 **read**。完整差异见 [DeepSeek adapter](../skills/iphone-use/references/deepseek-harness.md)。
+
+本地开发仍可安装 `./plugins/iphone-use`，该方式链接到 checkout，须保留目录；独立 ZIP 解压后的 `iphone-use` 目录也可安装。npm 发布从仓库根目录执行，先运行 `python3 scripts/sync-plugin.py --check`、测试与 `npm pack --ignore-scripts`，核对包内文件后发布同一 tarball。
+
+更新第三方插件时，先在 Plugin Manager 卸载，再通过原来源重装；或使用 `dsh plugin --profile desktop remove dsh-iphone-use` 后执行对应安装命令，再重启 Harness。这些操作只管理插件，不卸载 CLI。
+
+2026-10-17 本地验证：使用桌面版附带的 Harness 0.2.1-rc.1，在隔离的 `DSH_HOME` 中分别安装本地目录与 npm tarball，`--dump-config` 确认插件层；使用真实 Cordis 和 SkillRegistry 验证迁移后的包可注册、加载并卸载 skill，参考文件仍从包内解析。npm 文件清单、ZIP 自包含与可复现检查已通过。这不包含模型驱动的真机操作或 Plugin Manager 图标的视觉验收。
+
 ## 首个任务
 
 先按[设备准备](first-task.md#before-you-start)完成信任和解锁，在新会话调用上述 skill。标准模式直接发现设备并连接；Runner 才按提示 setup。可发送：
@@ -65,7 +102,7 @@ claude plugin list --json
 
 ## 默认实时预览
 
-两端共用同一份生命周期：任务所属会话连接成功后，在首次操作前默认启动一次预览。**Codex 执行 `preview --no-open`，再在内置浏览器打开返回的 URL；Claude Code 执行 `preview`，由 CLI 打开 Mac 默认浏览器。**不改变 CLI `connect` 本身，standard 和 runner 行为一致。
+三个客户端共用同一份生命周期：任务所属会话连接成功后，在首次操作前默认启动一次预览。**Codex 执行 `preview --no-open`，再在内置浏览器打开返回的 URL；Claude Code 和 DeepSeek Harness 执行 `preview`，由 CLI 打开 Mac 默认浏览器。**不改变 CLI `connect` 本身，standard 和 runner 行为一致。
 
 - 明确说“不要预览”“不要打开浏览器”即可跳过服务启动和开页，该选择在本任务重连后仍有效；不会写入全局偏好。
 - 按 session ID 记录启动尝试和 URL，后台命令只续读、不重跑。复用会话时若已有预览，直接复用；后续操作或新一轮对话不再次开页。用户关闭页面后也不自动重开。
@@ -78,7 +115,7 @@ claude plugin list --json
 
 ## 升级生效与卸载
 
-新插件身份为 `iphone-use@iphone-use`。启用前停用旧 AgentSoma 插件，避免同一手机任务重复匹配；若曾另行安装 `~/.codex/skills/agentsoma`，还需在 Codex 的技能配置中单独停用这份独立 skill，插件停用不会影响它；确认新插件可用后再按需移除旧插件。CLI 与插件版本号独立：CLI / Homebrew 当前正式版为 0.3.3，0.3.4 草稿配套的插件候选版本为 0.1.9。只升级 Homebrew 不会更新插件。两端更新插件后需开始新会话，确认安装缓存中的 workflow version 为 0.1.9，并包含 `dynamic_or_transitioning` 和 `--dynamic-target` 指引。旧会话不会自动替换已加载的 skill；不要修改已发布版本的附件。
+新插件身份为 `iphone-use@iphone-use`。启用前停用旧 AgentSoma 插件，避免同一手机任务重复匹配；若曾另行安装 `~/.codex/skills/agentsoma`，还需在 Codex 的技能配置中单独停用这份独立 skill，插件停用不会影响它；确认新插件可用后再按需移除旧插件。CLI 与插件版本号独立：CLI / Homebrew 当前正式版为 0.3.3，0.3.4 草稿配套的插件候选版本为 0.1.10。只升级 Homebrew 不会更新插件。各端更新插件后需开始新会话，确认安装缓存中的 workflow version 为 0.1.10，并包含 `dynamic_or_transitioning` 和 `--dynamic-target` 指引。旧会话不会自动替换已加载的 skill；不要修改已发布版本的附件。
 
 先断开活跃设备会话，再 `brew update` / `brew upgrade iphone-use`。插件另外更新：
 
@@ -94,7 +131,7 @@ claude plugin update iphone-use@iphone-use
 
 以上更新命令适用于跟随默认分支的 Git 来源。若曾固定 `v0.2.0` 标签，更新仍会留在该标签：Codex CLI 0.146.0 需要先 `codex plugin marketplace remove iphone-use`，再 `codex plugin marketplace add HughLee824/iphone-use`；Claude Code 2.1.250 可再次 `claude plugin marketplace add HughLee824/iphone-use` 切回默认分支。然后执行上面的更新命令。此处更换 Codex marketplace 来源会保留已安装插件，不是卸载插件。
 
-重开客户端会话，核对安装缓存中 SKILL.md 的 workflow version，而非只看开发目录。发布方修改 skill/adapter 时必须同步两份清单版本；Claude 的版本缓存尤其需要版本号变化。正式包的 Runner 变化或签名过期时按 CLI 提示重新 setup。
+重开客户端会话，核对安装缓存中 SKILL.md 的 workflow version，而非只看开发目录。发布方修改 skill/adapter 时必须同步三份客户端清单版本，再运行同步脚本更新仓库根清单；Claude 的版本缓存尤其需要版本号变化。正式包的 Runner 变化或签名过期时按 CLI 提示重新 setup。
 
 卸载插件：`codex plugin remove iphone-use@iphone-use` / `claude plugin uninstall iphone-use@iphone-use`。若不再使用项目 marketplace，再分别 `codex plugin marketplace remove iphone-use` / `claude plugin marketplace remove iphone-use`。这些操作不卸载 CLI、不删除签名资料。
 
@@ -106,17 +143,28 @@ canonical skill 位于 `skills/iphone-use/`；已提交的自包含副本位于 
 python3 scripts/sync-plugin.py
 python3 scripts/sync-plugin.py --check
 python3 -m unittest discover -s scripts/tests -v
-node --test scripts/tests/test_agent_templates.mjs
+node --test scripts/tests/test_dsh_plugin.mjs scripts/tests/test_agent_templates.mjs
 ```
 
-`--check` 在副本有遗漏或漂移时失败。直接安装 Git 仓库时客户端无需 Python 或 Node；它们仅用于开发验证。生成独立 ZIP 和校验文件：
+`--check` 在副本有遗漏或漂移时失败。Codex/Claude 的 Git 插件安装不需要额外的 Python 或 Node；DeepSeek 使用 Harness 自带的 JavaScript runtime。生成独立 ZIP 和校验文件：
 
 ```sh
 python3 scripts/sync-plugin.py --archive .build/plugins
 ```
 
-本地安装使用**仓库根目录**：`codex plugin marketplace add /absolute/path/to/iphone-use` 或 `claude plugin marketplace add /absolute/path/to/iphone-use`，随后执行对应安装命令。Claude 也支持 `claude --plugin-dir /absolute/path/to/iphone-use/plugins/iphone-use` 或解压后的自包含目录。
+Codex/Claude 本地 marketplace 安装使用**仓库根目录**：`codex plugin marketplace add /absolute/path/to/iphone-use` 或 `claude plugin marketplace add /absolute/path/to/iphone-use`，随后执行对应安装命令。Claude 也支持 `claude --plugin-dir /absolute/path/to/iphone-use/plugins/iphone-use` 或解压后的自包含目录。DeepSeek 安装的是 `plugins/iphone-use` 包目录。
 
-独立 ZIP 可包含两份客户端清单、README、MIT LICENSE 和完整 skill。不要将插件目录外的共享文件或软链接当成已打包依赖。正式发布验收必须再从公开 Git 源安装、运行任务并确认升级，不能用 `--plugin-dir` 成功代替 marketplace 分发验收。
+`test_dsh_plugin.mjs` 默认执行不依赖 Harness 的单元与 npm 打包检查。可用 `DSH_RUNTIME_MODULES` 指向 Harness 的 `node_modules`，额外运行真实 registry 集成测试；桌面包位于 ASAR 内，需要它自己的 Electron runtime 读取：
+
+```sh
+ELECTRON_RUN_AS_NODE=1 \
+DSH_RUNTIME_MODULES='/Applications/DeepSeek Harness.app/Contents/Resources/app.asar/dsh/node_modules' \
+'/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness' \
+  --test scripts/tests/test_dsh_plugin.mjs
+```
+
+该测试使用临时插件副本，不连接设备或启动模型，也不修改用户 profile。
+
+独立 ZIP 包含 Codex/Claude 清单、DeepSeek 的 package.json、patch、注册入口与中英文显示元数据、README、MIT LICENSE 和完整 skill。不要将插件目录外的共享文件或软链接当成已打包依赖。正式发布验收必须覆盖各客户端的实际分发渠道、任务和升级，不能用本地加载成功代替公开分发验收。
 
 本阶段使用项目自有公开 Git marketplace；没有宣称已进入 Codex 或 Claude 官方目录。目录提交是另外的发布事项。

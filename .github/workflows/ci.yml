@@ -56,7 +56,7 @@ jobs:
           IPHONE_USE_HOST_MANAGED=1 IPHONE_USE_SESSION_TOKEN=00000000000000000000000000000000 \
             .build/runner-startup-unsupported-tests unsupported
       - run: python3 -m unittest discover -s scripts/tests -v
-      - run: node --test scripts/tests/test_agent_templates.mjs scripts/tests/test_preview_metrics.mjs
+      - run: node --test scripts/tests/test_dsh_plugin.mjs scripts/tests/test_agent_templates.mjs scripts/tests/test_preview_metrics.mjs
       - name: Compile the iPhone Runner without signing
         run: |
           xcodebuild build-for-testing \

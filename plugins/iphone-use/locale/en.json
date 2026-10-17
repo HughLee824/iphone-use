@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "iPhone-use",
+    "description": "Observe and operate a connected iPhone. Requires the iPhone-use CLI and Xcode on the device-connected Mac."
+  }
+}

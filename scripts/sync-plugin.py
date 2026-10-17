@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Copy the canonical skill into the self-contained, dual-client plugin."""
+"""Copy the canonical skill into the self-contained client plugin bundle."""
 
 import argparse
 import hashlib
@@ -11,6 +11,28 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugins/iphone-use"
+
+
+def repository_manifest():
+    """Expose the same bundle at the Git repository/npm package root."""
+    manifest = json.loads((PLUGIN / "package.json").read_text())
+    prefix = "./plugins/iphone-use/"
+    manifest["main"] = prefix + manifest["main"].removeprefix("./")
+    manifest["exports"] = {key: prefix + value.removeprefix("./")
+                           for key, value in manifest["exports"].items()}
+    manifest["dsh"]["bundle"]["patch"] = prefix + manifest["dsh"]["bundle"]["patch"].removeprefix("./")
+    manifest["files"] = ["plugins/iphone-use/" + path for path in manifest["files"] if path != "LICENSE"] + ["LICENSE"]
+    manifest["repository"].pop("directory", None)
+    return manifest
+
+
+def sync_repository_manifest(check=False):
+    target = ROOT / "package.json"
+    expected = json.dumps(repository_manifest(), ensure_ascii=False, indent=2) + "\n"
+    if not target.is_file() or target.read_text() != expected:
+        if check:
+            raise ValueError("Repository package.json is stale. Run python3 scripts/sync-plugin.py.")
+        target.write_text(expected)
 
 
 def expected_files():
@@ -46,13 +68,17 @@ def sync(check=False):
 def archive(output):
     codex = json.loads((PLUGIN / ".codex-plugin/plugin.json").read_text())
     claude = json.loads((PLUGIN / ".claude-plugin/plugin.json").read_text())
+    deepseek = json.loads((PLUGIN / "package.json").read_text())
     version = codex["version"]
-    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version) or version != claude["version"]:
-        raise ValueError("Both plugin manifests must have the same stable semantic version")
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version) or any(
+            manifest["version"] != version for manifest in (claude, deepseek)):
+        raise ValueError("All plugin manifests must have the same stable semantic version")
     output.mkdir(parents=True, exist_ok=True)
     target = output / f"iphone-use-plugin-{version}.zip"
     # Explicit public package roots. Never archive the source checkout or local evidence.
-    files = [PLUGIN / path for path in (".codex-plugin/plugin.json", ".claude-plugin/plugin.json", "README.md", "LICENSE")]
+    files = [PLUGIN / path for path in (".codex-plugin/plugin.json", ".claude-plugin/plugin.json",
+                                       "package.json", "deepseek.js", "cordis.patch.yml", "README.md", "LICENSE")]
+    files.extend(sorted((PLUGIN / "locale").glob("*.json")))
     files.extend(sorted(path for path in (PLUGIN / "skills").rglob("*") if path.is_file()))
     with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
         for path in files:
@@ -73,6 +99,7 @@ def main():
     parser.add_argument("--archive", type=Path, help="Write a reproducible ZIP and SHA-256 file after checking the bundle")
     args = parser.parse_args()
     sync(check=args.check or args.archive is not None)
+    sync_repository_manifest(check=args.check or args.archive is not None)
     if args.archive:
         archive(args.archive)
     else:

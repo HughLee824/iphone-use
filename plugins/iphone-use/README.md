@@ -1,9 +1,9 @@
 # iPhone-use plugin
 
-> CLI 0.3.3 is public. CLI 0.3.4 and plugin 0.1.9 are release candidates. Plugin 0.1.9 carries the dynamic-page workflow for both modes; the bounded dynamic target/anchor options require CLI and Runner 0.3.4. Existing published release assets are unchanged.
+> CLI 0.3.3 is public. CLI 0.3.4 remains a release candidate. Plugin 0.1.10 adds a DeepSeek Harness bundle; its agent-driven iPhone task acceptance is pending. Plugin 0.1.9 carries the dynamic-page workflow for both modes; the bounded dynamic target/anchor options require CLI and Runner 0.3.4. Existing published release assets are unchanged.
 
 
-Eyes and hands for agents operating a real iPhone. This self-contained package supports **Codex** and **Claude Code** through one skill and two client adapters. For new installations, use the published iPhone-use CLI **0.3.3**, full Xcode on a Mac, and a trusted, unlocked iPhone with Developer Mode. Only Runner mode requires local Apple development signing; standard mode needs no Runner setup. See the first-task guide for the currently validated macOS/iOS environment.
+Eyes and hands for agents operating a real iPhone. This self-contained package supports **Codex**, **Claude Code**, and **DeepSeek Harness** through one shared skill and client adapters. For new installations, use the published iPhone-use CLI **0.3.3**, full Xcode on a Mac, and a trusted, unlocked iPhone with Developer Mode. Only Runner mode requires local Apple development signing; standard mode needs no Runner setup. See the first-task guide for the currently validated macOS/iOS environment.
 
 [Website](https://iphone-use.com) · [First task](https://github.com/HughLee824/iphone-use/blob/main/docs/first-task.md) · [中文安装指南](https://github.com/HughLee824/iphone-use/blob/main/docs/plugins.md)
 
@@ -27,8 +27,26 @@ Disable the old AgentSoma plugin before enabling iPhone-use to avoid duplicate d
 
 For offline/local authoring, Claude Code can load this folder with `claude --plugin-dir /absolute/path/to/iphone-use`. Codex installs from a marketplace root containing this folder; see the first-task guide. Public distribution is through the project's own Git marketplace. This is not an official directory listing.
 
+## DeepSeek Harness
+
+This package targets Harness 0.2.1-rc.1 (`engines.dsh`: `>=0.2.1-rc.1 <0.3.0`). It uses the official [bundle format](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.md) and skill registry; no build or installation scripts are needed.
+
+In **Add plugin**, enter either **`dsh-iphone-use`** (Official npm registry) or **`https://github.com/HughLee824/iphone-use`**. Both sources install the same named bundle. CLI equivalents:
+
+```sh
+# Use your actual profile: desktop for the desktop app, web for the Web UI.
+dsh plugin --profile desktop add dsh-iphone-use
+# Or install from GitHub:
+dsh plugin --profile desktop add https://github.com/HughLee824/iphone-use
+dsh --profile desktop --dump-config
+```
+
+If the desktop CLI is not on PATH, use `/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh`. Restart Harness, start a new session, and ask it to use the `iphone-use` skill for the Settings task above. Read [the Harness adapter](skills/iphone-use/references/deepseek-harness.md) for `bash`, `job_output`, and `read_image` behavior. The shell and image reader must access the device-connected Mac.
+
+The repository root exposes this same bundle through a generated `package.json`, so GitHub installation needs no subdirectory suffix. npm releases are packed and published from the repository root. Local development can still install this directory or a `.tgz`; linked directories must remain in place. To update, remove `dsh-iphone-use`, install again from the chosen source, and restart Harness. Uninstall with `dsh plugin --profile desktop remove dsh-iphone-use`.
+
 The control path runs locally on the Mac and iPhone. The selected AI client's model may receive screenshots and UI text under that client's data settings. Review what is visible before asking it to work with private apps.
 
-With plugin 0.1.8, after a successful connection the agent starts one local preview per task-owned session in either mode, using the built-in browser in Codex (`preview --no-open` followed by one in-app open) and the Mac default browser in Claude Code (`preview`). Codex without an in-app browser tool returns the URL without opening a system browser. Say “no preview” or “do not open a browser” to skip both service startup and page opening. Existing previews and prior attempts are reused rather than reopened. Older CLIs without preview keep the phone-control workflow. Preview failure is reported without retry loops or blocking otherwise-ready control. At task end, disconnect stops the owned preview/media; an inactive browser tab can remain when no exact tab handle is available. Preview does not replace the agent's screenshot and reference checks.
+With plugin 0.1.8, after a successful connection the agent starts one local preview per task-owned session in either mode, using the built-in browser in Codex (`preview --no-open` followed by one in-app open) and the Mac default browser in Claude Code and DeepSeek Harness (`preview`). Codex without an in-app browser tool returns the URL without opening a system browser. Say “no preview” or “do not open a browser” to skip both service startup and page opening. Existing previews and prior attempts are reused rather than reopened. Older CLIs without preview keep the phone-control workflow. Preview failure is reported without retry loops or blocking otherwise-ready control. At task end, disconnect stops the owned preview/media; an inactive browser tab can remain when no exact tab handle is available. Preview does not replace the agent's screenshot and reference checks.
 
-Plugin 0.1.9 must be installed separately from a CLI upgrade. Update the marketplace and plugin, then start a new client session and verify workflow version 0.1.9 in the installed skill. See the [upgrade guide](https://github.com/HughLee824/iphone-use/blob/main/docs/plugins.md#升级生效与卸载). A changing video frame is usable evidence; follow the scoped controls and fresh-image checks in the skill instead of terminating the app to recover.
+Plugin 0.1.10 must be installed separately from a CLI upgrade. Update the marketplace and plugin, then start a new client session and verify workflow version 0.1.10 in the installed skill. See the [upgrade guide](https://github.com/HughLee824/iphone-use/blob/main/docs/plugins.md#升级生效与卸载). A changing video frame is usable evidence; follow the scoped controls and fresh-image checks in the skill instead of terminating the app to recover.

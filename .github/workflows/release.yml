@@ -40,7 +40,7 @@ jobs:
           swift --version
       - run: swift test
       - run: python3 -m unittest discover -s scripts/tests -v
-      - run: node --test scripts/tests/test_agent_templates.mjs
+      - run: node --test scripts/tests/test_dsh_plugin.mjs scripts/tests/test_agent_templates.mjs
       - name: Validate and package the client plugin
         run: |
           python3 scripts/sync-plugin.py --check
@@ -153,7 +153,7 @@ jobs:
 
           ## Installation
 
-          Download the tar.gz and its .sha256 file together. Installation and iPhone setup instructions are in the package README and repository docs/install.md. The separate iphone-use-plugin ZIP contains both client manifests and the complete skill; it does not contain the CLI or signed Runner. Follow docs/first-task.md for public marketplace installation and the first iPhone task in each client.
+          Download the tar.gz and its .sha256 file together. Installation and iPhone setup instructions are in the package README and repository docs/install.md. The separate iphone-use-plugin ZIP contains Codex/Claude manifests, the DeepSeek Harness bundle, and the complete skill; it does not contain the CLI or signed Runner. Follow docs/plugins.md for each client installation path and docs/first-task.md for the first iPhone task.
 
           Both modes require full Xcode. Standard mode currently requires macOS/iOS 27 and does not need Runner setup or development signing. Optional Runner mode requires your own Apple development certificate, private key and matching provisioning profile; setup re-signs the precompiled Runner locally. Free Personal Team onboarding and renewal are not yet validated. The Mac CLI is ad-hoc signed, without Developer ID signing or notarization.
 
