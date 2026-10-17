@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 const root = new URL('../../', import.meta.url);
@@ -23,6 +25,41 @@ const resume = sectionBlock(codexCalls, 'Continue only if pending');
 const readObservation = sectionBlock(codexCalls, 'Only if image reading failed');
 const [combined] = blocks('skills/iphone-use/references/action-observation.md');
 const session = 'test-session';
+
+test('Harness result capture preserves full JSON, stderr and nonzero status without replay', () => {
+  const document = readFileSync(new URL('skills/iphone-use/references/deepseek-harness.md', root), 'utf8');
+  const template = document.match(/```sh\n([\s\S]*?)```/)[1];
+  const directory = mkdtempSync(join(tmpdir(), 'harness-result-test-'));
+  try {
+    const command = join(directory, 'iphone-use');
+    writeFileSync(command, '#!/bin/sh\nprintf x >> "$TEST_CALLS"\ncat "$TEST_REPLY"\nprintf "fixture stderr\\n" >&2\nexit "$TEST_STATUS"\n', {mode: 0o700});
+    for (const outcome of ['completed', 'not_dispatched', 'unknown']) {
+      for (const observationOK of [true, false]) {
+        const payload = {action: {outcome}, agentSummary: {outcome, comparison: {accepted: outcome === 'completed'}},
+          observation: {ok: observationOK, result: {screenshot: '/fixture/current.png', text: '界面'.repeat(3000)}}};
+        const json = JSON.stringify(payload);
+        const replyPath = join(directory, 'fixture.json');
+        const callsPath = join(directory, 'calls');
+        writeFileSync(replyPath, json);
+        writeFileSync(callsPath, '');
+        const status = outcome === 'completed' ? 0 : 1;
+        const execution = spawnSync('/bin/sh', ['-eu', '-c', template], {encoding: 'utf8', env: {
+          ...process.env, PATH: `${directory}:${process.env.PATH}`, TMPDIR: directory,
+          TEST_REPLY: replyPath, TEST_CALLS: callsPath, TEST_STATUS: String(status)
+        }});
+        assert.equal(execution.status, status);
+        assert.equal(readFileSync(callsPath, 'utf8'), 'x');
+        assert.equal(execution.stderr, 'fixture stderr\n');
+        const savedPath = execution.stdout.match(/\niphone_use_result=(.+)\n$/)[1];
+        assert.equal(execution.stdout.slice(0, json.length), json);
+        assert.deepEqual(JSON.parse(readFileSync(savedPath, 'utf8')), payload);
+        assert.equal(statSync(savedPath).mode & 0o777, 0o600);
+      }
+    }
+  } finally {
+    rmSync(directory, {recursive: true, force: true});
+  }
+});
 const observed = {exit_code: 0, output: 'observation=o2 refs=current\nscreenshot="/fixture/screen.png"\n'};
 function memory(initial) {
   const values = new Map([['iphone-use.execution', initial]]);

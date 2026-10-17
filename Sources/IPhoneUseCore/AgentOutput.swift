@@ -75,7 +75,11 @@ public enum AgentOutput {
             if details["preInputDeadlineExceeded"] as? Bool == true || errorCode == "input_preflight_timeout" {
                 summary["recoveryHint"] = "Input was not sent because execution-time validation exceeded its budget, not because the Agent took too long to think. Inspect the current observation and timing diagnostics; do not loop on an unchanged timeout."
             } else if ["stale_observation", "screen_changed"].contains(errorCode ?? ""), !mismatches.isEmpty {
-                summary["recoveryHint"] = "Input was not sent because the screen comparison failed. Inspect what changed; a new observation ID alone does not fix continuous motion. Only for a visually identified video outside the target, select --ignore-rect and a gesture path whose protected neighborhoods do not overlap it. Otherwise re-plan from the changed UI or report the blocker; do not repeat the same failing strategy."
+                if (summary["comparison"] as? [String: Any])?["validationScope"] as? String == "explicit_target_and_anchor" {
+                    summary["recoveryHint"] = "Input was not sent because the dynamic target or page anchor did not match. Inspect the attached current image and dynamicMatches (target, anchor). Re-select tight bounds only if the same safe control and recognizable page landmark are visibly intact; otherwise re-plan or report the blocker. Do not loosen thresholds or repeat unchanged rectangles."
+                } else {
+                    summary["recoveryHint"] = "Input was not sent because the screen comparison failed. Inspect the attached current image; a new observation ID alone does not fix continuous motion. Only for a visually identified video, consider a coordinate tap with --dynamic-target and --dynamic-anchor for a visible safe control and a separate recognizable page landmark (target <=96x96 points, anchor <=256x96, non-overlapping, default thresholds, no ignore/protect options; not submissions, purchases or destructive actions). Alternatively, --ignore-rect may cover at most 25% of screen outside the gesture path and protected neighborhoods. If neither scoped method applies, re-plan or report the blocker; do not repeat the same failing strategy."
+                }
             }
         }
         summary["preInputDeadlineExceeded"] = details["preInputDeadlineExceeded"]
@@ -104,8 +108,22 @@ public enum AgentOutput {
     }
 
     private static func comparison(_ check: [String: Any]) -> [String: Any] {
-        var result = check.filter { ["accepted", "screenChange", "maxScreenChange", "regionChanges",
+        var result = check.filter { ["accepted", "algorithm", "validationScope", "dynamicMatches", "screenChange", "maxScreenChange", "regionChanges",
                                     "maxRegionChange", "ignoredRect", "caretRect", "caretExclusionRect", "caretObservationID"].contains($0.key) }
+        // In explicit dynamic scope, whole-screen motion is diagnostic only.
+        // Match the guard's target/anchor decision instead of applying global thresholds again.
+        if check["validationScope"] as? String == "explicit_target_and_anchor" {
+            let matches = check["dynamicMatches"] as? [Bool]
+            var reasons: [String] = []
+            if let matches, matches.count == 2 {
+                if !matches[0] { reasons.append("dynamic_target_changed") }
+                if !matches[1] { reasons.append("dynamic_anchor_changed") }
+            } else {
+                reasons.append("dynamic_match_evidence_unavailable")
+            }
+            result["mismatches"] = reasons
+            return result
+        }
         let caret = check["fieldCaretMatch"] as? Bool == true
         let temporal = check["fieldTemporalMatch"] as? Bool == true
         let appearance = check["fieldAppearanceMatch"] as? Bool == true
