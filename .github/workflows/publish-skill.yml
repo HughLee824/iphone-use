@@ -1,0 +1,88 @@
+name: Publish portable skill
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'New stable skill version already merged into main'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-portable-skill
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'HughLee824/iphone-use' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: npm
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      npm_config_registry: https://registry.npmjs.org
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Require successful main CI for this exact source commit
+        run: |
+          gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+            -f head_sha="$GITHUB_SHA" -f event=push -f per_page=1 > "$RUNNER_TEMP/ci.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          runs = json.loads((Path(os.environ['RUNNER_TEMP']) / 'ci.json').read_text())['workflow_runs']
+          if not runs or not all((
+              runs[0]['head_sha'] == os.environ['GITHUB_SHA'],
+              runs[0]['head_branch'] == 'main',
+              runs[0]['status'] == 'completed',
+              runs[0]['conclusion'] == 'success',
+          )):
+              raise SystemExit('The latest push CI for this main commit must finish successfully before publishing.')
+          PY
+      - name: Validate version and refuse an existing registry version
+        run: python3 scripts/check-skill-release.py "$VERSION"
+      - name: Check the source and installer
+        run: |
+          python3 scripts/sync-plugin.py --check
+          node --test scripts/tests/test_skill_installer.mjs
+      - name: Build and smoke-test the exact publication archive
+        run: |
+          python3 scripts/build-skill-package.py "$RUNNER_TEMP/skill-package"
+          npm pack "$RUNNER_TEMP/skill-package" --ignore-scripts --pack-destination "$RUNNER_TEMP" --json > "$RUNNER_TEMP/skill-pack.json"
+          mkdir "$RUNNER_TEMP/skill-smoke"
+          npm exec --yes --offline --ignore-scripts --package="$RUNNER_TEMP/iphone-use-skill-$VERSION.tgz" -- \
+            iphone-use-skill install --agent cursor --project "$RUNNER_TEMP/skill-smoke"
+          npm exec --yes --offline --ignore-scripts --package="$RUNNER_TEMP/iphone-use-skill-$VERSION.tgz" -- \
+            iphone-use-skill uninstall --agent cursor --project "$RUNNER_TEMP/skill-smoke"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: portable-skill-package
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/iphone-use-skill-*.tgz
+            ${{ runner.temp }}/skill-pack.json
+      - name: Publish through npm OIDC trusted publishing
+        run: npm publish "$RUNNER_TEMP/iphone-use-skill-$VERSION.tgz" --ignore-scripts --access public --provenance
+      - name: Verify registry integrity and public installation
+        run: python3 scripts/verify-skill-publication.py "$RUNNER_TEMP/skill-pack.json"
+      - name: Record the published source
+        run: |
+          {
+            echo "Published iphone-use-skill@$VERSION from $GITHUB_SHA."
+            echo 'Registry integrity and public installation passed. Physical-device acceptance is recorded separately.'
+          } >> "$GITHUB_STEP_SUMMARY"

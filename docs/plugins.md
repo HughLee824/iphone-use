@@ -141,6 +141,7 @@ OpenCode 使用 `--agent opencode`。默认安装到当前项目 `.cursor/skills
 示例：“用 runner 打开设置并进入通用，让我在电脑上看操作过程”；或“打开设置并进入通用，不要预览”。首次默认开页无需再问一次偏好，但仍遵守客户端命令权限。
 
 安装、冲突处理和 Cursor 模型驱动真机结果见[通用 skill 验收记录](universal-skill-acceptance.md)。
+维护者通过 [CI 发布流程](skill-release.md)发布新的 npm skill 版本，本机仅用于验收。
 
 ## 升级生效与卸载
 
