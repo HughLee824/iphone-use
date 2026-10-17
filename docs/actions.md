@@ -164,6 +164,7 @@ Runner 没有跨请求观察缓存、短引用、续期计时或任务策略。�
 
 | outcome | 判定 | 引用处理 |
 | --- | --- | --- |
+| prepared | touch-paste 剪贴板已准备，尚未输入文字 | 旧引用失效，读取附带新观察后操作 Paste 菜单 |
 | completed | 普通手势/文本：全部输入调用正常返回且取得足够的新观察帧；画面可以仍在变化。Home：按键完成。生命周期：目标状态已确认；均不等于业务目标达成 | 旧引用失效，agent 再 observe |
 | not_dispatched | 参数、引用或设备目标校验在任何输入 API 调用前拒绝 | 无其他失效原因时保留；若已发现目标或上下文变化则失效 |
 | unknown | 输入后未取得足够有效观察、已进入输入 API 后出错、执行事实缺失/矛盾，或丢失响应 | 旧引用失效；不重发，agent 先 observe |
@@ -196,7 +197,7 @@ Runner append 与 LF 多行的实现取舍、宿主测试和 Probe 精确字节�
 
 ## 原生文本方式与显式完成
 
-仅 `apple-native` 支持 `type oN --mode insert|replace|append --method auto|keys|paste`。省略方式使用 auto；`keys` 为最多 64 个 ASCII 的 US 键码，结果受活动输入法影响；`paste` 允许最多 4096 UTF-8 字节的整段文本，包括纯 ASCII。auto 遇到 LF/CR 即选择整段粘贴，即使正文全为 ASCII；keys 拒绝换行。LF/CR/CRLF 不裁剪或规范化，其他控制字符仍拒绝。不会在方式失败后静默改用另一通道。此处的 --method 和原生快捷键语义不适用于 Runner；Runner append 的原文拼接与替换行为见上文。
+仅 `apple-native` 支持 `type oN --mode insert|replace|append --method auto|keys|paste`。省略方式使用 auto；`keys` 为最多 64 个 ASCII 的 US 键码，结果受活动输入法影响；`paste` 允许最多 4096 UTF-8 字节的整段文本，包括纯 ASCII。auto 遇到 LF/CR 即选择整段粘贴，即使正文全为 ASCII；keys 拒绝换行。LF/CR/CRLF 不裁剪或规范化，其他控制字符仍拒绝。不会在方式失败后静默改用另一通道。此处 auto/keys/paste 和原生快捷键语义不适用于 Runner；Runner append 的原文拼接与替换行为见上文。
 
 粘贴回执中的 `result.pasteboard.transactionID` 标识当前剪贴板事务。外部 Agent 检查动作后截图并处理完粘贴确认框后，可执行 `text-finish oN --transaction ID`，核对所有权后恢复原剪贴板，保留媒体和键盘会话。要求当前、同设备/会话且在输入尝试结束后采集的截图；不因核对结果耗时超过 30 秒拒绝完成，恢复前仍重新核对剪贴板内容与所有权。完成结果的 `caller_confirmed` 仅记录调用方确认；`completed` 只表示剪贴板恢复并回读成功，不将原本未知的 HID 输入改写成设备确认。失败不重放恢复写入，未知结果需检查后关闭会话。
 
@@ -295,3 +296,30 @@ Actions, `text-prepare` and `text-finish` accept optional `--agent-output`. Exec
 The printed response retains errors, recovery, clipboard transaction state and the attached observation, while repeated `preInputChecks` media diagnostics are replaced by one final summary per stage in `agentSummary`. `fieldMatch=pixels` means direct field comparison passed; `caret` means the observation-bound caret exception passed. A missing caret exception is not itself a failure. `mismatches` distinguishes global screen, field, and protected-region changes; deadline/context/transport errors remain separate facts. `nextStep=inspect_attached_observation` never claims visual task success. Do not capture again merely because `requiresObservation` is true when a current observation is already attached.
 
 If saving the receipt fails, the CLI emits the original full response plus `agentOutputError`; it does not replace the execution outcome or retry the action. Without the flag, the existing JSON output is unchanged. See the [native text workflow](../skills/iphone-use/references/native-text.md) and [Codex call template](../skills/iphone-use/references/codex-calls.md).
+
+## 纯剪贴板与触摸粘贴（两种模式）
+
+显式 `--method touch-paste` 可在 standard 和 runner 中使用；默认输入方式不变。它只通过 Apple 剪贴板服务备份并暂存文本，不调用 typeText、不创建键盘、不发送 Command-A/V 或 Return。后续长按与点击仍走所选后端的既有屏幕守卫。这个方式用于会因键盘切换或快捷键授权弹窗而关闭的编辑器；它不保证每个 App 都提供 Paste 菜单。
+
+```sh
+# 已观察目标编辑器；两种模式都使用截图 oN。
+iphone-use --session "$SESSION" type oN --mode insert --method touch-paste --text '中文 English' --observe
+# 读取新图，在实际输入框位置长按；每一步使用实际返回的最新引用和坐标。
+iphone-use --session "$SESSION" long-press oNEXT --x X --y Y --observe
+# 读取菜单截图后，点击可见的 Paste/粘贴。
+iphone-use --session "$SESSION" tap oMENU --x PASTE_X --y PASTE_Y --observe
+# 确认正文完整且没有意外提交后，恢复剪贴板。
+iphone-use --session "$SESSION" text-finish oRESULT --transaction TRANSACTION_ID
+```
+
+此方式只接受 `--mode insert`、非空文本（最多 4096 UTF-8 字节，保留 LF/CR/CRLF）与当前截图 `oN`；不接受元素引用、field/caret/ignore 矩形或 replace/append。选区和插入位置由后续可见 UI 操作决定，不能把它当成自动全选或自动移到末尾。无需 `text-prepare`。
+
+准备成功返回 `outcome=prepared`、`phase=awaiting_touch_paste`、`textInserted=false`、`inputReportsSent=0`，并在两种模式中附带新的观察。`ok=true` 只确认准备完成，不能当成输入成功。事务 ID 在 `result.pasteboard.transactionID`，也可从 `status.result.touchPaste` 查看。截图失败会保留已准备事实和事务，须 observe，不能再次 stage。丢失响应时先查询 status 与观察，不自动重放。
+
+事务未完成时，禁止新的 type/press/text-prepare 与 open/terminate/relaunch，避免混合输入或覆盖备份；仍可进行受保护的触摸、观察与断开。触摸 tap/double-tap/long-press 前重新检查剪贴板所有权；外部改动后拒绝触摸，关闭时不会覆盖外部内容。`text-finish` 要求当前、准备之后的新观察，表示调用方已核验正文；它只确认恢复，不自动验证 UI。未能确认输入时应 disconnect 清理，不能虚假确认完成。恢复仍是检查后写入，不是跨进程原子操作。
+
+disconnect、空闲回收与有序关闭会恢复仍归本事务所有的剪贴板并释放连接。原剪贴板只保存在宿主内存，不写到日志；强制杀进程/主机崩溃不能承诺恢复。恢复不确定时不重试写入，清理回执的 `cleanup.touchPaste` 与顶层失败保留该事实。
+
+当前源码新增此方式，不等于旧安装包已支持。新 CLI 对旧宿主使用显式 method 请求；旧宿主会拒绝未知方式，不会回退成普通键盘输入。无需修改手机 Runner 的协议或重装 Runner。
+
+已在 iPhone 12 Pro 的 rednote 评论框中分别用 standard、runner 验证中英文两行文本：菜单触摸粘贴后正文完整、评论框保留，剪贴板恢复确认成功。此输入路径不新增键盘事件；Runner 会话启动本身仍可能触发 XCTest 键盘接入，这不在本次改动范围。完整时序、截图与验证边界见[诊断记录](runner-rednote-text-diagnosis.md#新增公共-touch-paste-方式的验收)。

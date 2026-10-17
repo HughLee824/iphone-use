@@ -4,6 +4,7 @@ import CoreFoundation
 struct DeviceAction {
     static let operations = ["tap", "double-tap", "long-press", "pinch", "swipe", "home", "type", "press"]
     let kind: String
+    var touchPaste: Bool { kind == "type" && fields["textMethod"] as? String == "touch-paste" }
     let reference: ObservationReference
     let fields: [String: Any]
     let coordinate: Bool
@@ -20,12 +21,22 @@ struct DeviceAction {
         guard Self.operations.contains(operation) else { throw IPhoneUseError("invalid_action", "Unknown device action") }
         kind = operation
         if let method = request["textMethod"] {
-            guard allowScreenText, operation == "type", let method = method as? String,
-                  ["auto", "keys", "paste"].contains(method) else {
-                throw IPhoneUseError("invalid_text_method", "--method auto, keys or paste applies only to apple-native type")
+            guard operation == "type", let method = method as? String,
+                  method == "touch-paste" || (allowScreenText && ["auto", "keys", "paste"].contains(method)) else {
+                throw IPhoneUseError("invalid_text_method", "Use --method touch-paste in either mode, or auto, keys, paste in standard mode")
+            }
+        }
+        let touchPaste = request["textMethod"] as? String == "touch-paste"
+        if touchPaste {
+            guard request["mode"] as? String == "insert",
+                  ["fieldRect", "caretRect", "ignoreRect"].allSatisfy({ request[$0] == nil }) else {
+                throw IPhoneUseError("invalid_touch_paste", "touch-paste only stages text: use --mode insert without field/caret/ignore rectangles; select the destination through subsequent touch actions")
             }
         }
         reference = try ObservationReference(request["reference"] as? String ?? "")
+        if touchPaste, reference.node != nil {
+            throw IPhoneUseError("invalid_reference", "touch-paste requires the current screenshot oN in either mode; it does not focus an element")
+        }
         let coordinateKeys = ["x", "y", "fromX", "fromY", "toX", "toY"]
         coordinate = coordinateKeys.contains { request[$0] != nil }
         var fields: [String: Any] = ["kind": operation]
@@ -44,7 +55,7 @@ struct DeviceAction {
                 guard let value = Self.number(request[key]) else { throw IPhoneUseError("invalid_coordinates", "Supply every coordinate as a finite number of screen points") }
                 fields[key] = value
             }
-        } else if reference.node == nil && !(operation == "home" || (allowScreenText && ["type", "press"].contains(operation))) {
+        } else if reference.node == nil && !(operation == "home" || touchPaste || (allowScreenText && ["type", "press"].contains(operation))) {
             throw IPhoneUseError("element_required", "Use an element reference such as o1:e2")
         }
         if operation == "swipe", coordinate {
@@ -111,15 +122,15 @@ struct DeviceAction {
             guard let mode = request["mode"] as? String, modes.contains(mode) else {
                 throw IPhoneUseError("invalid_input_mode", "Choose --mode insert, replace or append")
             }
-            let allowNewlines = !allowScreenText || (reference.node == nil && request["textMethod"] as? String != "keys")
+            let allowNewlines = touchPaste || !allowScreenText || (reference.node == nil && request["textMethod"] as? String != "keys")
             guard let text = request["text"] as? String, text.utf8.count <= TextInput.maximumBytes,
                   mode == "replace" || !text.isEmpty,
                   text.unicodeScalars.allSatisfy({ scalar in
                       let v = scalar.value
-                      if allowNewlines && (v == 10 || (allowScreenText && v == 13)) { return true }
+                      if allowNewlines && (v == 10 || ((allowScreenText || touchPaste) && v == 13)) { return true }
                       return v >= 32 && v != 127 && v != 133 && v != 0x2028 && v != 0x2029 && !(0xF700...0xF8FF).contains(v)
                   }) else {
-                throw IPhoneUseError("invalid_text", "Use up to 4096 UTF-8 bytes without control keys; LF requires a Runner text_view; CR/CRLF require native auto/paste, and only replace accepts empty text")
+                throw IPhoneUseError("invalid_text", "Use up to 4096 UTF-8 bytes without control keys; LF requires a Runner text_view or clipboard method; CR/CRLF require native auto/paste or touch-paste, and only replace accepts empty text")
             }
             fields["mode"] = mode; fields["text"] = text
             fields["textMethod"] = request["textMethod"]

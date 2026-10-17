@@ -27,6 +27,8 @@ AgentSoma 已更名为 **iPhone-use**。[CLI 0.2.1](https://github.com/HughLee82
 
 标准模式目前仍要求已记录的 macOS/Xcode/iOS 27 环境、配对、Developer Mode 和解锁，但不需要 Runner 签名。两种模式已提供主要手势、应用生命周期和共享原生录屏；元素访问、文字与按键行为仍有差异，以会话返回的支持能力和就绪状态为准。详见[模式配置、迁移与 Agent 规则](docs/control-modes.md)。下方以标准模式入门，Runner 签名为可选步骤。
 
+两种模式还可显式使用 `type oN --mode insert --method touch-paste --text TEXT`：只准备剪贴板，再触摸可见的粘贴菜单，核验后用 `text-finish` 恢复剪贴板；不发送键盘事件。详见[操作流程](docs/actions.md#纯剪贴板与触摸粘贴两种模式)。
+
 ## 为什么选择 iPhone-use？
 
 - **同时观察画面与界面结构。** 两种模式都返回截图；Runner 额外提供可用 AX 元素，可用 `inspect` 展开或搜索缓存快照。

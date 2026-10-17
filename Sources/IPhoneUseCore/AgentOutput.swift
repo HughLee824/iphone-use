@@ -95,6 +95,10 @@ public enum AgentOutput {
         } else {
             summary["nextStep"] = "follow_error_and_reference_validity"
         }
+        if details["phase"] as? String == "awaiting_touch_paste" {
+            summary["nextStep"] = "inspect_then_touch_paste_and_verify_before_text_finish"
+            summary["textInserted"] = false
+        }
         result["agentSummary"] = summary
         return result
     }

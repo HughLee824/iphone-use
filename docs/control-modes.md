@@ -79,7 +79,7 @@ Agent rules:
 
 The external agent owns planning and visual verification. No model or automatic cross-backend action router is added.
 
-Runner text now supports insert/replace/append. Append reconstructs a readable non-secure value and replaces the field; it is not a native document-end shortcut. LF multiline input requires a text_view. CR/CRLF remain rejected in Runner because XCTest changes their bytes; standard paste keeps them intact. See [text actions](actions.md).
+Runner text now supports insert/replace/append. Append reconstructs a readable non-secure value and replaces the field; it is not a native document-end shortcut. LF multiline input requires a text_view. CR/CRLF remain rejected in Runner’s XCTest typing because XCTest changes their bytes; standard paste keeps them intact. See [text actions](actions.md).
 
 Runner also implements screenshot-coordinate long-press, double-tap and pinch. Drag-and-drop uses swipe with an initial press duration. These actions keep screen guards and never establish a native control session; see [Runner gestures](runner-gestures.md).
 
@@ -89,8 +89,10 @@ Runner implements Return, Backspace, arrows and Tab/Shift+Tab with the same name
 
 ## Current differences
 
-Both modes support coordinate tap, long-press, swipe/drag, double-tap, pinch, Home and application lifecycle commands. Runner also exposes available elements and uses element references for text/press; standard mode uses visually confirmed focus and optional screenshot field rectangles. Runner Escape remains unsupported, and Runner rejects CR/CRLF text while standard paste preserves it. Standard-only text preparation, clipboard completion and method selection are not Runner requirements. Keep these differences explicit in session support; neither mode silently starts the other control backend.
+Both modes support coordinate tap, long-press, swipe/drag, double-tap, pinch, Home and application lifecycle commands. Runner also exposes available elements and uses element references for text/press; standard mode uses visually confirmed focus and optional screenshot field rectangles. Runner Escape remains unsupported, and ordinary Runner typing rejects CR/CRLF while standard paste preserves it. Both modes additionally support explicit `--method touch-paste` staging and `text-finish`; it accepts literal CR/LF without key synthesis. Native keyboard preparation and auto/keys/paste method selection remain standard-only. Keep these differences explicit in session support; neither mode silently starts the other control backend.
 
 Both modes implement `record-start` / `record-stop` through the shared native media recorder. The current source also provides an experimental read-only `preview` command. In Runner mode an explicit recording or preview request opens an owned display/media connection; input stays on XCTest. A recording started while preview is active shares its decoded frames and retains the media connection until both consumers stop. It neither creates a HID control session nor waits for XCTest attachment export. Preview does not create observations or renew the session through browser requests. See [Runner recording](runner-recording.md) and [local preview](local-preview-prototype.md) for ownership, usage and the known performance/rotation limits. Stable 30 fps has not passed acceptance.
 
 See [rename and upgrade behavior](rename-to-iphone-use.md) for old configuration, active sessions and the new Runner bundle IDs.
+
+Both modes share the host-owned [touch-paste workflow](actions.md#纯剪贴板与触摸粘贴两种模式). It opens only the Apple clipboard service, never a second control backend or a keyboard service. Menu gestures remain on the selected backend. Availability still depends on that service on the paired device.
