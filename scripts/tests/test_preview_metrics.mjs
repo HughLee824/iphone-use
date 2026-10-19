@@ -442,3 +442,79 @@ test('gesture long polling renews immediately and backs off only on failure or h
   p.visibility('hidden');await p.run('gestures()');
   assert.equal(p.run('delays.at(-1)'),1000);
 });
+
+function decodingFixture() {
+  const p=fixture();
+  p.run(`
+    let candidates=[],revoked=[],layoutCalls=0,urlID=0;
+    URL={createObjectURL:()=> 'blob:'+ ++urlID,revokeObjectURL:url=>revoked.push(url)};
+    layout=()=>{layoutCalls++;};
+    screen.naturalWidth=444;screen.naturalHeight=960;screen.style.cssText='width:100px';
+    function candidate(){
+      const image={naturalWidth:444,naturalHeight:960,style:{},cloneNode:()=>candidate(),replaceWith(next){this.replacement=next;}};
+      image.decode=()=>new Promise((resolve,reject)=>{image.resolve=resolve;image.reject=reject;});
+      candidates.push(image);return image;
+    }
+    screen.cloneNode=()=>candidate();screen.replaceWith=function(next){this.replacement=next;};
+    let originalScreen=screen;
+  `);
+  return p;
+}
+
+test('pending decode keeps the displayed frame; success releases only the replaced URL', async () => {
+  const p=decodingFixture();
+  p.run(`objectURL='blob:old';let pendingDisplay=displayFrame({},'rot0');`);
+  assert.equal(p.run('screen===originalScreen'),true);
+  assert.equal(p.run('revoked.length'),0);
+  assert.equal(p.run("candidates[0].decoding"),'async');
+  // Resizing while decode is pending must not be overwritten by a stale clone.
+  p.run("screen.style.cssText='width:200px';candidates[0].resolve();");
+  await p.run('pendingDisplay');
+  assert.equal(p.run('screen===candidates[0]'),true);
+  assert.equal(p.run('screen.style.cssText'),'width:200px');
+  assert.equal(p.run('layoutCalls'),0);
+  assert.equal(p.run("revoked.join(',')"),'blob:old');
+  assert.equal(p.run('objectURL'),'blob:1');
+  assert.equal(p.run('device.dataset.ready'),'true');
+});
+
+test('a rejected decode retains good pixels and releases the failed candidate URL', async () => {
+  const p=decodingFixture();
+  p.run("objectURL='blob:old';let pendingDisplay=displayFrame({},'rot90');candidates[0].reject(Error('bad JPEG'));");
+  await assert.rejects(p.run('pendingDisplay'),/bad JPEG/);
+  assert.equal(p.run('screen===originalScreen'),true);
+  assert.equal(p.run('objectURL'),'blob:old');
+  assert.equal(p.run('rotation'),'rot0');
+  assert.equal(p.run("revoked.join(',')"),'blob:1');
+});
+
+test('decoded dimension and half-turn changes still relayout and update gesture geometry', async () => {
+  const p=decodingFixture();
+  p.run("let pendingDisplay=displayFrame({},'rot90');candidates[0].naturalWidth=960;candidates[0].naturalHeight=444;candidates[0].resolve();");
+  await p.run('pendingDisplay');
+  assert.equal(p.run('layoutCalls'),1);
+  assert.equal(p.run('rotation'),'rot90');
+  p.run("pendingDisplay=displayFrame({},'rot270');candidates[1].naturalWidth=960;candidates[1].naturalHeight=444;candidates[1].resolve();");
+  await p.run('pendingDisplay');
+  assert.equal(p.run('layoutCalls'),2);
+  assert.equal(p.run('rotation'),'rot270');
+  assert.equal(p.run("revoked.join(',')"),'blob:1');
+});
+
+test('frame polling waits for the bounded candidate and retries a decode error', async () => {
+  const p=decodingFixture();
+  p.run(`let requested=[],scheduled=[];
+    fetch=async url=>{requested.push(url);return {ok:true,headers:{get:key=>({'X-Preview-Sequence':'4','X-Preview-Rotation':'rot0'})[key]||'1'},blob:async()=>({})};};
+    setTimeout=(fn,delay)=>scheduled.push({fn,delay});
+    let polling=frames();`);
+  // Flush the fetch/body awaits, without resolving the image decode.
+  await Promise.resolve();await Promise.resolve();await Promise.resolve();
+  assert.equal(p.run('requested.length'),1);
+  assert.equal(p.run('scheduled.length'),0);
+  p.run("candidates[0].reject(Error('bad JPEG'))");
+  await p.run('polling');
+  assert.equal(p.run('failures'),1);
+  assert.equal(p.run('scheduled.length'),1);
+  assert.equal(p.run('scheduled[0].delay'),100);
+  assert.equal(p.run('screen===originalScreen'),true);
+});

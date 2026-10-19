@@ -3,6 +3,63 @@
 import UIKit
 import AVFoundation
 
+// Repeatable list scrolling for preview A/B runs. Runs only with the explicit
+// --preview-scroll-probe launch argument; no recording or network activity.
+final class PreviewScrollProbeController: UITableViewController {
+    private var link: CADisplayLink?
+    private var started: CFTimeInterval?
+    private var previousIdleTimerDisabled = false
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .portrait }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        tableView.rowHeight = 100
+        tableView.allowsSelection = false
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "row")
+        tableView.accessibilityLabel = "Offline preview scroll benchmark"
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        previousIdleTimerDisabled = UIApplication.shared.isIdleTimerDisabled
+        UIApplication.shared.isIdleTimerDisabled = true
+        started = nil
+        let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 60, preferred: 60)
+        link.add(to: .main, forMode: .common)
+        self.link = link
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        link?.invalidate(); link = nil
+        UIApplication.shared.isIdleTimerDisabled = previousIdleTimerDisabled
+    }
+
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { 80 }
+
+    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "row", for: indexPath)
+        var content = cell.defaultContentConfiguration()
+        content.text = String(format: "Preview row %02d · 流畅滚动", indexPath.row)
+        content.secondaryText = "Offline UIKit list · 0123456789 · JPEG detail and color"
+        content.image = UIImage(systemName: ["photo.fill", "leaf.fill", "sun.max.fill", "book.fill"][indexPath.row % 4])
+        content.imageProperties.tintColor = [.systemBlue, .systemGreen, .systemOrange, .systemPurple][indexPath.row % 4]
+        cell.contentConfiguration = content
+        cell.backgroundColor = indexPath.row.isMultiple(of: 2) ? .secondarySystemBackground : .systemBackground
+        return cell
+    }
+
+    @objc private func tick(_ link: CADisplayLink) {
+        if started == nil { started = link.timestamp }
+        guard !tableView.isDragging, !tableView.isDecelerating else { started = link.timestamp; return }
+        let phase = (link.timestamp - started!) * 2 * .pi / 8
+        let travel = min(2400, max(0, tableView.contentSize.height - tableView.bounds.height))
+        let y = travel * (1 - cos(phase)) / 2 - tableView.adjustedContentInset.top
+        tableView.setContentOffset(CGPoint(x: 0, y: y), animated: false)
+    }
+}
+
 final class PreviewMotionProbeController: UIViewController {
     private let titleLabel = UILabel(), facts = UILabel(), motion = MotionView(), card = UILabel()
     private let video = UIView()

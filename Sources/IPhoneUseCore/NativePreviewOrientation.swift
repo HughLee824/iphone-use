@@ -26,7 +26,7 @@ final class NativePreviewOrientation {
     private var halfTurnConflicts = 0
 
     func needsRefresh(cli: AppleDeviceCLI, snapshots: NativeVideoSnapshot?, display: NativeDisplay) throws -> Bool {
-        if let rotation = snapshots?.previewFrame()?.displayRotation {
+        if let rotation = snapshots?.previewFrame(includeReducedResolution: true)?.displayRotation {
             // A recognized complete-frame tag makes the expensive same-source
             // PNG comparison redundant. Agreement is not capture freshness.
             halfTurnConflicts = 0
@@ -42,7 +42,7 @@ final class NativePreviewOrientation {
             halfTurnConflicts = 0
             return true
         }
-        guard let frame = snapshots?.previewFrame() else { halfTurnConflicts = 0; return false }
+        guard let frame = snapshots?.previewFrame(includeReducedResolution: true) else { halfTurnConflicts = 0; return false }
         let jpeg = try NativePreview.encode(frame, display: display, context: context)
         let decoded = try ScreenImage(png: jpeg)
         func grid(_ image: ScreenImage) throws -> Data {

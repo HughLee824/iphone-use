@@ -1,5 +1,7 @@
 # 本地浏览器预览
 
+2026-10-18 的未发布 JPEG 导出优化、M1 同机滚动对比及后续视频传输方案分析见 [JPEG 性能验证](preview-jpeg-performance.md)。这次优化不等于所有场景无卡顿。
+
 2026-10-16 的未发布动态页面与媒体连续性修复另见[实现与真机验证](dynamic-pages-and-preview.md)，包含已确认的元数据解析缺陷、动态控件使用方式与旋转限制。
 
 状态：**保留当前源码实验方案，停止本轮性能定位与复测**（2026-10-13）。standard 和 runner 共用“自有原生视频流 → 本地浏览器”的只读画面入口，无需通过 Device Hub 观看手机。目标刷新上限为 30 fps，**不保证稳定 30 fps、无卡顿或跨方向无缝录屏**。本页描述保留版本；验收结论见[验收记录](local-preview-validation.md)。
@@ -214,9 +216,9 @@ runner 长文件校验窗口的原始逐帧采样有缺口，不能给出完整�
 
 预览 URL 追加 `?diagnostics=1` 可展开浏览器统计：累计 fps、最大间隔、>100/250 ms 次数、最近 1,800 个新帧及请求失败。页面可见性变化会重置统计。`#metrics` 的 `data-samples` 属性保存有界原始样本；要验证某个阶段，必须及时导出覆盖该阶段的窗口。
 
-测量以 JPEG 序号去重，在 image.onload 后的 requestAnimationFrame 回调采样，衡量浏览器绘制机会，**不是物理屏幕实际显示时间或手机到电脑的端到端延迟**。`frameAgeSeconds` 同样只是宿主解码帧龄。
+测量以 JPEG 序号去重。当前源码在离屏图片 `decode()` 完成并替换显示图像后，通过 requestAnimationFrame 回调采样，衡量浏览器绘制机会，**不是物理屏幕实际显示时间或手机到电脑的端到端延迟**。2026-10-19 之前的页面在 image.onload 后采样，两者计时终点不同。`frameAgeSeconds` 同样只是宿主解码帧龄。
 
-服务端预览状态的 `timing` 区分转换、压缩、工作队列等待与定时器间隔；`media.snapshots.timing` 区分解码队列等待和 `decode(unit)` 执行时间。慢事件最多保留 120 条。`inputToDecodeMs` 包含组包、解析和等待；这些都是墙钟耗时，可能包含系统调度，不能直接解释为纯 CPU 工作量。
+服务端预览状态的 `timing` 保留 JPEG 总耗时、工作队列等待与定时器间隔。2026-10-18 源码改用 Core Image 直接 JPEG 导出，`encoding=core_image_jpeg`、`stageTiming=combined`；转换和压缩不能独立计时，历史字段 `maxConversionMs` / `maxCompressionMs` 返回 `null`，慢事件不再附带这两个阶段的耗时。旧版本的分段计时仅适用于旧路径，不能将 `null` 当作零。`media.snapshots.timing` 仍区分解码队列等待和 `decode(unit)` 执行时间。慢事件最多保留 120 条。`inputToDecodeMs` 包含组包、解析和等待；这些都是墙钟耗时，可能包含系统调度，不能直接解释为纯 CPU 工作量。
 
 需要复现时，可从预览响应取 URL、从 connect 取 `hostPid`，显式运行：
 

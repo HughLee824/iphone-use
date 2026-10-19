@@ -133,7 +133,7 @@ enum NativePreviewPage {
     </div><details id="diagnostics" hidden><summary id="diagnostics-label">Browser display metrics (last 1,800 frames)</summary><pre id="metrics"></pre></details>
     <script>
 
-    let objectURL; const screen=document.getElementById('screen'), state=document.getElementById('state');
+    let objectURL, screen=document.getElementById('screen'); const state=document.getElementById('state');
     const device=document.getElementById('device'), stage=document.getElementById('stage'), bezel=document.getElementById('bezel');
     const deviceName=document.getElementById('device-name'), shell=document.getElementById('shell'), hardware=document.getElementById('hardware');
     const cutout=document.getElementById('cutout'), speaker=document.getElementById('speaker');
@@ -150,14 +150,14 @@ enum NativePreviewPage {
       screen:'iPhone 实时画面',placeholder:'等待手机画面',diagnostics:'浏览器显示统计（最近 1800 帧）',
       unavailable:'连接不可用',firstFrame:'等待首帧',waiting:'已连接 · 等待新画面',recovering:'正在恢复画面…',
       live:'实时画面',disconnected:'预览已停止或连接断开',
-      metricsNote:'图片加载后的 rAF 绘制机会；页面可见性变化时重置；不代表物理屏幕呈现时间或端到端延迟'
+      metricsNote:'图片解码完成后的 rAF 绘制机会；页面可见性变化时重置；不代表物理屏幕呈现时间或端到端延迟'
     }:{
       controls:'Preview controls',title:'iPhone-use · Live preview',connecting:'Connecting…',drawn:'Use drawn frame',official:'Use official frame',
       enterFullscreen:'Enter fullscreen',exitFullscreen:'Exit fullscreen',fullscreenDenied:'Fullscreen unavailable in this browser',
       screen:'Live iPhone screen',placeholder:'Waiting for iPhone screen',diagnostics:'Browser display metrics (last 1,800 frames)',
       unavailable:'Connection unavailable',firstFrame:'Waiting for first frame',waiting:'Connected · Waiting for a new frame',recovering:'Recovering preview…',
       live:'Live preview',disconnected:'Preview stopped or disconnected',
-      metricsNote:'Image load + rAF opportunity; resets on visibility change; not physical display or glass-to-glass latency'
+      metricsNote:'Image decode + rAF opportunity; resets on visibility change; not physical display or glass-to-glass latency'
     };
     toolbar.setAttribute('aria-label',text.controls);
     document.documentElement.lang=chinese?'zh-CN':'en';document.title=text.title;screen.alt=text.screen;
@@ -299,8 +299,17 @@ enum NativePreviewPage {
     function showState(text,kind){state.textContent=text;connection.title=text;connection.dataset.kind=kind;}
     const diagnostic=new URLSearchParams(location.search).has('diagnostics'), samples=[]; let lastSequence=null, failures=0, duplicates=0;
     document.getElementById('diagnostics').hidden=!diagnostic;
+    // Diagnostic-only, bounded main-thread evidence. Durations include
+    // scheduling delays; neither decodeWaitMs nor rAF proves physical display.
+    const longTasks=[];
+    if(diagnostic&&typeof PerformanceObserver!=='undefined'&&PerformanceObserver.supportedEntryTypes?.includes('longtask')){
+      new PerformanceObserver(list=>{
+        for(const entry of list.getEntries())longTasks.push({at:performance.timeOrigin+entry.startTime,durationMs:entry.duration});
+        if(longTasks.length>120)longTasks.splice(0,longTasks.length-120);
+      }).observe({type:'longtask'});
+    }
     let totals; function resetTotals(){totals={frames:0,first:null,last:null,maxGapMs:0,gapsOver100ms:0,gapsOver250ms:0,slowFrames:[]};} resetTotals();
-    if(diagnostic)document.addEventListener('visibilitychange',()=>{samples.length=0;lastSequence=null;failures=0;duplicates=0;resetTotals();});
+    if(diagnostic)document.addEventListener('visibilitychange',()=>{samples.length=0;longTasks.length=0;lastSequence=null;failures=0;duplicates=0;resetTotals();});
     function presented(sequence,age,started,timing={}){const loaded=performance.now();if(!diagnostic)return;requestAnimationFrame(()=>{if(document.visibilityState!=='visible')return;if(sequence===lastSequence){duplicates++;return;}lastSequence=sequence;const at=Date.now();if(totals.last!==null){const gap=at-totals.last;totals.maxGapMs=Math.max(totals.maxGapMs,gap);if(gap>100)totals.gapsOver100ms++;if(gap>250)totals.gapsOver250ms++;if(gap>100){totals.slowFrames.push({at,gapMs:gap,frameAgeAtResponseMs:age,...timing,rafWaitMs:performance.now()-loaded});if(totals.slowFrames.length>120)totals.slowFrames.shift();}}totals.frames++;if(totals.first===null)totals.first=at;totals.last=at;samples.push({at,sequence,frameAgeAtResponseMs:age,requestToRafMs:performance.now()-started,...timing,rafWaitMs:performance.now()-loaded});if(samples.length>1800)samples.shift();});}
     // Bounded visual dispatch receipts; these are not raw device touch samples.
     const gestureLayer=document.getElementById('gestures');
@@ -336,10 +345,46 @@ enum NativePreviewPage {
     }
     document.addEventListener('visibilitychange',()=>{gestureGeneration++;gestureCursor=null;clearGestures();});
     let sequence = -1;
-    async function frames(){const started=performance.now();let retry=0;try{const r=await fetch('frame?after='+sequence,{cache:'no-store',signal:AbortSignal.timeout(3000)});if(!r.ok)throw Error();sequence=Number(r.headers.get('X-Preview-Sequence'));const frameRotation=r.headers.get('X-Preview-Rotation');const age=Number(r.headers.get('X-Preview-Frame-Age-Ms')),encodeMs=Number(r.headers.get('X-Preview-Encode-Ms')),next=URL.createObjectURL(await r.blob()),received=performance.now();const loaded=new Promise((resolve,reject)=>{screen.onload=resolve;screen.onerror=reject;});screen.src=next;try{await loaded;rotation=frameRotation||rotation;device.dataset.ready='true';lastFrameAt=Date.now();layout();presented(sequence,age,started,{requestMs:received-started,imageLoadMs:performance.now()-received,encodeMs});screen.style.opacity=1;}finally{if(objectURL)URL.revokeObjectURL(objectURL);objectURL=next;}}catch{failures++;screen.style.opacity=.25;retry=100;}setTimeout(frames,retry);}
+    // Decode off-DOM before replacing the visible image. Keep one displayed
+    // frame and one candidate; a failed decode must retain the last good frame.
+    async function displayFrame(blob,frameRotation){
+      const nextURL=URL.createObjectURL(blob), next=screen.cloneNode(false);
+      next.decoding='async';
+      const decodeStarted=performance.now();
+      try{
+        next.src=nextURL;
+        await next.decode();
+        const decodeWaitMs=performance.now()-decodeStarted,layoutStarted=performance.now();
+        const nextRotation=frameRotation||rotation;
+        const geometryChanged=next.naturalWidth!==screen.naturalWidth||next.naturalHeight!==screen.naturalHeight||nextRotation!==rotation;
+        // Copy the current style after await: resize/health can change it while
+        // decoding. Do not carry handlers or replace the gesture overlay.
+        next.style.cssText=screen.style.cssText;next.style.opacity=1;
+        screen.replaceWith(next);screen=next;rotation=nextRotation;
+        if(device.dataset.ready!=='true')device.dataset.ready='true';
+        lastFrameAt=Date.now();
+        if(geometryChanged)layout();
+        if(objectURL)URL.revokeObjectURL(objectURL);objectURL=nextURL;
+        return {decodeWaitMs,layoutMs:performance.now()-layoutStarted};
+      }catch(error){URL.revokeObjectURL(nextURL);throw error;}
+    }
+    async function frames(){
+      const started=performance.now();let retry=0;
+      try{
+        const r=await fetch('frame?after='+sequence,{cache:'no-store',signal:AbortSignal.timeout(3000)});
+        if(!r.ok)throw Error();
+        sequence=Number(r.headers.get('X-Preview-Sequence'));
+        const frameRotation=r.headers.get('X-Preview-Rotation');
+        const age=Number(r.headers.get('X-Preview-Frame-Age-Ms')),encodeMs=Number(r.headers.get('X-Preview-Encode-Ms'));
+        const headersAt=performance.now(),blob=await r.blob(),received=performance.now();
+        const timing=await displayFrame(blob,frameRotation);
+        presented(sequence,age,started,{requestMs:received-started,bodyMs:received-headersAt,...timing,encodeMs});
+      }catch{failures++;screen.style.opacity=.25;retry=100;}
+      setTimeout(frames,retry);
+    }
     async function health(){try{const r=await fetch('state',{cache:'no-store',signal:AbortSignal.timeout(3000)});if(!r.ok)throw Error();const s=await r.json();setDevice(s);if(s.error||!s.mediaHealthy){showState(s.error?text.unavailable+': '+s.error:text.unavailable,'error');screen.style.opacity=.25;}else if(s.frameAgeSeconds==null){showState(text.firstFrame,'waiting');}else if(s.frameAgeSeconds>2){showState(text.waiting,'waiting');}else if(!lastFrameAt||Date.now()-lastFrameAt>4000){showState(text.recovering,'waiting');}else{showState(text.live,'live');}}catch{showState(text.disconnected,'error');screen.style.opacity=.25;}setTimeout(health,1000);}
     frames();health();gestures();
-    if(diagnostic)setInterval(()=>{const gaps=samples.slice(1).map((s,i)=>s.at-samples[i].at).sort((a,b)=>a-b), span=samples.length>1?samples.at(-1).at-samples[0].at:0;const m=document.getElementById('metrics');m.textContent=JSON.stringify({total:{...totals,fps:totals.last>totals.first?(totals.frames-1)*1000/(totals.last-totals.first):0},visibleNewFrames:samples.length,fps:span?(samples.length-1)*1000/span:0,lastNewFrameAgeMs:samples.length?Date.now()-samples.at(-1).at:null,gapP95Ms:gaps[Math.floor(gaps.length*.95)]||0,maxGapMs:gaps.at(-1)||0,gapsOver250ms:gaps.filter(x=>x>250).length,failures,duplicates,note:text.metricsNote},null,2);m.dataset.samples=JSON.stringify(samples);},1000);
+    if(diagnostic)setInterval(()=>{const gaps=samples.slice(1).map((s,i)=>s.at-samples[i].at).sort((a,b)=>a-b), span=samples.length>1?samples.at(-1).at-samples[0].at:0;const m=document.getElementById('metrics');m.textContent=JSON.stringify({longTasks,total:{...totals,fps:totals.last>totals.first?(totals.frames-1)*1000/(totals.last-totals.first):0},visibleNewFrames:samples.length,fps:span?(samples.length-1)*1000/span:0,lastNewFrameAgeMs:samples.length?Date.now()-samples.at(-1).at:null,gapP95Ms:gaps[Math.floor(gaps.length*.95)]||0,maxGapMs:gaps.at(-1)||0,gapsOver250ms:gaps.filter(x=>x>250).length,failures,duplicates,note:text.metricsNote},null,2);m.dataset.samples=JSON.stringify(samples);},1000);
         </script></body></html>
     """
 }

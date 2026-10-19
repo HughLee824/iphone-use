@@ -10,6 +10,7 @@ import UIKit
 
 private struct TextProbe: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIViewController {
+        if ProcessInfo.processInfo.arguments.contains("--preview-scroll-probe") { return PreviewScrollProbeController() }
         if ProcessInfo.processInfo.arguments.contains("--preview-motion-probe") { return PreviewMotionProbeController() }
         if ProcessInfo.processInfo.arguments.contains("--preview-rotation-probe") { return RotationProbeController() }
         return ProcessInfo.processInfo.arguments.contains("--screen-guard-probe") ? ScreenGuardProbeController() : TextProbeController()
