@@ -26,8 +26,8 @@ final class NativePreview {
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private var receiver: NativeRTPReceiver?
     private var display: NativeDisplay?
-    private let device: NativePreviewDevice
-    private let bezel: NativePreviewBezel?
+    private var device: NativePreviewDevice
+    private var bezel: NativePreviewBezel?
     private var jpegRotation = "rot0"
     private var jpegActiveWidth = 0
     private var jpegActiveHeight = 0
@@ -40,16 +40,18 @@ final class NativePreview {
     private var maxTickGapMs = 0.0
     private var slowFrames: [[String: Double]] = []
     private var error: String?
+    private var listenFailure: NWError?
     private var closed = false
     private var gestures = NativePreviewGestures()
     private(set) var url = ""
 
-    init(device: NativePreviewDevice = .unknown, encodeFrame: @escaping (NativeVideoSnapshot.Frame, NativeDisplay, CIContext) throws -> EncodedJPEG = { try NativePreview.encodeJPEG($0, display: $1, context: $2) }) throws {
+    init(port: UInt16 = UInt16(PreviewConfiguration.defaultPort), device: NativePreviewDevice = .unknown, encodeFrame: @escaping (NativeVideoSnapshot.Frame, NativeDisplay, CIContext) throws -> EncodedJPEG = { try NativePreview.encodeJPEG($0, display: $1, context: $2) }) throws {
         self.device = device; self.bezel = NativePreviewBezel.load(device: device)
         self.encodeFrame = encodeFrame
         let parameters = NWParameters.tcp
-        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
-        listener = try NWListener(using: parameters)
+        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!)
+        do { listener = try NWListener(using: parameters) }
+        catch { throw Self.listenerError(error, port: port) }
         let ready = DispatchSemaphore(value: 0)
         listener.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
@@ -57,7 +59,8 @@ final class NativePreview {
             case .ready:
                 if let port = self.listener.port { self.url = "http://127.0.0.1:\(port)/\(self.token)/" }
                 ready.signal()
-            case .failed(let failure): self.error = String(describing: failure); ready.signal()
+            case .failed(let failure), .waiting(let failure):
+                self.listenFailure = failure; self.error = String(describing: failure); ready.signal()
             default: break
             }
         }
@@ -66,7 +69,8 @@ final class NativePreview {
         guard ready.wait(timeout: .now() + 5) == .success,
               queue.sync(execute: { !url.isEmpty && error == nil }) else {
             listener.cancel()
-            throw IPhoneUseError("preview_listen_failed", "Cannot open the loopback preview listener")
+            if let failure = queue.sync(execute: { listenFailure }) { throw Self.listenerError(failure, port: port) }
+            throw IPhoneUseError("preview_listen_failed", "Timed out opening the preview listener at 127.0.0.1:\(port)")
         }
         queue.sync {
             let timer = DispatchSource.makeTimerSource(queue: queue)
@@ -76,9 +80,27 @@ final class NativePreview {
         }
     }
 
-    func attach(_ receiver: NativeRTPReceiver, display: NativeDisplay) {
+    private static func listenerError(_ error: Error, port: UInt16) -> IPhoneUseError {
+        if let failure = error as? NWError, case .posix(.EADDRINUSE) = failure {
+            return IPhoneUseError("preview_port_in_use", "Preview port \(port) is occupied on 127.0.0.1. No other process was stopped. Retry in this session with preview --port PORT --no-open using another port (1024...65535); config set preview-port PORT saves a future default.")
+        }
+        return IPhoneUseError("preview_listen_failed", "Cannot open preview at 127.0.0.1:\(port): \(error). Retry with preview --port PORT --no-open using another port.")
+    }
+
+    func status(for options: NativePreviewOptions) throws -> [String: Any] {
+        let result = status()
+        if options.explicitPort, result["port"] as? Int != Int(options.port) {
+            throw IPhoneUseError("preview_already_running", "Preview is already running at \(url). Use its URL, or run preview --stop before starting preview --port \(options.port) --no-open. The existing preview was not changed.")
+        }
+        return result
+    }
+
+    func attach(_ receiver: NativeRTPReceiver, display: NativeDisplay, device: NativePreviewDevice? = nil) {
         queue.sync {
             guard !closed else { return }
+            if let device, device.productType != self.device.productType || device.name != self.device.name {
+                self.device = device; bezel = NativePreviewBezel.load(device: device)
+            }
             if self.receiver !== receiver || self.display != display {
                 gestures.clear()
                 jpeg = nil; frameAt = nil; lastSubmittedFrameAt = nil; bindingGeneration += 1
@@ -109,7 +131,8 @@ final class NativePreview {
         let healthy = health["healthy"] as? Bool == true
         return ["state": closed ? "stopped" : (error != nil ? "unavailable" : (healthy && jpeg != nil ? "streaming" : "waiting")),
                 "device": device.facts, "bezel": bezel?.profile.facts as Any? ?? NSNull(),
-                "url": url, "readOnly": true, "source": "owned_native_rtp", "maxFPS": 30,
+                "url": url, "port": listener.port.map { Int($0.rawValue) } as Any? ?? NSNull(),
+                "readOnly": true, "source": "owned_native_rtp", "maxFPS": 30,
                 "encodedFrames": encodedFrames, "encodingInFlight": contexts.count < 2, "inFlightEncodes": 2 - contexts.count, "discardedEncodes": discardedEncodes, "frameAgeSeconds": frameAt.map { ProcessInfo.processInfo.systemUptime - $0 } as Any? ?? NSNull(),
                 "timing": ["lastEncodeMs": lastEncodeMs, "maxEncodeMs": maxEncodeMs,
                            "encoding": "core_image_jpeg", "stageTiming": "combined",

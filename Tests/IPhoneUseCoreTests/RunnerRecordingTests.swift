@@ -48,6 +48,34 @@ private final class RunnerRecordingConnectionStub: RunnerRecordingConnection {
 }
 
 final class RunnerRecordingTests: XCTestCase {
+    func testPortCollisionDoesNotStartMediaOrPoisonRetryOrInterruptRecording() throws {
+        for recordingActive in [false, true] {
+            let occupied = try NativePreview(port: 0)
+            defer { occupied.close() }
+            let port = UInt16(try XCTUnwrap(occupied.status()["port"] as? Int))
+            var starts = 0
+            let connection = RunnerRecordingConnectionStub()
+            let owner = RunnerNativeRecording(root: try root(), cancellation: NativeCancellation()) { starts += 1; return connection }
+            defer { _ = owner.close() }
+            if recordingActive { _ = try owner.start(duration: 30) }
+            XCTAssertThrowsError(try owner.startPreview(options: .init(port: port, explicitPort: true))) {
+                XCTAssertEqual(($0 as? IPhoneUseError)?.code, "preview_port_in_use")
+            }
+            XCTAssertEqual(starts, recordingActive ? 1 : 0)
+            XCTAssertEqual(connection.closed, 0)
+            let recovered = try owner.startPreview(options: .init(port: 0))
+            XCTAssertNotNil(recovered["url"])
+            XCTAssertEqual(starts, 1)
+            XCTAssertEqual((recovered["device"] as? [String: Any])?["productType"] as? String, "iPhone13,3")
+            XCTAssertEqual(connection.closed, 0)
+            XCTAssertEqual(try owner.startPreview()["url"] as? String, recovered["url"] as? String)
+            XCTAssertThrowsError(try owner.startPreview(options: .init(port: port, explicitPort: true))) {
+                XCTAssertEqual(($0 as? IPhoneUseError)?.code, "preview_already_running")
+            }
+            XCTAssertEqual(owner.previewStatus["url"] as? String, recovered["url"] as? String)
+        }
+    }
+
     private func root() throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("runner-recording-\(UUID().uuidString)")
         try SessionPaths.secureDirectory(root)
@@ -126,7 +154,7 @@ final class RunnerRecordingTests: XCTestCase {
             let connection = RunnerRecordingConnectionStub()
             let owner = RunnerNativeRecording(root: try root(), cancellation: NativeCancellation()) { starts += 1; return connection }
             defer { _ = owner.close() }
-            let preview = try owner.startPreview()
+            let preview = try owner.startPreview(options: .init(port: 0))
             XCTAssertNotNil(preview["url"])
             XCTAssertEqual((preview["device"] as? [String: Any])?["productType"] as? String, "iPhone13,3")
             XCTAssertEqual((preview["bezel"] as? [String: Any])?["name"] as? String, "iPhone 12 Pro")
@@ -156,7 +184,7 @@ final class RunnerRecordingTests: XCTestCase {
                 opens += 1; return connection
             }
             defer { _ = owner.close() }
-            let preview = withPreview ? try owner.startPreview() : nil
+            let preview = withPreview ? try owner.startPreview(options: .init(port: 0)) : nil
             connection.receiver.clockConfirmed = false
             connection.receiver.healthy = healthy
             XCTAssertThrowsError(try owner.start(duration: 30)) {
@@ -188,7 +216,7 @@ final class RunnerRecordingTests: XCTestCase {
             let connection = RunnerRecordingConnectionStub()
             let owner = RunnerNativeRecording(root: try root(), cancellation: NativeCancellation()) { connection }
             defer { _ = owner.close() }
-            _ = try owner.startPreview()
+            _ = try owner.startPreview(options: .init(port: 0))
             _ = try owner.start(duration: 30)
             connection.changed = true; connection.failRefresh = fail
             XCTAssertTrue(owner.previewTick())
@@ -197,7 +225,7 @@ final class RunnerRecordingTests: XCTestCase {
             XCTAssertEqual(connection.closed, fail ? 1 : 0)
             _ = owner.previewTick()
             XCTAssertEqual(connection.previewRefreshes, 1)
-            if fail { XCTAssertThrowsError(try owner.startPreview()) }
+            if fail { XCTAssertThrowsError(try owner.startPreview(options: .init(port: 0))) }
         }
     }
 
@@ -206,7 +234,7 @@ final class RunnerRecordingTests: XCTestCase {
         connection.previewDevice = NativePreviewDevice(productType: "iPhone99,1", name: "iPhone 12 Pro")
         let owner = RunnerNativeRecording(root: try root(), cancellation: NativeCancellation()) { connection }
         defer { _ = owner.close() }
-        let preview = try owner.startPreview()
+        let preview = try owner.startPreview(options: .init(port: 0))
         XCTAssertTrue(preview["bezel"] is NSNull)
         XCTAssertEqual((preview["device"] as? [String: Any])?["productType"] as? String, "iPhone99,1")
     }
@@ -219,7 +247,7 @@ final class RunnerRecordingTests: XCTestCase {
             let owner = RunnerNativeRecording(root: try root(), cancellation: NativeCancellation(),
                 previewGeometry: { geometry }, connect: { connection })
             defer { _ = owner.close() }
-            let preview = try owner.startPreview()
+            let preview = try owner.startPreview(options: .init(port: 0))
             _ = try owner.start(duration: 30)
             for _ in 0..<3 { XCTAssertFalse(owner.previewTick()) }
             XCTAssertEqual(connection.previewRefreshes, 0, "A quiet stream is not a rotation conflict")
@@ -244,12 +272,12 @@ final class RunnerRecordingTests: XCTestCase {
         let owner = RunnerNativeRecording(root: try root(), cancellation: NativeCancellation(),
             previewGeometry: { RunnerPreviewGeometry(width: 32, height: 48, orientation: 8) }, connect: { connection })
         defer { _ = owner.close() }
-        _ = try owner.startPreview()
+        _ = try owner.startPreview(options: .init(port: 0))
         XCTAssertTrue(owner.previewTick())
         XCTAssertEqual(connection.previewRefreshes, 1)
         XCTAssertEqual(connection.closed, 1)
         XCTAssertFalse(owner.previewTick())
-        XCTAssertThrowsError(try owner.startPreview())
+        XCTAssertThrowsError(try owner.startPreview(options: .init(port: 0)))
         XCTAssertEqual(connection.previewRefreshes, 1)
     }
 

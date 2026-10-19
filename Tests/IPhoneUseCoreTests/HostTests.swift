@@ -96,7 +96,11 @@ private final class ControlledBackend: SessionBackend {
         finishCount += 1
         return ["pasteboardRestoreAcknowledged": finishAcknowledged, "transactionID": transaction]
     }
-    func startPreview() throws -> [String: Any] { ["state": "waiting", "url": "http://127.0.0.1:1234/token/"] }
+    private(set) var previewStarts: [NativePreviewOptions] = []
+    func startPreview(options: NativePreviewOptions = NativePreviewOptions()) throws -> [String: Any] {
+        previewStarts.append(options)
+        return ["state": "waiting", "url": "http://127.0.0.1:\(options.port)/token/"]
+    }
     func stopPreview() throws -> [String: Any] { ["state": "stopped"] }
     func startRecording(duration: Double) throws -> [String: Any] {
         recordingStarts += 1
@@ -133,6 +137,25 @@ private final class ControlledBackend: SessionBackend {
 }
 
 final class HostTests: XCTestCase {
+    func testPreviewPortIsValidatedBeforeBackendAndPassedInBothModes() throws {
+        for native in [false, true] {
+            let backend = ControlledBackend()
+            let (paths, session, finished) = try host(timeout: 5, backend: backend, native: native)
+            defer { _ = try? call(paths, session: session, op: "disconnect"); wait(for: [finished], timeout: 3) }
+            for value: Any in [0, 1023, 65536, true, 8765.5, "8765"] {
+                let rejected = try call(paths, session: session, op: "preview-start", fields: ["port": value])
+                XCTAssertEqual((rejected["error"] as? [String: Any])?["code"] as? String, "invalid_preview_port")
+            }
+            XCTAssertTrue(backend.previewStarts.isEmpty)
+            _ = try call(paths, session: session, op: "preview-start", fields: ["port": 9876, "portExplicit": true])
+            XCTAssertEqual(backend.previewStarts.last?.port, 9876)
+            XCTAssertEqual(backend.previewStarts.last?.explicitPort, true)
+            _ = try call(paths, session: session, op: "preview-start")
+            XCTAssertEqual(backend.previewStarts.last?.port, 8765)
+            XCTAssertEqual(backend.previewStarts.last?.explicitPort, false)
+        }
+    }
+
     func testPreviewGestureIsPublishedBeforeBackendCompletionInBothModes() throws {
         for native in [false, true] {
             let backend = ControlledBackend()

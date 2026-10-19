@@ -280,13 +280,16 @@ final class RunnerNativeRecording {
 
     func showPreviewGesture(_ gesture: NativePreviewGesture) { preview?.showGesture(gesture) }
     var previewGestureRotation: String? { preview?.gestureRotation }
-    func startPreview() throws -> [String: Any] {
+    func startPreview(options: NativePreviewOptions = NativePreviewOptions()) throws -> [String: Any] {
         try cancellation.check()
         guard !closed, failure == nil else { throw IPhoneUseError("preview_unavailable", failure ?? "Connection closed") }
-        if let preview { return preview.status() }
+        if let preview { return try preview.status(for: options) }
+        // Reserve the HTTP port before touching media. A collision must not
+        // poison this owner or interrupt an existing recording.
+        let preview = try NativePreview(port: options.port, device: connection?.previewDevice ?? .unknown)
+        self.preview = preview
         do {
             if connection == nil { connection = try connect() }
-            let preview = try NativePreview(device: connection?.previewDevice ?? .unknown); self.preview = preview
             try attachPreview()
             return preview.status()
         } catch {
@@ -300,7 +303,7 @@ final class RunnerNativeRecording {
         guard let receiver = connection?.previewReceiver, let display = connection?.previewDisplay else {
             throw IPhoneUseError("preview_unavailable", "No decoded media source")
         }
-        preview?.attach(receiver, display: display)
+        preview?.attach(receiver, display: display, device: connection?.previewDevice)
     }
     func stopPreview() throws -> [String: Any] {
         preview?.close(); preview = nil

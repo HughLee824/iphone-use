@@ -3,6 +3,43 @@ import CoreImage
 @testable import IPhoneUseCore
 
 final class NativePreviewTests: XCTestCase {
+    func testOccupiedPortFailsPromptlyAndRetryKeepsLoopbackProtection() throws {
+        let occupied = try NativePreview(port: 0)
+        defer { occupied.close() }
+        let port = UInt16(try XCTUnwrap(occupied.status()["port"] as? Int))
+        let started = Date()
+        XCTAssertThrowsError(try NativePreview(port: port)) {
+            XCTAssertEqual(($0 as? IPhoneUseError)?.code, "preview_port_in_use")
+            XCTAssertTrue(String(describing: $0).contains("--port"))
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 3)
+        XCTAssertEqual(try get(URL(string: occupied.url)!).0, 200, "The occupied listener must remain usable")
+        let replacement = try NativePreview(port: 0)
+        defer { replacement.close() }
+        XCTAssertNotEqual(replacement.status()["port"] as? Int, Int(port))
+        XCTAssertEqual(try get(URL(string: replacement.url)!, origin: "http://127.0.0.1:\(port)").0, 403)
+        XCTAssertEqual(try get(URL(string: replacement.url)!, host: "127.0.0.1:\(port)").0, 403)
+    }
+
+    func testExplicitPortMismatchPreservesExistingPreviewAndPortCanBeRebound() throws {
+        let first = try NativePreview(port: 0)
+        defer { first.close() }
+        let port = UInt16(try XCTUnwrap(first.status()["port"] as? Int))
+        XCTAssertEqual(try first.status(for: .init(port: port, explicitPort: true))["url"] as? String, first.url)
+        XCTAssertEqual(try first.status(for: .init())["url"] as? String, first.url)
+        XCTAssertThrowsError(try first.status(for: .init(port: port == 65535 ? 8765 : port + 1, explicitPort: true))) {
+            XCTAssertEqual(($0 as? IPhoneUseError)?.code, "preview_already_running")
+        }
+        XCTAssertEqual(try get(URL(string: first.url)!).0, 200)
+        first.close()
+        let restarted = try NativePreview(port: port)
+        defer { restarted.close() }
+        XCTAssertEqual(restarted.status()["port"] as? Int, Int(port))
+        XCTAssertNotEqual(restarted.url, first.url, "Reusing a port must not reuse the previous capability token")
+        XCTAssertEqual(try get(URL(string: first.url)!).0, 404)
+        XCTAssertEqual(try get(URL(string: restarted.url)!).0, 200)
+    }
+
     private func get(_ url: URL, host: String? = nil, origin: String? = nil) throws -> (Int, Data) {
         let done = expectation(description: "HTTP")
         var response: HTTPURLResponse?, bytes = Data(), failure: Error?
@@ -18,7 +55,7 @@ final class NativePreviewTests: XCTestCase {
     }
 
     func testLoopbackTokenReadOnlyAndClose() throws {
-        let preview = try NativePreview(device: .init(productType: "iPhone13,3", name: "iPhone 12 Pro")); defer { preview.close() }
+        let preview = try NativePreview(port: 0, device: .init(productType: "iPhone13,3", name: "iPhone 12 Pro")); defer { preview.close() }
         let url = try XCTUnwrap(URL(string: preview.url))
         XCTAssertEqual(url.host, "127.0.0.1")
         let page = try get(url)
@@ -85,7 +122,7 @@ final class NativePreviewTests: XCTestCase {
         let pro = try XCTUnwrap(NativePreviewBezel.load(device: .init(productType: "iPhone13,3", name: nil)))
         XCTAssertNotEqual(first.profile.file, pro.profile.file, "Same screen dimensions do not imply the same model")
         for productType: String? in [nil, "iPhone99,1", "iphone13,3", " iPhone13,3", "iPhone18,1", "iPhone19,2"] {
-            let preview = try NativePreview(device: .init(productType: productType, name: "iPhone 12 Pro"))
+            let preview = try NativePreview(port: 0, device: .init(productType: productType, name: "iPhone 12 Pro"))
             defer { preview.close() }
             XCTAssertTrue(preview.status()["bezel"] is NSNull)
             XCTAssertEqual(try get(URL(string: preview.url + "bezel")!).0, 404)
@@ -255,7 +292,7 @@ final class NativePreviewTests: XCTestCase {
     }
 
     func testWaitingForNextFrameHasBoundedTimeout() throws {
-        let preview = try NativePreview(); defer { preview.close() }
+        let preview = try NativePreview(port: 0); defer { preview.close() }
         let url = try XCTUnwrap(URL(string: preview.url + "frame?after=0"))
         let start = ProcessInfo.processInfo.systemUptime
         XCTAssertEqual(try get(url).0, 503)
@@ -308,7 +345,7 @@ final class NativePreviewTests: XCTestCase {
         let action = try DeviceAction(operation: "tap", request: ["reference": "o1", "x": 100, "y": 200])
         let gesture = try XCTUnwrap(NativePreviewGesture(action: action, target: cache.resolveTarget(for: action)))
         try withPreviewReceiver { receiver, _ in
-            let preview = try NativePreview(); defer { preview.close() }
+            let preview = try NativePreview(port: 0); defer { preview.close() }
             preview.attach(receiver, display: try NativeDisplay(["backlightState": "activeOn", "displays": [["primary": true,
                 "displayId": 1, "bounds": [[0,0],[390,844]], "pointScale": 1, "currentOrientation": "rot0", "nativeOrientation": "rot0"]]]))
             DispatchQueue.global().asyncAfter(deadline: .now() + 0.15) { preview.showGesture(gesture) }
@@ -324,7 +361,7 @@ final class NativePreviewTests: XCTestCase {
     }
 
     func testSuspendedGesturePollRemainsBoundedWithoutBusyRetrying() throws {
-        let preview = try NativePreview(); defer { preview.close() }
+        let preview = try NativePreview(port: 0); defer { preview.close() }
         preview.suspend("video unavailable")
         let started = ProcessInfo.processInfo.systemUptime
         let response = try get(try XCTUnwrap(URL(string: preview.url + "gestures?after=0")))
@@ -343,7 +380,7 @@ final class NativePreviewTests: XCTestCase {
         let action = try DeviceAction(operation: "tap", request: ["reference": "o1", "x": 100, "y": 200])
         let gesture = try XCTUnwrap(NativePreviewGesture(action: action, target: cache.resolveTarget(for: action)))
         try withPreviewReceiver { receiver, _ in
-            let preview = try NativePreview(); defer { preview.close() }
+            let preview = try NativePreview(port: 0); defer { preview.close() }
             func display(_ rotation: String) throws -> NativeDisplay {
                 try NativeDisplay(["backlightState": "activeOn", "displays": [["primary": true, "displayId": 1,
                     "bounds": [[0,0],[390,844]], "pointScale": 1, "currentOrientation": rotation, "nativeOrientation": "rot0"]]])
@@ -377,7 +414,7 @@ final class NativePreviewTests: XCTestCase {
     func testSlowEncodingDoesNotBlockHTTPAndCannotPublishAfterSuspend() throws {
         try withPreviewReceiver { receiver, send in
             let entered = expectation(description: "encoder started"), release = DispatchSemaphore(value: 0)
-            let preview = try NativePreview(encodeFrame: { _, _, _ in
+            let preview = try NativePreview(port: 0, encodeFrame: { _, _, _ in
                 entered.fulfill(); _ = release.wait(timeout: .now() + 5); return .init(data: Data([0xff, 0xd8, 0xff, 0xd9]))
             })
             defer { release.signal(); preview.close() }
@@ -403,7 +440,7 @@ final class NativePreviewTests: XCTestCase {
     func testFreshEncodingBypassesSlowFrameAndLateResultCannotReplaceIt() throws {
         try withPreviewReceiver { receiver, send in
             let entered = expectation(description: "slow encoder started"), release = DispatchSemaphore(value: 0)
-            let preview = try NativePreview(encodeFrame: { frame, _, _ in
+            let preview = try NativePreview(port: 0, encodeFrame: { frame, _, _ in
                 if frame.timestamp == 1 { entered.fulfill(); _ = release.wait(timeout: .now() + 5) }
                 return .init(data: Data([0xff, 0xd8, UInt8(frame.timestamp), 0xff, 0xd9]))
             })

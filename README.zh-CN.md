@@ -131,6 +131,8 @@ iphone-use --session "$SESSION" record-stop "$RECORDING_ID"
 iphone-use --session "$SESSION" preview --stop
 ```
 
+预览默认使用固定端口 **8765**。用 `iphone-use config get preview-port` 查看默认值，`iphone-use config set preview-port 9876` 保存下次启动使用的端口。单次指定 `iphone-use --session "$SESSION" preview --port 9877 --no-open` 优先级最高。端口占用会返回 `preview_port_in_use`，可在同一会话换端口重试；已运行的预览需先停止才能更换端口。
+
 目标上限为 30 fps、最长边 960 像素；稳定 30 fps 尚未通过验收，资源紧张时可能卡顿。旋转会结束录屏片段，方向恢复可能延迟；无音频和网页触控。关闭标签页不等于停止预览，浏览器请求也不续期会话。避免与 Device Hub 同时连接/预览同一手机。完整使用步骤、实现与限制见[本地浏览器预览](docs/local-preview-prototype.md)，成功和失败记录见[验收历史](docs/local-preview-validation.md)。
 
 ## Agent 接入约定

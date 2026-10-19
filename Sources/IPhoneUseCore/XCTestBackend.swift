@@ -20,7 +20,7 @@ protocol SessionBackend: AnyObject {
     func prepareText() throws -> [String: Any]
     func startRecording(duration: Double) throws -> [String: Any]
     func stopRecording(id: String) throws -> [String: Any]
-    func startPreview() throws -> [String: Any]
+    func startPreview(options: NativePreviewOptions) throws -> [String: Any]
     func stopPreview() throws -> [String: Any]
     func previewTick() -> Bool
     func showPreviewGesture(_ gesture: NativePreviewGesture)
@@ -30,7 +30,7 @@ protocol SessionBackend: AnyObject {
 extension SessionBackend {
     func showPreviewGesture(_ gesture: NativePreviewGesture) {}
     var previewGestureRotation: String? { nil }
-    func startPreview() throws -> [String: Any] { throw IPhoneUseError("preview_unsupported", "Preview is unavailable") }
+    func startPreview(options: NativePreviewOptions = NativePreviewOptions()) throws -> [String: Any] { throw IPhoneUseError("preview_unsupported", "Preview is unavailable") }
     func stopPreview() throws -> [String: Any] { ["state": "stopped"] }
     func previewTick() -> Bool { false }
     func setEventDeliveryQueue(_ queue: DispatchQueue) {}
@@ -312,9 +312,9 @@ final class XCTestBackend: SessionBackend {
         return try recording.stop(id: id)
     }
 
-    func startPreview() throws -> [String: Any] {
+    func startPreview(options: NativePreviewOptions = NativePreviewOptions()) throws -> [String: Any] {
         guard let recording else { throw IPhoneUseError("backend_unavailable", "Runner is not connected") }
-        return try recording.startPreview()
+        return try recording.startPreview(options: options)
     }
     func stopPreview() throws -> [String: Any] { try recording?.stopPreview() ?? ["state": "stopped"] }
     func previewTick() -> Bool { recording?.previewTick() ?? false }

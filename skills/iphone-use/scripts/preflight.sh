@@ -65,6 +65,9 @@ if preview_help=$("$cli" preview --help 2>/dev/null) &&
    printf '%s\n' "$preview_help" | grep -q -- '--no-open' &&
    printf '%s\n' "$preview_help" | grep -q -- '--stop'; then
   echo 'Live preview: available. After connect, follow the shared live-preview lifecycle once per owned session unless the user opted out.'
+  if printf '%s\n' "$preview_help" | grep -q -- '--port'; then
+    echo 'Preview port: configurable. Default 8765; preview --port PORT overrides one start; config set preview-port PORT saves a default. On preview_port_in_use, follow the bounded same-session port recovery in live-preview.md.'
+  fi
 else
   echo 'Live preview: unavailable. Continue phone control without preview; do not automatically upgrade or switch the selected CLI.'
 fi

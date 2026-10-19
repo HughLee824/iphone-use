@@ -135,6 +135,11 @@ final class SessionHost {
                 }
             } catch { reject((error as? IPhoneUseError)?.code ?? "invalid_request", String(describing: error)); return }
         }
+        var previewOptions = NativePreviewOptions()
+        if operation == "preview-start" {
+            do { previewOptions = try NativePreviewOptions(request: request) }
+            catch { reject((error as? IPhoneUseError)?.code ?? "invalid_request", String(describing: error)); return }
+        }
         var reference: ObservationReference?
         var action: DeviceAction?
         var textObservationOptions: NativeTextObservationOptions?
@@ -237,7 +242,7 @@ final class SessionHost {
                 case "preview-start", "preview-stop":
                     observations.invalidate("preview_changed")
                     response["requiresObservation"] = true
-                    response["result"] = try operation == "preview-start" ? backend.startPreview() : backend.stopPreview()
+                    response["result"] = try operation == "preview-start" ? backend.startPreview(options: previewOptions) : backend.stopPreview()
                     effective = true
                 case "record-start":
                     observations.invalidate("recording_started")

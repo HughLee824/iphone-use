@@ -134,6 +134,8 @@ iphone-use --session "$SESSION" record-stop "$RECORDING_ID"
 iphone-use --session "$SESSION" preview --stop
 ```
 
+Preview defaults to port **8765**. Use `iphone-use config get preview-port` to inspect the default and `iphone-use config set preview-port 9876` to save a different port for the next start. A one-time `iphone-use --session "$SESSION" preview --port 9877 --no-open` takes precedence. If the port is occupied (`preview_port_in_use`), retry with another port in the same session. Stop an already running preview before changing its port.
+
 The target ceiling is 30 fps with a 960-pixel longest edge; stable 30 fps has not passed acceptance, and resource pressure can cause stalls. Rotation ends the recording segment and may take time to display correctly. There is no audio or browser input control. Closing the tab does not stop preview, and browser requests do not renew the session. Avoid connecting/previewing the same phone in Device Hub concurrently. See [usage, implementation and limitations](docs/local-preview-prototype.md) and [acceptance history](docs/local-preview-validation.md), including failed experiments.
 
 ## Agent integration
