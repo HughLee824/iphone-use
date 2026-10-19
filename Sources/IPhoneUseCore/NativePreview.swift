@@ -8,8 +8,6 @@ import ImageIO
 final class NativePreview {
     struct EncodedJPEG {
         let data: Data
-        var conversionMs = 0.0
-        var compressionMs = 0.0
     }
     private let queue = DispatchQueue(label: "iphone-use.preview", qos: .userInitiated)
     private let encoderQueue = DispatchQueue(label: "iphone-use.preview.encode", qos: .userInitiated, attributes: .concurrent)
@@ -31,14 +29,14 @@ final class NativePreview {
     private let device: NativePreviewDevice
     private let bezel: NativePreviewBezel?
     private var jpegRotation = "rot0"
+    private var jpegActiveWidth = 0
+    private var jpegActiveHeight = 0
     private var jpeg: Data?
     private var frameAt: Double?
     private var encodedFrames = 0
     private var lastTick: Double?
     private var lastEncodeMs = 0.0
     private var maxEncodeMs = 0.0
-    private var maxConversionMs = 0.0
-    private var maxCompressionMs = 0.0
     private var maxTickGapMs = 0.0
     private var slowFrames: [[String: Double]] = []
     private var error: String?
@@ -46,7 +44,7 @@ final class NativePreview {
     private var gestures = NativePreviewGestures()
     private(set) var url = ""
 
-    init(device: NativePreviewDevice = .unknown, encodeFrame: @escaping (NativeVideoSnapshot.Frame, NativeDisplay, CIContext) throws -> EncodedJPEG = { try NativePreview.encodeMeasured($0, display: $1, context: $2) }) throws {
+    init(device: NativePreviewDevice = .unknown, encodeFrame: @escaping (NativeVideoSnapshot.Frame, NativeDisplay, CIContext) throws -> EncodedJPEG = { try NativePreview.encodeJPEG($0, display: $1, context: $2) }) throws {
         self.device = device; self.bezel = NativePreviewBezel.load(device: device)
         self.encodeFrame = encodeFrame
         let parameters = NWParameters.tcp
@@ -114,7 +112,8 @@ final class NativePreview {
                 "url": url, "readOnly": true, "source": "owned_native_rtp", "maxFPS": 30,
                 "encodedFrames": encodedFrames, "encodingInFlight": contexts.count < 2, "inFlightEncodes": 2 - contexts.count, "discardedEncodes": discardedEncodes, "frameAgeSeconds": frameAt.map { ProcessInfo.processInfo.systemUptime - $0 } as Any? ?? NSNull(),
                 "timing": ["lastEncodeMs": lastEncodeMs, "maxEncodeMs": maxEncodeMs,
-                           "maxConversionMs": maxConversionMs, "maxCompressionMs": maxCompressionMs,
+                           "encoding": "core_image_jpeg", "stageTiming": "combined",
+                           "maxConversionMs": NSNull(), "maxCompressionMs": NSNull(),
                            "maxTickGapMs": maxTickGapMs, "slowFrames": slowFrames],
                 "mediaHealthy": healthy, "rotation": display?.rotation as Any? ?? NSNull(),
                 "error": error as Any? ?? NSNull(), "media": health]
@@ -125,7 +124,7 @@ final class NativePreview {
         let tickGap = lastTick.map { (started - $0) * 1000 } ?? 0
         lastTick = started; maxTickGapMs = max(maxTickGapMs, tickGap)
         guard !closed, !contexts.isEmpty, let receiver, let display, receiver.health()["healthy"] as? Bool == true else { return }
-        guard let frame = receiver.snapshots?.previewFrame() else {
+        guard let frame = receiver.snapshots?.previewFrame(includeReducedResolution: true) else {
             if let failure = receiver.snapshots?.status()["lastError"] as? String { error = failure; jpeg = nil }
             return
         }
@@ -146,19 +145,16 @@ final class NativePreview {
                 contexts.append(context)
                 guard !closed, bindingGeneration == generation else { return }
                 maxEncodeMs = max(maxEncodeMs, encodeMs)
-                let measured = try? result.get()
-                maxConversionMs = max(maxConversionMs, measured?.conversionMs ?? 0)
-                maxCompressionMs = max(maxCompressionMs, measured?.compressionMs ?? 0)
                 if tickGap > 100 || encodeMs > 100 || sourceReadMs > 100 || workerWaitMs > 100 {
                     slowFrames.append(["wallTime": Date().timeIntervalSince1970, "tickGapMs": tickGap,
                                        "encodeMs": encodeMs, "sourceReadMs": sourceReadMs, "workerWaitMs": workerWaitMs,
-                                       "conversionMs": measured?.conversionMs ?? 0, "compressionMs": measured?.compressionMs ?? 0,
                                        "sourceAgeMs": (encodingStarted - frame.completedAt) * 1000])
                     if slowFrames.count > 120 { slowFrames.removeFirst() }
                 }
                 if let frameAt, frame.completedAt <= frameAt { discardedEncodes += 1; return }
                 switch result {
                 case .success(let encoded):
+                    jpegActiveWidth = frame.image.activeWidth; jpegActiveHeight = frame.image.activeHeight
                     jpeg = encoded.data; jpegRotation = display.rotation; frameAt = frame.completedAt; lastEncodeMs = encodeMs; encodedFrames += 1; error = nil
                 case .failure(let failure):
                     error = String(describing: failure); jpeg = nil
@@ -172,18 +168,26 @@ final class NativePreview {
     }
 
     static func encode(_ frame: NativeVideoSnapshot.Frame, display: NativeDisplay, context: CIContext = CIContext()) throws -> Data {
-        try encodeMeasured(frame, display: display, context: context).data
+        try encodeJPEG(frame, display: display, context: context).data
     }
 
-    private static func encodeMeasured(_ frame: NativeVideoSnapshot.Frame, display: NativeDisplay, context: CIContext) throws -> EncodedJPEG {
-        let started = ProcessInfo.processInfo.systemUptime
-        _ = try NativeSnapshotImage.validateGeometry(frame, display: display)
+    private static func encodeJPEG(_ frame: NativeVideoSnapshot.Frame, display: NativeDisplay, context: CIContext) throws -> EncodedJPEG {
+        _ = try NativeSnapshotImage.validateGeometry(frame, display: display, allowReducedResolution: true)
         let pixels = frame.pixels
-        // CI coordinates start at the bottom; Apple's padding is right/bottom.
+        // VRA scales the entire encoded canvas, including its right/bottom
+        // padding, into the top-left active rectangle. Crop the proportional
+        // native rectangle before restoring its axes; stretching the entire
+        // active rectangle would include padding and shift screen landmarks.
+        let scaleX = Double(CVPixelBufferGetWidth(pixels)) / Double(frame.image.activeWidth)
+        let scaleY = Double(CVPixelBufferGetHeight(pixels)) / Double(frame.image.activeHeight)
+        let nativeWidth = Double(frame.image.nativeWidth) / scaleX
+        let nativeHeight = Double(frame.image.nativeHeight) / scaleY
+        // CI coordinates start at the bottom, pixel-buffer rows at the top.
         var image = CIImage(cvPixelBuffer: pixels).cropped(to: CGRect(x: 0,
-            y: CVPixelBufferGetHeight(pixels) - frame.image.nativeHeight,
-            width: frame.image.nativeWidth, height: frame.image.nativeHeight))
+            y: Double(CVPixelBufferGetHeight(pixels)) - nativeHeight,
+            width: nativeWidth, height: nativeHeight))
         image = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
+            .transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
         if display.rotation == "rot90" { image = image.oriented(.right) }
         if display.rotation == "rot270" { image = image.oriented(.left) }
         let scale = min(1, 960 / max(image.extent.width, image.extent.height))
@@ -195,23 +199,16 @@ final class NativePreview {
         // against white, leaving a visible gray seam even on a black screen.
         image = image.clampedToExtent().transformed(by: CGAffineTransform(scaleX: scale, y: scale))
             .cropped(to: output)
-        // Materialize the resized RGB pixels here, not lazily during ImageIO
-        // compression, so conversion and JPEG latency can be distinguished.
-        guard let rendered = context.createCGImage(image, from: image.extent, format: .RGBA8,
-                                                   colorSpace: CGColorSpaceCreateDeviceRGB(), deferred: false) else {
-            throw IPhoneUseError("preview_encoding_failed", "Preview pixel conversion failed")
-        }
-        let converted = ProcessInfo.processInfo.systemUptime
-        let bytes = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(bytes, "public.jpeg" as CFString, 1, nil) else {
-            throw IPhoneUseError("preview_encoding_failed", "Cannot create JPEG encoder")
-        }
-        CGImageDestinationAddImage(destination, rendered, [kCGImageDestinationLossyCompressionQuality: 0.7] as CFDictionary)
-        guard CGImageDestinationFinalize(destination) else {
+        // Let Core Image render directly for JPEG export instead of materializing
+        // an RGBA CGImage and handing it to a separate ImageIO destination. Keep
+        // color management, the native crop, output dimensions and quality intact.
+        // Rendering and compression are fused: report their combined wall time,
+        // never zero-valued timings pretending to measure the individual stages.
+        guard let data = context.jpegRepresentation(of: image, colorSpace: CGColorSpaceCreateDeviceRGB(),
+            options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.7]) else {
             throw IPhoneUseError("preview_encoding_failed", "JPEG encoding failed")
         }
-        return EncodedJPEG(data: bytes as Data, conversionMs: (converted - started) * 1000,
-                           compressionMs: (ProcessInfo.processInfo.systemUptime - converted) * 1000)
+        return EncodedJPEG(data: data)
     }
 
     private func accept(_ connection: NWConnection) {
@@ -276,7 +273,7 @@ final class NativePreview {
     private func sendFrame(_ connection: NWConnection) {
         if let jpeg, error == nil, receiver?.health()["healthy"] as? Bool == true {
             send(connection, type: "image/jpeg", data: jpeg,
-                 headers: "X-Preview-Rotation: \(jpegRotation)\r\nX-Preview-Sequence: \(encodedFrames)\r\nX-Preview-Frame-Age-Ms: \((ProcessInfo.processInfo.systemUptime - (frameAt ?? 0)) * 1000)\r\nX-Preview-Encode-Ms: \(lastEncodeMs)\r\n")
+                 headers: "X-Preview-Rotation: \(jpegRotation)\r\nX-Preview-Active-Width: \(jpegActiveWidth)\r\nX-Preview-Active-Height: \(jpegActiveHeight)\r\nX-Preview-Sequence: \(encodedFrames)\r\nX-Preview-Frame-Age-Ms: \((ProcessInfo.processInfo.systemUptime - (frameAt ?? 0)) * 1000)\r\nX-Preview-Encode-Ms: \(lastEncodeMs)\r\n")
         } else { send(connection, code: "503 Service Unavailable", type: "text/plain", data: Data()) }
     }
 

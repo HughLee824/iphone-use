@@ -540,11 +540,15 @@ final class AppleDeviceBackend: SessionBackend {
             // Apple can cache its old transform while a media stream survives
             // rotation. Retain independent geometry verification, without using
             // any decoded pixel as an observation or input-comparison baseline.
-            let frame = try receiver.snapshot(after: requestedAt, timeout: mediaTimeout, cancellation: self.cancellation)
+            // VRA changes the active pixel rectangle, not the native screen
+            // axes or per-frame direction. Waiting only for full-resolution
+            // pixels during a transition incorrectly looks like a quiet stream.
+            let frame = try receiver.snapshot(after: requestedAt, timeout: mediaTimeout,
+                includeReducedResolution: true, cancellation: self.cancellation)
             if frame == nil { try receiver.snapshots?.rejectConflictingGeometry(display) }
-            _ = try NativeSnapshotImage.validateGeometry(frame, display: display)
+            _ = try NativeSnapshotImage.validateGeometry(frame, display: display, allowReducedResolution: true)
             return ["verification": "owned_media_geometry", "geometryValidated": true,
-                    "displayRotation": display.rotation]
+                    "displayRotation": display.rotation, "reducedResolution": frame?.image.isReducedResolution ?? false]
         })
         var metadata = captured.metadata
         if let textOptions {

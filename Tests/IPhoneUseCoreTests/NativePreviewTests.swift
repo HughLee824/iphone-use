@@ -30,7 +30,13 @@ final class NativePreviewTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         XCTAssertEqual(favicon.1, try Data(contentsOf: root.appendingPathComponent("assets/brand/favicon-64.png")))
         XCTAssertEqual(try get(url.deletingLastPathComponent().appendingPathComponent("favicon.png")).0, 404)
-        XCTAssertEqual(try get(url.appendingPathComponent("state")).0, 200)
+        let stateResponse = try get(url.appendingPathComponent("state"))
+        XCTAssertEqual(stateResponse.0, 200)
+        let state = try XCTUnwrap(JSONSerialization.jsonObject(with: stateResponse.1) as? [String: Any])
+        let timing = try XCTUnwrap(state["timing"] as? [String: Any])
+        XCTAssertEqual(timing["stageTiming"] as? String, "combined")
+        XCTAssertTrue(timing["maxConversionMs"] is NSNull, "Fused export cannot measure conversion separately")
+        XCTAssertTrue(timing["maxCompressionMs"] is NSNull, "Unavailable stage timings must not look like zero work")
         let gestures = try get(url.appendingPathComponent("gestures"))
         XCTAssertEqual(gestures.0, 200)
         let events = try XCTUnwrap(JSONSerialization.jsonObject(with: gestures.1) as? [String: Any])
@@ -187,6 +193,54 @@ final class NativePreviewTests: XCTestCase {
                 } }
             }
         }
+    }
+
+    func testPreviewJPEGFromVideoRangePlanesPreservesQuadrantsAndPadding() throws {
+        var pixels: CVPixelBuffer?
+        XCTAssertEqual(CVPixelBufferCreate(nil, 1184, 2576, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+            [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &pixels), kCVReturnSuccess)
+        let buffer = try XCTUnwrap(pixels)
+        CVPixelBufferLockBaseAddress(buffer, [])
+        let luma = CVPixelBufferGetBaseAddressOfPlane(buffer, 0)!.assumingMemoryBound(to: UInt8.self)
+        let stride = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)
+        let values: [UInt8] = [32, 80, 144, 208]
+        for y in 0..<2576 { for x in 0..<1184 {
+            luma[y * stride + x] = x < 1170 && y < 2532 ? values[(y < 1266 ? 0 : 2) + (x < 585 ? 0 : 1)] : 235
+        } }
+        memset(CVPixelBufferGetBaseAddressOfPlane(buffer, 1), 128,
+               CVPixelBufferGetBytesPerRowOfPlane(buffer, 1) * CVPixelBufferGetHeightOfPlane(buffer, 1))
+        CVPixelBufferUnlockBaseAddress(buffer, [])
+        CVBufferSetAttachment(buffer, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2, .shouldPropagate)
+        let frame = NativeVideoSnapshot.Frame(image: .init(pixels: buffer, nativeWidth: 1170, nativeHeight: 2532),
+                                              firstPacketAt: 1, completedAt: 2, timestamp: 1)
+        let context = CIContext(options: [.useSoftwareRenderer: true])
+        for (rotation, quadrants) in [("rot0", [0, 1, 2, 3]), ("rot90", [2, 0, 3, 1]), ("rot270", [1, 3, 0, 2])] {
+            let display = try NativeDisplay(["backlightState": "activeOn", "displays": [["primary": true,
+                "displayId": 1, "bounds": [[0, 0], [1170, 2532]], "pointScale": 1,
+                "currentOrientation": rotation, "nativeOrientation": "rot0"]]])
+            let data = try NativePreview.encode(frame, display: display, context: context)
+            let source = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
+            let image = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+            XCTAssertEqual(image.width, rotation == "rot0" ? 444 : 960)
+            XCTAssertEqual(image.height, rotation == "rot0" ? 960 : 444)
+            var rgb = [UInt8](repeating: 0, count: image.width * image.height * 4)
+            try rgb.withUnsafeMutableBytes { bytes in
+                let output = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: image.width, height: image.height,
+                    bitsPerComponent: 8, bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+                output.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            }
+            let expected = [19, 75, 149, 224]
+            for (index, point) in [(2, 2), (image.width - 3, 2), (2, image.height - 3), (image.width - 3, image.height - 3)].enumerated() {
+                let offset = (point.1 * image.width + point.0) * 4
+                for channel in 0..<3 {
+                    XCTAssertEqual(Double(rgb[offset + channel]), Double(expected[quadrants[index]]), accuracy: 25,
+                                   "\(rotation) corner \(index) must retain native pixels, not white decoder padding")
+                }
+            }
+        }
+        XCTAssertEqual(frame.timestamp, 1)
+        XCTAssertEqual(CVPixelBufferGetWidth(buffer), 1184)
     }
 
     func testHalfTurnNeedsDistinctAgreementAndDoesNotGuessOnSymmetricFrames() {

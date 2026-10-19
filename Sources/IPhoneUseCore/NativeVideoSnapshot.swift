@@ -8,6 +8,18 @@ struct NativeDecodedVideoFrame {
     let pixels: CVPixelBuffer
     let nativeWidth: Int
     let nativeHeight: Int
+    let activeWidth: Int
+    let activeHeight: Int
+
+    init(pixels: CVPixelBuffer, nativeWidth: Int, nativeHeight: Int, activeWidth: Int? = nil, activeHeight: Int? = nil) {
+        self.pixels = pixels; self.nativeWidth = nativeWidth; self.nativeHeight = nativeHeight
+        self.activeWidth = activeWidth ?? CVPixelBufferGetWidth(pixels)
+        self.activeHeight = activeHeight ?? CVPixelBufferGetHeight(pixels)
+    }
+
+    var isReducedResolution: Bool {
+        activeWidth != CVPixelBufferGetWidth(pixels) || activeHeight != CVPixelBufferGetHeight(pixels)
+    }
 }
 
 // Decoder work never runs on the media socket queue. A preview recording can
@@ -29,6 +41,10 @@ final class NativeVideoSnapshot {
     private var generation = 0
     private var closed = false
     private var latest: Frame?
+    private var latestPreview: Frame?
+    private var previewDecodedFrames = 0
+    private var reducedResolutionFrames = 0
+    private var resolutionChanges: [[String: Double]] = []
     private var recordingHandler: ((Frame) -> Void)?
     private var decodedFrames = 0
     private var framesWithoutImage = 0
@@ -56,7 +72,7 @@ final class NativeVideoSnapshot {
     convenience init() {
         // Standard observations are Apple PNG. This stream verifies geometry;
         // converting every decoded frame into RGB wastes GPU work.
-        let decoder = NativeSnapshotDecoder(convertToBGRA: false)
+        let decoder = NativeSnapshotDecoder(convertToBGRA: false, includeReducedResolution: true)
         self.init(decode: { try decoder.decode($0) }, resetDecoder: { decoder.resetReferences() })
     }
 
@@ -70,7 +86,7 @@ final class NativeVideoSnapshot {
         condition.lock()
         guard !closed else { condition.unlock(); return }
         guard pendingBytes + data.count <= 4 * 1024 * 1024 else {
-            generation += 1; queueOverflows += 1; latest = nil; waitingForKeyframe = true; condition.broadcast(); condition.unlock(); return
+            generation += 1; queueOverflows += 1; latest = nil; latestPreview = nil; waitingForKeyframe = true; condition.broadcast(); condition.unlock(); return
         }
         let admittedGeneration = generation
         pendingBytes += data.count
@@ -98,7 +114,7 @@ final class NativeVideoSnapshot {
                 condition.lock()
                 droppedUnits += dropped; discontinuities += gaps; malformedPackets += malformed
                 waitingForKeyframe = parser.waitingForKeyframe
-                if dropped > 0 || gaps > 0 || malformed > 0 { latest = nil; condition.broadcast() }
+                if dropped > 0 || gaps > 0 || malformed > 0 { latest = nil; latestPreview = nil; condition.broadcast() }
                 condition.unlock()
                 if dropped > 0 || gaps > 0 || malformed > 0 {
                     resetDecoder(); lastTimestamp = nil
@@ -136,19 +152,34 @@ final class NativeVideoSnapshot {
                 guard let image else {
                     // A decoded reduced-resolution picture updates references,
                     // but must also invalidate a previously cached observation.
-                    if video { condition.lock(); framesWithoutImage += 1; latest = nil; condition.broadcast(); condition.unlock() }
+                    if video { condition.lock(); framesWithoutImage += 1; latest = nil; latestPreview = nil; condition.broadcast(); condition.unlock() }
                     return
                 }
                 let frame = Frame(image: image, firstPacketAt: unitStarted,
                                   completedAt: completed, timestamp: unit.timestamp, displayRotation: unit.displayRotation)
                 condition.lock()
-                if !closed, generation == admittedGeneration { latest = frame; decodedFrames += 1; lastError = nil; recordingHandler?(frame); condition.broadcast() }
+                if !closed, generation == admittedGeneration {
+                    if latestPreview?.image.activeWidth != image.activeWidth || latestPreview?.image.activeHeight != image.activeHeight {
+                        resolutionChanges.append(["wallTime": Date().timeIntervalSince1970, "timestamp": Double(unit.timestamp),
+                                                  "activeWidth": Double(image.activeWidth), "activeHeight": Double(image.activeHeight)])
+                        if resolutionChanges.count > 120 { resolutionChanges.removeFirst() }
+                    }
+                    latestPreview = frame; previewDecodedFrames += 1; lastError = nil
+                    // Reduced pixels never become observation or recording
+                    // pixels. Their native geometry can still verify Apple PNGs.
+                    if image.isReducedResolution {
+                        latest = nil; reducedResolutionFrames += 1
+                    } else {
+                        latest = frame; decodedFrames += 1; recordingHandler?(frame)
+                    }
+                    condition.broadcast()
+                }
                 condition.unlock()
             } catch {
                 // A broken dependency chain is never reused for observation.
                 unitQueueWaitMs = 0
                 condition.lock(); generation += 1; decodeErrors += 1; lastError = String(describing: error)
-                latest = nil; waitingForKeyframe = true; condition.broadcast(); condition.unlock()
+                latest = nil; latestPreview = nil; waitingForKeyframe = true; condition.broadcast(); condition.unlock()
             }
         }
     }
@@ -156,24 +187,26 @@ final class NativeVideoSnapshot {
     // A cached last frame, peer heartbeat or a newly decoded OLD queued frame is
     // not a fresh observation. Require the entire unit to arrive after this
     // request, and bound the time from its first packet to consumption.
-    func frame(after notBefore: Double, timeout: Double = 0.15,
+    func frame(after notBefore: Double, timeout: Double = 0.15, includeReducedResolution: Bool = false,
                cancellation: NativeCancellation) throws -> Frame? {
         let deadline = ProcessInfo.processInfo.systemUptime + timeout
         condition.lock(); defer { condition.unlock() }
         while !closed {
             try cancellation.check()
             let now = ProcessInfo.processInfo.systemUptime
-            if let latest, Self.isFresh(latest, after: notBefore, now: now) { return latest }
+            let candidate = includeReducedResolution ? latestPreview : latest
+            if let candidate, Self.isFresh(candidate, after: notBefore, now: now) { return candidate }
             guard now < deadline else { return nil }
             _ = condition.wait(until: Date().addingTimeInterval(min(0.02, deadline - now)))
         }
         return nil
     }
-    // Display-only access. This cached frame must never establish an observation
-    // or satisfy an input freshness check.
-    func previewFrame() -> Frame? {
+    // Cached access never establishes observation freshness. Existing consumers
+    // (including recording preparation) require full resolution; only the browser
+    // display opts into reduced pictures and normalizes their active rectangle.
+    func previewFrame(includeReducedResolution: Bool = false) -> Frame? {
         condition.lock(); defer { condition.unlock() }
-        return closed ? nil : latest
+        return closed ? nil : (includeReducedResolution ? latestPreview : latest)
     }
     // Callback runs under the cache lock and must only enqueue bounded work.
     // Priming and subscription are atomic, so no newer frame can overtake the seed.
@@ -186,8 +219,8 @@ final class NativeVideoSnapshot {
     // Negative evidence only: an old frame may reveal conflicting axes, but
     // can never become a screenshot or establish that the screen is current.
     func rejectConflictingGeometry(_ display: NativeDisplay) throws {
-        condition.lock(); let candidate = latest; condition.unlock()
-        if let candidate { _ = try NativeSnapshotImage.validateGeometry(candidate, display: display) }
+        condition.lock(); let candidate = latestPreview; condition.unlock()
+        if let candidate { _ = try NativeSnapshotImage.validateGeometry(candidate, display: display, allowReducedResolution: true) }
     }
     static func isFresh(_ frame: Frame, after notBefore: Double, now: Double) -> Bool {
         frame.firstPacketAt >= notBefore && frame.firstPacketAt <= frame.completedAt
@@ -197,6 +230,8 @@ final class NativeVideoSnapshot {
         condition.lock(); defer { condition.unlock() }
         let now = ProcessInfo.processInfo.systemUptime
         return ["decodedFrames": decodedFrames, "framesWithoutImage": framesWithoutImage,
+                "previewDecodedFrames": previewDecodedFrames, "reducedResolutionFrames": reducedResolutionFrames,
+                "resolutionChanges": resolutionChanges,
                 "decodeErrors": decodeErrors, "queueOverflows": queueOverflows,
                 "droppedUnits": droppedUnits, "discontinuities": discontinuities, "malformedPackets": malformedPackets,
                 "timestampRejections": timestampRejections, "referenceResets": referenceResets,
@@ -210,7 +245,7 @@ final class NativeVideoSnapshot {
                 "lastFrameDecodeLagSeconds": latest.map { $0.completedAt - $0.firstPacketAt } as Any? ?? NSNull()]
     }
     func close() {
-        condition.lock(); closed = true; latest = nil; recordingHandler = nil; condition.broadcast(); condition.unlock()
+        condition.lock(); closed = true; latest = nil; latestPreview = nil; recordingHandler = nil; condition.broadcast(); condition.unlock()
         queue.sync { resetDecoder(); parser = NativeHEVCDepacketizer() }
     }
 }
@@ -224,11 +259,14 @@ final class NativeSnapshotDecoder {
     private var nativeDimensions: (Int, Int)?
     private(set) var withheldResolutionFrames = 0
     private let convertToBGRA: Bool
+    private let includeReducedResolution: Bool
     private static let context = CIContext(options: [.cacheIntermediates: false])
 
     // Recording retains the existing presentation path by default. Geometry
     // consumers opt out of color conversion, not decoding or frame validation.
-    init(convertToBGRA: Bool = true) { self.convertToBGRA = convertToBGRA }
+    init(convertToBGRA: Bool = true, includeReducedResolution: Bool = false) {
+        self.convertToBGRA = convertToBGRA; self.includeReducedResolution = includeReducedResolution
+    }
 
     func decode(_ unit: NativeVideoAccessUnit) throws -> NativeDecodedVideoFrame? {
         // No reference chain survives a failed metadata/configuration/decode step.
@@ -323,15 +361,17 @@ final class NativeSnapshotDecoder {
         guard CVPixelBufferGetWidth(pixels) == Int(canvas.width), CVPixelBufferGetHeight(pixels) == Int(canvas.height) else {
             throw invalid("Unexpected decoder output geometry", -1)
         }
-        // Reduced pictures must still be decoded, otherwise later references
-        // corrupt. Until their output scaling contract is verified, withhold
-        // them instead of guessing a coordinate transform or recording gray fill.
-        guard metadata.hasFullResolution(canvas: canvas) else { withheldResolutionFrames += 1; return nil }
+        // Always decode reference pictures. Only the browser preview opts into
+        // raw reduced pictures and normalizes their active rectangle for display.
+        if !metadata.hasFullResolution(canvas: canvas), !includeReducedResolution {
+            withheldResolutionFrames += 1; return nil
+        }
         guard CVPixelBufferGetPixelFormatType(pixels) == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange else {
             throw invalid("Unexpected decoder output pixel format", -1)
         }
         if !convertToBGRA {
-            return NativeDecodedVideoFrame(pixels: pixels, nativeWidth: metadata.nativeWidth, nativeHeight: metadata.nativeHeight)
+            return NativeDecodedVideoFrame(pixels: pixels, nativeWidth: metadata.nativeWidth, nativeHeight: metadata.nativeHeight,
+                                           activeWidth: metadata.activeWidth, activeHeight: metadata.activeHeight)
         }
         var bgra: CVPixelBuffer?
         let created = CVPixelBufferCreate(kCFAllocatorDefault, Int(canvas.width), Int(canvas.height), kCVPixelFormatType_32BGRA,
@@ -342,7 +382,8 @@ final class NativeSnapshotDecoder {
         // validated above. Decoded padding may contain lossy edge data; it must
         // not invalidate otherwise complete reference pictures. Observation
         // additionally checks this exact rectangle against Apple display facts.
-        return NativeDecodedVideoFrame(pixels: bgra, nativeWidth: metadata.nativeWidth, nativeHeight: metadata.nativeHeight)
+        return NativeDecodedVideoFrame(pixels: bgra, nativeWidth: metadata.nativeWidth, nativeHeight: metadata.nativeHeight,
+                                           activeWidth: metadata.activeWidth, activeHeight: metadata.activeHeight)
     }
     private final class Output {
         let lock = NSLock()
@@ -359,7 +400,7 @@ final class NativeSnapshotDecoder {
 }
 
 enum NativeSnapshotImage {
-    static func validateGeometry(_ frame: NativeVideoSnapshot.Frame?, display: NativeDisplay) throws -> (width: Int, height: Int) {
+    static func validateGeometry(_ frame: NativeVideoSnapshot.Frame?, display: NativeDisplay, allowReducedResolution: Bool = false) throws -> (width: Int, height: Int) {
         guard let frame else {
             throw IPhoneUseError("native_snapshot_freshness_unavailable", "No fresh complete media frame to verify display geometry")
         }
@@ -374,14 +415,18 @@ enum NativeSnapshotImage {
         }
         let width = Int(display.rotation == "rot0" ? display.pixelWidth : display.pixelHeight)
         let height = Int(display.rotation == "rot0" ? display.pixelHeight : display.pixelWidth)
-        try validateNativeRectangle(frame.image, width: width, height: height)
+        try validateNativeRectangle(frame.image, width: width, height: height, allowReducedResolution: allowReducedResolution)
         return (width, height)
     }
 
-    static func validateNativeRectangle(_ image: NativeDecodedVideoFrame, width: Int, height: Int) throws {
+    static func validateNativeRectangle(_ image: NativeDecodedVideoFrame, width: Int, height: Int, allowReducedResolution: Bool = false) throws {
         let pixels = image.pixels
         let encodedWidth = CVPixelBufferGetWidth(pixels), encodedHeight = CVPixelBufferGetHeight(pixels)
-        guard image.nativeWidth == width, image.nativeHeight == height,
+        guard (!image.isReducedResolution || allowReducedResolution),
+              image.activeWidth > 0, image.activeHeight > 0,
+              image.activeWidth <= encodedWidth, image.activeHeight <= encodedHeight,
+              (!image.isReducedResolution || (image.activeWidth % 16 == 0 && image.activeHeight % 16 == 0)),
+              image.nativeWidth == width, image.nativeHeight == height,
               width > 0, height > 0, encodedWidth >= width, encodedHeight >= height, encodedWidth - width < 64, encodedHeight - height < 64,
               [kCVPixelFormatType_32BGRA, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange].contains(CVPixelBufferGetPixelFormatType(pixels)) else {
             throw IPhoneUseError("native_snapshot_geometry_unavailable", "Media dimensions do not match native screen axes")
