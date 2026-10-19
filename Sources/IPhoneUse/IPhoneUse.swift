@@ -90,26 +90,34 @@ struct Connect: ParsableCommand {
 }
 
 struct Configuration: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "config", abstract: "Read or set defaults in ~/.iphone-use/config.json (IPHONE_USE_CONFIG_DIR overrides the directory without Runner mode inference).",
+    static let configuration = CommandConfiguration(commandName: "config", abstract: "Read or set defaults in ~/.iphone-use/ (IPHONE_USE_CONFIG_DIR overrides the directory without Runner mode inference).",
                                                      subcommands: [Get.self, Set.self])
     struct Get: ParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "Read the effective default mode without creating configuration or connecting a device.")
-        @Argument(help: "Configuration key: mode.") var key: String
+        static let configuration = CommandConfiguration(abstract: "Read an effective default without creating configuration or connecting a device.")
+        @Argument(help: "Configuration key: mode or preview-port.") var key: String
         mutating func run() throws {
             try output {
-                guard key == "mode" else { throw ValidationError("Supported configuration key: mode") }
-                return ["ok": true, "result": try ModeConfiguration().get()]
+                switch key {
+                case "mode": return ["ok": true, "result": try ModeConfiguration().get()]
+                case "preview-port": return ["ok": true, "result": try PreviewConfiguration().get()]
+                default: throw ValidationError("Supported configuration keys: mode, preview-port")
+                }
             }
         }
     }
     struct Set: ParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "Save the mode for future sessions; existing sessions keep their backend.")
-        @Argument(help: "Configuration key: mode.") var key: String
-        @Argument(help: "standard or runner.") var value: String
+        static let configuration = CommandConfiguration(abstract: "Save a default; existing sessions keep their backend and running previews keep their port.")
+        @Argument(help: "Configuration key: mode or preview-port.") var key: String
+        @Argument(help: "standard/runner for mode; 1024...65535 for preview-port (default 8765).") var value: String
         mutating func run() throws {
             try output {
-                guard key == "mode" else { throw ValidationError("Supported configuration key: mode") }
-                return ["ok": true, "result": try ModeConfiguration().set(mode: value)]
+                switch key {
+                case "mode": return ["ok": true, "result": try ModeConfiguration().set(mode: value)]
+                case "preview-port":
+                    guard let port = Int(value) else { throw IPhoneUseError("invalid_preview_port", "Preview port must be an integer from 1024 through 65535") }
+                    return ["ok": true, "result": try PreviewConfiguration().set(port: port)]
+                default: throw ValidationError("Supported configuration keys: mode, preview-port")
+                }
             }
         }
     }
@@ -496,10 +504,13 @@ struct Preview: ParsableCommand {
     @OptionGroup var options: SessionOptions
     @Flag(help: "Stop preview without stopping control or an active recording.") var stop = false
     @Flag(help: "Return the URL without opening a browser.") var noOpen = false
+    @Option(help: "Loopback TCP port for this start (1024...65535). Overrides config preview-port; default 8765. An occupied port returns preview_port_in_use; retry with another port.") var port: Int?
     mutating func run() throws {
         let session = try options.requiredSession()
         try output {
-            let response = try SessionClient.call(session: session, operation: stop ? "preview-stop" : "preview-start")
+            guard !stop || port == nil else { throw ValidationError("--port cannot be combined with --stop") }
+            let fields = stop ? [:] : try PreviewConfiguration().startFields(port: port)
+            let response = try SessionClient.call(session: session, operation: stop ? "preview-stop" : "preview-start", fields: fields)
             if !stop, !noOpen, response["ok"] as? Bool == true,
                let result = response["result"] as? [String: Any], let url = result["url"] as? String {
                 let open = Process(); open.executableURL = URL(fileURLWithPath: "/usr/bin/open"); open.arguments = [url]

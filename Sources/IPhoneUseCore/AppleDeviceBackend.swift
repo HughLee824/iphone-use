@@ -850,14 +850,14 @@ final class AppleDeviceBackend: SessionBackend {
         try media?.ensureDisplay(display, mayReplace: hid?.state == .ready)
         attachPreview()
     }
-    func startPreview() throws -> [String: Any] {
+    func startPreview(options: NativePreviewOptions = NativePreviewOptions()) throws -> [String: Any] {
         try cancellation.check()
-        if let preview { return preview.status() }
+        if let preview { return try preview.status(for: options) }
         guard controlError == nil, hid?.state == .ready, let cli,
               recordingMediaCleanup["mediaStopAcknowledged"] as? Bool != false else {
             throw IPhoneUseError("preview_unavailable", "Native control or media cleanup is not ready")
         }
-        let preview = try NativePreview(device: previewDevice); self.preview = preview; previewFailure = nil
+        let preview = try NativePreview(port: options.port, device: previewDevice); self.preview = preview; previewFailure = nil
         do {
             let facts = try NativeCaptureChecks.read { try cli.read($0) }
             try ensurePreviewMedia(facts.display)
