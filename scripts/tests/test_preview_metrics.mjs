@@ -10,7 +10,7 @@ const catalog=JSON.parse(readFileSync(new URL('../../assets/preview/catalog.json
 
 function fixture(productType='iPhone13,3', navigator={language:'zh-CN'}, appearanceComparisonEnabled=true) {
   let clock = 0;
-  const elements = Object.fromEntries(['gestures', 'screen', 'state', 'diagnostics', 'metrics', 'device', 'stage', 'bezel', 'shell', 'hardware', 'cutout', 'speaker', 'device-name', 'connection', 'fullscreen', 'appearance-toggle', 'viewer', 'placeholder-label', 'diagnostics-label', 'identity', 'toolbar', 'chrome'].map(id => [id, { dataset: {}, style: { setProperty(name,value) { this[name]=value; } }, clientWidth: 1000, clientHeight: 700, getBoundingClientRect() { return {left:0,right:0,top:0,bottom:0}; }, events: {}, addEventListener(name, fn) { this.events[name]=fn; }, setAttribute(name,value) { this[name]=value; } }]));
+  const elements = Object.fromEntries(['notice', 'notice-title', 'notice-message', 'notice-prompt', 'notice-footnote', 'gestures', 'screen', 'state', 'diagnostics', 'metrics', 'device', 'stage', 'bezel', 'shell', 'hardware', 'cutout', 'speaker', 'device-name', 'connection', 'fullscreen', 'appearance-toggle', 'viewer', 'placeholder-label', 'diagnostics-label', 'identity', 'toolbar', 'chrome'].map(id => [id, { dataset: {}, style: { setProperty(name,value) { this[name]=value; } }, clientWidth: 1000, clientHeight: 700, getBoundingClientRect() { return {left:0,right:0,top:0,bottom:0}; }, events: {}, addEventListener(name, fn) { this.events[name]=fn; }, setAttribute(name,value) { this[name]=value; } }]));
   const document = { documentElement:{}, events:{}, visibilityState: 'visible', getElementById: id => elements[id], addEventListener: (name, fn) => { document.events[name]=fn;if(name==='visibilitychange'){const previous=document.visibilityChanged;document.visibilityChanged=()=>{previous?.();fn();};} } };
   let report;
   const context = vm.createContext({ document, navigator, URLSearchParams, location: { search: '?diagnostics=1' },
@@ -517,4 +517,86 @@ test('frame polling waits for the bounded candidate and retries a decode error',
   assert.equal(p.run('scheduled.length'),1);
   assert.equal(p.run('scheduled[0].delay'),100);
   assert.equal(p.run('screen===originalScreen'),true);
+});
+
+test('confirmed authorization stays visible even with healthy live media, then clears', () => {
+  const p=fixture();p.frame(100,1);p.run('lastFrameAt=100');
+  const connection={phase:'ready',authorization:'required',reason:'ui_automation_authorization_required',requiresUserAction:true,monitorAvailable:true,evidence:'device_log_exact_runner_pid'};
+  p.run(`renderHealth(${JSON.stringify({connection,mediaHealthy:true,frameAgeSeconds:0})})`);
+  assert.equal(p.elements.notice.hidden,false);
+  assert.equal(p.elements['notice-title'].textContent,'在 iPhone 上授权');
+  assert.match(p.elements['notice-message'].textContent,/密码仅在手机上输入/);
+  p.run(`renderHealth(${JSON.stringify({connection:{...connection,authorization:'enabled',requiresUserAction:false},mediaHealthy:true,frameAgeSeconds:0})})`);
+  assert.equal(p.elements.notice.hidden,true);
+});
+
+test('startup guidance is conditional and ordinary connection failure never claims authorization', async () => {
+  const p=fixture();
+  p.run(`renderHealth({connection:{phase:'starting',authorization:'unknown',requiresUserAction:false}})`);
+  assert.equal(p.elements['notice-title'].textContent,'正在等待 iPhone 就绪');
+  assert.match(p.elements['notice-message'].textContent,/如果/);
+  p.run(`renderHealth({connection:{phase:'starting',authorization:'authenticated'}})`);
+  assert.equal(p.elements['notice-title'].textContent,'授权已完成，正在连接');
+  for(const state of [{mediaHealthy:false,error:'timeout'}, {connection:{phase:'failed',authorization:'required',reason:'ui_automation_authorization_required',requiresUserAction:true,monitorAvailable:true,evidence:'device_log_exact_runner_pid'}}, {connection:{phase:'ready',authorization:'required',reason:'ui_automation_authorization_required',requiresUserAction:true,monitorAvailable:false,evidence:'none'},mediaHealthy:false}]){
+    p.run(`renderHealth(${JSON.stringify(state)})`);
+    assert.equal(p.elements.notice.hidden,false);
+    assert.equal(p.elements['notice-title'].textContent,'连接未完成');
+    assert.doesNotMatch(p.elements['notice-message'].textContent,/授权|认证/);
+    assert.equal(p.elements['notice-prompt'].hidden,true);
+    assert.equal(p.elements.notice.dataset.kind,'error');
+  }
+  await p.run('fetch=async()=>{throw Error()};health()');
+  assert.equal(p.elements['notice-title'].textContent,'预览已停止或连接断开');
+});
+
+test('lost authorization evidence never silently claims recovery while video remains healthy', () => {
+  const p=fixture();p.frame(100,1);p.run('lastFrameAt=100');
+  p.run(`renderHealth({connection:{phase:'ready',authorization:'unverified',monitorAvailable:false,requiresUserAction:false},mediaHealthy:true,frameAgeSeconds:0})`);
+  assert.equal(p.elements.notice.hidden,false);
+  assert.equal(p.elements['notice-title'].textContent,'请检查 iPhone 上的认证状态');
+  assert.match(p.elements['notice-message'].textContent,/还无法确认/);
+});
+
+
+test('connection screen follows the video aperture for both frames and rotations', () => {
+  const p=fixture();
+  for(const drawn of [true,false])for(const rotation of ['rot0','rot90','rot270']){
+    p.run(`forceDrawing=${drawn}`);
+    const landscape=rotation!=='rot0';p.layout(landscape?2532:1170,landscape?1170:2532,rotation);
+    for(const property of ['left','top','width','height','borderRadius'])assert.equal(p.elements.notice.style[property],p.elements.screen.style[property]);
+    assert.equal(p.elements.notice.dataset.landscape,String(landscape));
+  }
+});
+
+test('authorization artwork and instructions follow evidence and clear on recovery', () => {
+  const p=fixture('iPhone13,3',{language:'en'});p.frame(100,1);p.run('lastFrameAt=100');
+  p.run("renderHealth({connection:{phase:'starting',authorization:'required',reason:'ui_automation_authorization_required',requiresUserAction:true,monitorAvailable:true,evidence:'device_log_exact_runner_pid'}})");
+  assert.equal(p.elements.notice.dataset.kind,'attention');
+  assert.equal(p.elements['notice-prompt'].hidden,false);
+  assert.equal(p.elements['notice-footnote'].hidden,false);
+  assert.equal(p.elements.device.dataset.notice,'true');
+  assert.match(p.elements['notice-message'].textContent,/only on your phone/);
+  p.run("renderHealth({connection:{phase:'starting',authorization:'enabled'}})");
+  assert.equal(p.elements.notice.dataset.kind,'success');
+  assert.equal(p.elements['notice-prompt'].hidden,true);
+  assert.equal(p.elements['notice-footnote'].hidden,true);
+  p.run("renderHealth({connection:{phase:'ready',authorization:'enabled'},mediaHealthy:true,frameAgeSeconds:0})");
+  assert.equal(p.elements.notice.hidden,true);
+  assert.equal(p.elements.device.dataset.notice,'false');
+});
+
+
+test('other or unknown runtime permission requests never become UI Automation prompts', () => {
+  const p=fixture();p.frame(100,1);p.run('lastFrameAt=100');
+  const connection={phase:'ready',authorization:'required',requiresUserAction:true,monitorAvailable:true,evidence:'device_log_exact_runner_pid',reason:'ui_automation_authorization_required'};
+  // Start with the genuine automation overlay, then ensure changing request type clears it.
+  for(const reason of ['camera_permission_required','photos_permission_required','location_permission_required','unknown',undefined]){
+    p.run(`renderHealth(${JSON.stringify({connection,mediaHealthy:true,frameAgeSeconds:0})})`);
+    assert.equal(p.elements['notice-prompt'].hidden,false);
+    p.run(`renderHealth(${JSON.stringify({connection:{...connection,reason},mediaHealthy:true,frameAgeSeconds:0})})`);
+    assert.equal(p.elements.notice.hidden,true);
+    assert.equal(p.elements['notice-prompt'].hidden,true);
+    assert.equal(p.elements.device.dataset.notice,'false');
+    assert.equal(p.elements.state.textContent,'实时画面');
+  }
 });

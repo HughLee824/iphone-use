@@ -58,6 +58,9 @@ if text_help=$("$cli" text-prepare --help 2>/dev/null) && printf '%s\n' "$text_h
   echo 'Scoped text preparation: available. Before the first input, text-prepare once; then inspect the returned screenshot and focus the field if needed.'
 fi
 connect_help=$("$cli" connect --help)
+if printf '%s\n' "$connect_help" | grep -q -- '--progress'; then
+  echo 'Connection progress: available. Use connect --progress, relay human-action events immediately, and keep the same pending command. Runner can add --preview to show authorization before readiness; --port overrides the startup preview port.'
+fi
 if printf '%s\n' "$connect_help" | grep -q -- '--mode'; then
   echo 'Control modes: available. Honor saved mode unless the user explicitly selects standard or runner.'
 fi

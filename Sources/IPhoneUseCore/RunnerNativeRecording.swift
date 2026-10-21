@@ -179,6 +179,7 @@ final class RunnerNativeRecording {
     private var currentRecordingID: String?
     private var closed = false
     private var preview: NativePreview?
+    var connectionStatus: () -> [String: Any]? = { nil }
     private var independentOrientationConflicts = 0
     private let previewContinuity = NativePreviewContinuity()
     private let previewEventsURL: URL
@@ -280,18 +281,24 @@ final class RunnerNativeRecording {
 
     func showPreviewGesture(_ gesture: NativePreviewGesture) { preview?.showGesture(gesture) }
     var previewGestureRotation: String? { preview?.gestureRotation }
+    func reservePreview(options: NativePreviewOptions) throws -> [String: Any] {
+        if let preview { return try preview.status(for: options) }
+        let preview = try NativePreview(port: options.port, device: connection?.previewDevice ?? .unknown,
+                                        connectionStatus: connectionStatus)
+        self.preview = preview
+        return preview.status()
+    }
     func startPreview(options: NativePreviewOptions = NativePreviewOptions()) throws -> [String: Any] {
         try cancellation.check()
         guard !closed, failure == nil else { throw IPhoneUseError("preview_unavailable", failure ?? "Connection closed") }
-        if let preview { return try preview.status(for: options) }
+        if let preview, connection != nil { return try preview.status(for: options) }
         // Reserve the HTTP port before touching media. A collision must not
         // poison this owner or interrupt an existing recording.
-        let preview = try NativePreview(port: options.port, device: connection?.previewDevice ?? .unknown)
-        self.preview = preview
+        _ = try reservePreview(options: options)
         do {
             if connection == nil { connection = try connect() }
             try attachPreview()
-            return preview.status()
+            return preview!.status()
         } catch {
             self.preview?.close(); self.preview = nil
             if !recording.isActive { releaseMedia() }

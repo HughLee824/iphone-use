@@ -32,11 +32,11 @@ public enum SessionClient {
                 "action": action, "observation": observation]
     }
 
-    public static func connect(device: String, xctestrun: URL, idleTimeout: IdleTimeout, modeSource: String = "explicit_runner") throws -> [String: Any] {
+    public static func connect(device: String, xctestrun: URL, idleTimeout: IdleTimeout, modeSource: String = "explicit_runner", previewPort: Int? = nil, onProgress: (([String: Any]) -> Void)? = nil) throws -> [String: Any] {
         guard FileManager.default.isReadableFile(atPath: xctestrun.path), xctestrun.pathExtension == "xctestrun" else {
             throw IPhoneUseError("runner_not_built", "Run build-runner, then provide its readable .xctestrun path using --xctestrun")
         }
-        return try connect(device: device, runnerPath: xctestrun.path, backend: "xctest", idleTimeout: idleTimeout, modeSource: modeSource)
+        return try connect(device: device, runnerPath: xctestrun.path, backend: "xctest", idleTimeout: idleTimeout, modeSource: modeSource, previewPort: previewPort, onProgress: onProgress)
     }
 
     public static func connectNative(device: String, idleTimeout: IdleTimeout, endpointInventory: String? = nil, modeSource: String = "explicit_standard") throws -> [String: Any] {
@@ -44,13 +44,13 @@ public enum SessionClient {
                     endpointInventory: endpointInventory.map { URL(fileURLWithPath: $0).standardizedFileURL.path }, modeSource: modeSource)
     }
 
-    private static func connect(device: String, runnerPath: String, backend: String, idleTimeout: IdleTimeout, endpointInventory: String? = nil, modeSource: String) throws -> [String: Any] {
+    private static func connect(device: String, runnerPath: String, backend: String, idleTimeout: IdleTimeout, endpointInventory: String? = nil, modeSource: String, previewPort: Int? = nil, onProgress: (([String: Any]) -> Void)? = nil) throws -> [String: Any] {
         umask(0o077)
         let session = "s" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
         let paths = try SessionPaths(session: session)
         try SessionPaths.secureDirectory(paths.directory)
         let config = HostConfiguration(session: session, device: device, xctestrun: runnerPath,
-                                       idleTimeoutSeconds: idleTimeout.seconds, backend: backend, nativeEndpointInventory: endpointInventory, modeSource: modeSource)
+                                       idleTimeoutSeconds: idleTimeout.seconds, backend: backend, nativeEndpointInventory: endpointInventory, modeSource: modeSource, startupPreviewPort: previewPort)
         try JSONEncoder().encode(config).write(to: paths.config, options: .atomic)
         FileManager.default.createFile(atPath: paths.log.path, contents: nil)
         let log = try FileHandle(forWritingTo: paths.log)
@@ -62,8 +62,15 @@ public enum SessionClient {
         host.standardOutput = log
         host.standardError = log
         try host.run()
+        onProgress?(["event": "connection_progress", "session": session, "phase": "starting", "requiresUserAction": false,
+                     "message": "Keep the iPhone unlocked. If Enable UI Automation appears, complete authentication on the phone now. Do not send the passcode to the agent."])
+        var previousProgress: Data?
         let deadline = ProcessInfo.processInfo.systemUptime + 150
         while ProcessInfo.processInfo.systemUptime < deadline {
+            if let onProgress, let data = try? Data(contentsOf: paths.directory.appendingPathComponent("connection-progress.json")), data != previousProgress,
+               var progress = try? jsonObject(data) {
+                previousProgress = data; progress["event"] = "connection_progress"; progress["session"] = session; onProgress(progress)
+            }
             let errorURL = paths.directory.appendingPathComponent("startup-error.json")
             if let data = try? Data(contentsOf: errorURL), let error = try? jsonObject(data) {
                 host.waitUntilExit()

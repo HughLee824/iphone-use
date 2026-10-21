@@ -71,13 +71,20 @@ final class XCTestBackend: SessionBackend {
     private let recordingCancellation = NativeCancellation()
     private var recording: RunnerNativeRecording?
     private var recordingPlatformSupported = false
+    private let authorization: RunnerAuthorization
 
     init(config: HostConfiguration, paths: SessionPaths) {
         self.config = config
         self.paths = paths
+        authorization = RunnerAuthorization(directory: paths.directory)
     }
 
     func start() throws -> [String: Any] {
+        do { return try startRunner() }
+        catch { authorization.failed(String(describing: error)); throw error }
+    }
+
+    private func startRunner() throws -> [String: Any] {
         let details = try deviceInfo("details")
         guard let hardware = details["hardwareProperties"] as? [String: Any],
               let udid = hardware["udid"] as? String else {
@@ -105,7 +112,16 @@ final class XCTestBackend: SessionBackend {
                                 launchEnvironment: environment)
         }
         self.runner = runner
+        recording?.connectionStatus = { [authorization] in authorization.snapshot() }
+        if let port = config.startupPreviewPort {
+            let options = NativePreviewOptions(port: try PreviewConfiguration.validate(port: port), explicitPort: true)
+            let preview = try recording?.reservePreview(options: options)
+            if let url = preview?["url"] as? String { authorization.setPreviewURL(url) }
+        }
+        authorization.start(device: udid)
+        try recordingCancellation.check()
         let launched = try runner.start(bundle: bundle, token: token)
+        authorization.bind(runnerPID: launched.pid)
         try saveJSON(["device": udid, "bundleId": bundle, "runnerPid": launched.pid,
                       "executable": launched.executable.absoluteString, "transport": "usb-loopback",
                       "launch": "standalone-background", "installationPerformed": false],
@@ -113,6 +129,7 @@ final class XCTestBackend: SessionBackend {
         let deadline = ProcessInfo.processInfo.systemUptime + 90
         var nextProcessCheck = ProcessInfo.processInfo.systemUptime
         while ProcessInfo.processInfo.systemUptime < deadline {
+            try recordingCancellation.check()
             // Only startup health checks retry; launching and UI input never do.
             if let response = try? request("ping", timeout: 1), response["ok"] as? Bool == true,
                let result = response["result"] as? [String: Any] {
@@ -126,17 +143,21 @@ final class XCTestBackend: SessionBackend {
                 guard result["applicationStateTimeoutSupported"] as? Bool == true else {
                     throw IPhoneUseError("unsupported_xctest_runtime", "This XCTest runtime cannot bound application-state waits")
                 }
+                authorization.ready()
+                if let port = config.startupPreviewPort {
+                    _ = try recording?.startPreview(options: NativePreviewOptions(port: try PreviewConfiguration.validate(port: port), explicitPort: true))
+                }
                 return metadata()
             }
             if ProcessInfo.processInfo.systemUptime >= nextProcessCheck {
                 guard try runner.isRunning() else {
-                    throw RunnerStartupDiagnostics.failure(processExited: true)
+                    throw RunnerStartupDiagnostics.failure(processExited: true, authorization: authorization.snapshot())
                 }
                 nextProcessCheck = ProcessInfo.processInfo.systemUptime + 3
             }
             Thread.sleep(forTimeInterval: 0.2)
         }
-        throw RunnerStartupDiagnostics.failure(processExited: false)
+        throw RunnerStartupDiagnostics.failure(processExited: false, authorization: authorization.snapshot())
     }
 
     private func deviceInfo(_ kind: String) throws -> [String: Any] {
@@ -180,6 +201,7 @@ final class XCTestBackend: SessionBackend {
         let recordingStatus = recording?.status() ?? ["state": "idle"]
         result["recording"] = recordingStatus
         result["preview"] = recording?.previewStatus ?? ["state": "stopped"]
+        result["connection"] = authorization.snapshot()
         result["recordingSupport"] = ["supported": recordingPlatformSupported, "method": "native_rtp", "source": "owned_native_rtp", "codec": "hevc",
                                       "connectionPolicy": "on_explicit_record_or_preview_start", "hidServiceOpened": false,
                                       "availability": !recordingPlatformSupported ? "unsupported_platform" :
@@ -323,6 +345,7 @@ final class XCTestBackend: SessionBackend {
     func cancelCurrent() { recordingCancellation.cancel() }
 
     func stop() -> [String: Any] {
+        let monitorExited = authorization.stop()
         recordingCancellation.cancel()
         let recordingCleanup = recording?.close() ?? ["recordingCleanupAcknowledged": true]
         var acknowledged = false
@@ -337,6 +360,7 @@ final class XCTestBackend: SessionBackend {
         return ["shutdownAcknowledged": acknowledged && cleanup["runnerProcessExited"] as? Bool == true
                     && recordingCleanup["recordingCleanupAcknowledged"] as? Bool == true,
                 "runnerShutdownAcknowledged": acknowledged, "recordingCleanup": recordingCleanup,
+                "authorizationMonitorExited": monitorExited,
                 "runnerProcessExited": cleanup["runnerProcessExited"] ?? false, "runnerCleanup": cleanup]
     }
 }

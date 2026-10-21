@@ -12,7 +12,7 @@ final class RunnerStartupDiagnosticsTests: XCTestCase {
         for failure in [exit, timeout] {
             XCTAssertTrue(failure.description.contains("does not establish an authorization problem"))
             XCTAssertFalse(failure.description.contains("xcodebuild"))
-            XCTAssertFalse(failure.description.contains("Enable UI Automation"))
+            XCTAssertTrue(failure.description.contains("If Enable UI Automation"))
         }
     }
 }
