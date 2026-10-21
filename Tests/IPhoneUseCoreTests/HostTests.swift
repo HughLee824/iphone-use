@@ -39,8 +39,15 @@ private final class ControlledBackend: SessionBackend {
     private(set) var lastTextMode: String?
     let actionStarted = DispatchSemaphore(value: 0)
     let releaseAction = DispatchSemaphore(value: 0)
+    var blockStart = false
+    let startEntered = DispatchSemaphore(value: 0)
+    let releaseStart = DispatchSemaphore(value: 0)
+    func cancelCurrent() { releaseStart.signal() }
 
-    func start() throws -> [String: Any] { ["runnerSession": "controlled-runner", "runnerPid": 123] }
+    func start() throws -> [String: Any] {
+        if blockStart { startEntered.signal(); _ = releaseStart.wait(timeout: .now() + 5) }
+        return ["runnerSession": "controlled-runner", "runnerPid": 123]
+    }
     var statusInfo: [String: Any]?
     func status() throws -> [String: Any] { try statusInfo ?? start() }
     func apps() throws -> AppCatalog {
@@ -710,6 +717,10 @@ final class HostTests: XCTestCase {
             finished.fulfill()
         }
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        if backend.blockStart {
+            XCTAssertEqual(backend.startEntered.wait(timeout: .now() + 2), .success)
+            return (paths, session, finished)
+        }
         let deadline = Date().addingTimeInterval(3)
         while Date() < deadline {
             if let response = try? call(paths, session: session, op: "status"), response["ok"] as? Bool == true {
@@ -764,6 +775,17 @@ final class HostTests: XCTestCase {
         XCTAssertEqual(backend.stopCount, 1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: paths.socket))
         XCTAssertThrowsError(try call(paths, session: session, op: "status"))
+    }
+
+    func testDisconnectCancelsPendingStartupAndCleansOwnedHost() throws {
+        let backend = ControlledBackend(); backend.blockStart = true
+        let (paths, session, finished) = try host(timeout: 5, backend: backend)
+        let response = try call(paths, session: session, op: "disconnect")
+        XCTAssertEqual(response["ok"] as? Bool, true)
+        wait(for: [finished], timeout: 3)
+        XCTAssertEqual(backend.stopCount, 1)
+        XCTAssertEqual(backend.inputCount, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: paths.socket))
     }
 
     func testNativeExitUsesFinalAvailabilityInsteadOfStartupSnapshot() throws {

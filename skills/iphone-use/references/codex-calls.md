@@ -2,7 +2,7 @@
 
 With `functions.exec` exposing `tools.exec_command`, use the start block for each selected CLI command. It prints completion/action facts and **displays an attached successful screenshot in the same invocation**, including `text-prepare`, `text-finish` and actions whose outcome is `unknown`. Inspect the emitted image before selecting the next action; do not separately call `view_image` or `observe` when it is already present.
 
-After connect, apply the shared [live-preview lifecycle](live-preview.md) before the first app observation/input. Run `preview --no-open` through this adapter, using the same CLI/environment/permissions as connect.
+For `connect --progress`, first follow [connection progress](connection-progress.md): prompt the user while the command is still pending, and open any early preview URL only once. After connect, apply the shared [live-preview lifecycle](live-preview.md) before the first app observation/input. Run `preview --no-open` through this adapter, using the same CLI/environment/permissions as connect.
 
 After successful completion, open `result.url` **once in the Codex built-in browser**. Use the exposed in-app browser capability (for example `cua.createBrowserTab("iab", url, {visible: true})`) following its tool instructions; retain its tab handle for cleanup. If only `mcp__codex_app__open_in_codex` is available, use `target: {type: "browser", url: result.url}`. A `queued` result is pending, not proof that a page is visible; do not issue a second open request.
 
@@ -30,7 +30,10 @@ if (!Number.isInteger(result.exit_code)) {
   text(result);
 } else {
   let reply;
-  try { reply = JSON.parse(result.output); } catch {}
+  try { reply = JSON.parse(result.output); } catch {
+    const lines = result.output.trim().split("\n");
+    try { reply = JSON.parse(lines.at(-1)); } catch {}
+  }
   text(reply ? {exit_code: result.exit_code, ...reply} : result);
   if (reply?.observation?.ok === true && reply.observation.result?.screenshot) {
     const screenshot = await tools.view_image({path: reply.observation.result.screenshot});
@@ -78,7 +81,10 @@ if (!Number.isInteger(execution.exit_code)) {
   text(result);
 } else {
   let reply;
-  try { reply = JSON.parse(execution.output); } catch {}
+  try { reply = JSON.parse(execution.output); } catch {
+    const lines = execution.output.trim().split("\n");
+    try { reply = JSON.parse(lines.at(-1)); } catch {}
+  }
   text(reply ? {exit_code: execution.exit_code, ...reply} : execution);
   if (reply?.observation?.ok === true && reply.observation.result?.screenshot) {
     const screenshot = await tools.view_image({path: reply.observation.result.screenshot});

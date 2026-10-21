@@ -44,4 +44,8 @@ FOUNDATION_EXPORT NSArray<NSNumber *> *ASNativeRSDPorts(NSString *inventory, NSS
 
 // Exercise the exact value conversion used by the native channel, without a device.
 FOUNDATION_EXPORT NSDictionary * _Nullable ASNativeRoundTrip(NSDictionary *value, NSError **error);
+// Used only in an isolated, session-owned helper. Streams live device logs;
+// callers must discard unrelated messages and never store raw log contents.
+FOUNDATION_EXPORT BOOL ASReadDeviceLog(NSString *udid, void (^ready)(void),
+                                     void (^line)(NSString *), NSError **error);
 NS_ASSUME_NONNULL_END

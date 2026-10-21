@@ -188,6 +188,11 @@ final class SessionHost {
                 return
             }
         }
+        if operation == "disconnect", lifecycle.phase == .starting {
+            backend.cancelCurrent()
+            close(reason: "disconnect", requestID: id, reply: reply)
+            return
+        }
         guard lifecycle.accept(at: ProcessInfo.processInfo.systemUptime) else {
             reject("session_closed", "Session has expired or is closing; connect again")
             if lifecycle.isExpired(at: ProcessInfo.processInfo.systemUptime) { close(reason: "idle_timeout") }

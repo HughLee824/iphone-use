@@ -48,6 +48,29 @@ private final class RunnerRecordingConnectionStub: RunnerRecordingConnection {
 }
 
 final class RunnerRecordingTests: XCTestCase {
+    func testEarlyPreviewReservesOnlyHTTPAndReusesURLAfterAuthorization() throws {
+        var starts = 0
+        let connection = RunnerRecordingConnectionStub()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let owner = RunnerNativeRecording(root: root, cancellation: NativeCancellation()) {
+            starts += 1; return connection
+        }
+        defer { _ = owner.close() }
+        var authorized = false
+        owner.connectionStatus = { ["requiresUserAction": !authorized] }
+        let early = try owner.reservePreview(options: NativePreviewOptions(port: 0))
+        XCTAssertEqual(starts, 0)
+        XCTAssertEqual((early["connection"] as? [String: Any])?["requiresUserAction"] as? Bool, true)
+        authorized = true
+        let live = try owner.startPreview(options: NativePreviewOptions(port: 0))
+        XCTAssertEqual(starts, 1)
+        XCTAssertEqual(live["url"] as? String, early["url"] as? String)
+        XCTAssertEqual((live["connection"] as? [String: Any])?["requiresUserAction"] as? Bool, false)
+        _ = try owner.stopPreview()
+        XCTAssertEqual(connection.closed, 1)
+    }
+
     func testPortCollisionDoesNotStartMediaOrPoisonRetryOrInterruptRecording() throws {
         for recordingActive in [false, true] {
             let occupied = try NativePreview(port: 0)

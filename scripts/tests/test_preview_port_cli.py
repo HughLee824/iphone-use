@@ -119,6 +119,20 @@ class PreviewPortCLITests(unittest.TestCase):
         self.assertNotIn("port", request)
         self.assertEqual(file.read_text(), "malformed")
 
+    def test_early_preview_flags_are_validated_before_device_access(self):
+        cases = [
+            (["--mode", "runner", "--preview"], "requires --progress"),
+            (["--mode", "standard", "--progress", "--preview"], "Runner mode"),
+            (["--mode", "runner", "--port", "9876"], "requires --preview"),
+            (["--mode", "runner", "--progress", "--preview", "--port", "0"], "1024"),
+        ]
+        for args, message in cases:
+            code, result = self.cli("connect", "--device", "not-a-real-device", *args)
+            self.assertNotEqual(code, 0)
+            self.assertIn(message, result["error"]["message"])
+            self.assertNotIn("event", result)
+        self.assertFalse(list(self.root.glob("s*")), "Invalid options must not create a session or launch Runner")
+
 
 if __name__ == "__main__":
     unittest.main()

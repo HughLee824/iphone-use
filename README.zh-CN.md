@@ -131,6 +131,10 @@ iphone-use --session "$SESSION" record-stop "$RECORDING_ID"
 iphone-use --session "$SESSION" preview --stop
 ```
 
+CLI 0.3.12 新增 `connect --progress`：连接过程中逐行输出 `connection_progress` JSON，最后仍返回连接结果。Agent 应立即转达明确的授权提示，继续等待同一次连接；密码只在手机上输入。只有与本次 Runner PID 匹配的设备日志才会确认“需要授权”，普通超时、断流或日志不可用不会被当作授权请求。
+
+Runner 可用 `connect --device "$IOS_UDID" --mode runner --progress --preview` 在认证前启动预览页，`--port 9876` 可覆盖端口；工具返回 URL，不自动打开浏览器。页面先显示等待指引，确认授权请求后显示醒目提示，完成认证并连接后在同一网址显示实时画面。默认不加 `--progress` 的单份 JSON 输出保持兼容。专属引导只用于明确的 UI Automation 认证；Face ID 等 App 弹窗保留在真实画面中。详情见 [连接进度与授权](skills/iphone-use/references/connection-progress.md) 和 [验收范围](docs/runner-authorization-preview.md)。
+
 预览默认使用固定端口 **8765**。用 `iphone-use config get preview-port` 查看默认值，`iphone-use config set preview-port 9876` 保存下次启动使用的端口。单次指定 `iphone-use --session "$SESSION" preview --port 9877 --no-open` 优先级最高。端口占用会返回 `preview_port_in_use`，可在同一会话换端口重试；已运行的预览需先停止才能更换端口。
 
 目标上限为 30 fps、最长边 960 像素；稳定 30 fps 尚未通过验收，资源紧张时可能卡顿。旋转会结束录屏片段，方向恢复可能延迟；无音频和网页触控。关闭标签页不等于停止预览，浏览器请求也不续期会话。避免与 Device Hub 同时连接/预览同一手机。完整使用步骤、实现与限制见[本地浏览器预览](docs/local-preview-prototype.md)，成功和失败记录见[验收历史](docs/local-preview-validation.md)。

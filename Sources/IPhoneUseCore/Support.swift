@@ -55,6 +55,7 @@ struct HostConfiguration: Codable {
     var backend: String? = nil
     var nativeEndpointInventory: String? = nil
     var modeSource: String? = nil
+    var startupPreviewPort: Int? = nil
 
     var modeSelection: ModeSelection {
         ModeSelection(mode: backend == "apple-native" ? .standard : .runner,

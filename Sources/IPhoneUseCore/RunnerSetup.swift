@@ -89,7 +89,7 @@ public enum RunnerSetup {
                 "verified": ["connection", "observation-capture", "disconnect"]]
     }
 
-    public static func connect(device: String, idleTimeout: IdleTimeout, modeSource: String = "explicit_runner") throws -> [String: Any] {
+    public static func connect(device: String, idleTimeout: IdleTimeout, modeSource: String = "explicit_runner", previewPort: Int? = nil, onProgress: (([String: Any]) -> Void)? = nil) throws -> [String: Any] {
         let package = try RunnerPackage.installed()
         let root = stateDirectory
         // Resolve CoreDevice aliases to the same durable device identity used by setup.
@@ -101,7 +101,7 @@ public enum RunnerSetup {
         let record = try readRecord(device: udid, root: root)
         try validate(record, package: package, root: root)
         var response = try SessionClient.connect(device: udid,
-            xctestrun: root.appendingPathComponent("prepared/\(record.directory)/Runner.xctestrun"), idleTimeout: idleTimeout, modeSource: modeSource)
+            xctestrun: root.appendingPathComponent("prepared/\(record.directory)/Runner.xctestrun"), idleTimeout: idleTimeout, modeSource: modeSource, previewPort: previewPort, onProgress: onProgress)
         response["runner"] = ["releaseVersion": package.manifest.releaseVersion, "runnerVersion": record.runnerVersion, "bundleId": record.bundleID]
         return response
     }

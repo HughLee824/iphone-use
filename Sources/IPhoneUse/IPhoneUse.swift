@@ -15,7 +15,7 @@ struct SessionOptions: ParsableArguments {
 struct IPhoneUse: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "iphone-use", abstract: "Eyes and hands for agents operating a real iPhone.", version: RunnerSetup.releaseVersion,
-        subcommands: [Configuration.self, Setup.self, BuildRunner.self, Devices.self, Connect.self, Status.self, Apps.self, Open.self, Terminate.self, Relaunch.self, Observe.self, Inspect.self, Tap.self, DoubleTap.self, Pinch.self, LongPress.self, Swipe.self, Home.self, TypeText.self, TextPrepare.self, TextFinish.self, Press.self, RecordStart.self, RecordStop.self, Preview.self, Disconnect.self, Host.self])
+        subcommands: [Configuration.self, Setup.self, BuildRunner.self, Devices.self, Connect.self, Status.self, Apps.self, Open.self, Terminate.self, Relaunch.self, Observe.self, Inspect.self, Tap.self, DoubleTap.self, Pinch.self, LongPress.self, Swipe.self, Home.self, TypeText.self, TextPrepare.self, TextFinish.self, Press.self, RecordStart.self, RecordStop.self, Preview.self, Disconnect.self, Host.self, AuthorizationMonitor.self])
     @OptionGroup var options: SessionOptions
 }
 
@@ -71,20 +71,32 @@ struct Connect: ParsableCommand {
     @Option(help: "Compatibility option: apple-native = standard; xctest = runner. Conflicting options are rejected.") var backend: String?
     @Option(help: "Diagnostic override: a recent Apple netstat -anvl -p tcp file selects direct RSD discovery. Native connections normally use CoreDevice service sockets.") var nativeEndpointInventory: String?
 
+    @Flag(help: "Emit connection_progress JSON lines immediately, followed by the final JSON result. Agents should relay requiresUserAction messages while the command is pending.") var progress = false
+    @Flag(help: "Runner only: open the local preview service before authorization, then attach live media when ready. Requires --progress; never opens a browser automatically.") var preview = false
+    @Option(help: "Port for --preview; otherwise use the saved preview port (default 8765).") var port: Int?
+
     mutating func run() throws {
         try output {
             let timeout = try IdleTimeout(idleTimeout)
             let selection = try ModeConfiguration().select(mode: mode, backend: backend, xctestrun: xctestrun,
                                                            nativeEndpointInventory: nativeEndpointInventory)
+            guard !preview || (progress && selection.mode == .runner) else {
+                throw ValidationError("connect --preview requires --progress and Runner mode")
+            }
+            guard port == nil || preview else { throw ValidationError("connect --port requires --preview") }
+            let previewPort = preview ? try PreviewConfiguration().startFields(port: port)["port"] as? Int : nil
+            let report: (([String: Any]) -> Void)? = progress ? { value in
+                if var data = try? jsonData(value) { data.append(10); FileHandle.standardOutput.write(data) }
+            } : nil
             if selection.mode == .standard {
                 return try SessionClient.connectNative(device: device, idleTimeout: timeout, endpointInventory: nativeEndpointInventory, modeSource: selection.source)
             }
             if let xctestrun {
                 return try SessionClient.connect(device: device,
                     xctestrun: URL(fileURLWithPath: xctestrun).standardizedFileURL,
-                    idleTimeout: timeout, modeSource: selection.source)
+                    idleTimeout: timeout, modeSource: selection.source, previewPort: previewPort, onProgress: report)
             }
-            return try RunnerSetup.connect(device: device, idleTimeout: timeout, modeSource: selection.source)
+            return try RunnerSetup.connect(device: device, idleTimeout: timeout, modeSource: selection.source, previewPort: previewPort, onProgress: report)
         }
     }
 }
@@ -250,6 +262,12 @@ struct Host: ParsableCommand {
     static let configuration = CommandConfiguration(commandName: "_host", shouldDisplay: false)
     @Option var directory: String
     mutating func run() throws { try runHost(directory: URL(fileURLWithPath: directory, isDirectory: true)) }
+}
+
+struct AuthorizationMonitor: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "_authorization-monitor", shouldDisplay: false)
+    @Option var device: String
+    mutating func run() throws { try RunnerAuthorizationLog.run(device: device) }
 }
 
 struct ScreenGuardOptions: ParsableArguments {
