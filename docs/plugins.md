@@ -90,7 +90,7 @@ dsh --profile desktop --dump-config
 
 维护者在功能分支修改，经 PR 与必需 CI 合入 main，再等待同一 main 提交的 CI 成功。在 GitHub Actions 手动运行 **Publish DeepSeek Harness plugin**（`publish-dsh.yml`），输入根 `package.json` 的新版本。该流程独立于通用 skill 的 npm 发布，不重新发布 `iphone-use-skill`。
 
-Trusted Publisher 配置为 npm 包 `dsh-iphone-use`、仓库 `HughLee824/iphone-use`、工作流 `publish-dsh.yml`、环境 `npm`，允许 publish。GitHub 的 `npm` 环境仅允许 main，job 使用 `id-token: write`，无需 npm 写入 token。配置方法见 [npm 官方文档](https://docs.npmjs.com/trusted-publishers/)。
+Trusted Publisher 配置为 npm 包 `dsh-iphone-use`、仓库 `hughlee824/iphone-use`、工作流 `publish-dsh.yml`、环境 `npm`，允许 publish。GitHub 的 `npm` 环境仅允许 main，job 使用 `id-token: write`，无需 npm 写入 token。配置方法见 [npm 官方文档](https://docs.npmjs.com/trusted-publishers/)。
 
 CI 校验版本与未发布状态、同步插件，测试并打包根目录的 npm 包，再安装和测试同一个 tgz，通过 OIDC 发布并附带 provenance。`dsh-plugin-package` artifact 保存 tgz 和 `dsh-pack.json`。随后以全新 npm cache 从公开 registry 安装固定版本，核对 integrity、注册、资源和释放，再卸载。云端注册检查使用测试 registry；真实 Harness CLI/profile 和 Cordis/SkillRegistry 安装验收需在本机另行完成，不能据此声称真机操作通过。
 

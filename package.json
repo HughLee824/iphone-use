@@ -28,7 +28,7 @@
   "homepage": "https://iphone-use.com",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/HughLee824/iphone-use.git"
+    "url": "git+https://github.com/hughlee824/iphone-use.git"
   },
   "license": "MIT",
   "keywords": [

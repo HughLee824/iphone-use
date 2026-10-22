@@ -6,7 +6,7 @@
   "bin": { "iphone-use-skill": "bin/iphone-use-skill.mjs" },
   "files": ["bin/", "skills/", "LICENSE"],
   "engines": { "node": ">=20" },
-  "repository": { "type": "git", "url": "git+https://github.com/HughLee824/iphone-use.git", "directory": "packages/iphone-use-skill" },
+  "repository": { "type": "git", "url": "git+https://github.com/hughlee824/iphone-use.git", "directory": "packages/iphone-use-skill" },
   "homepage": "https://iphone-use.com",
   "license": "MIT"
 }

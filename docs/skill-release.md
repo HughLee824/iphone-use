@@ -21,7 +21,7 @@ npm 的版本详情、安装索引及 tarball 可能分批可见。验证脚本�
 本仓库未存储 npm 写入 token。发布前需要以下配置；仅提交工作流不代表 OIDC 已经生效：
 
 - GitHub environment 名称 `npm`，部署分支只允许 `main`；需要时在该环境设置发布审批。
-- npm 的 `iphone-use-skill` 包设置中添加 GitHub Actions Trusted Publisher：owner `HughLee824`、repository `iphone-use`、workflow filename `publish-skill.yml`、environment `npm`，允许 `npm publish`。
+- npm 的 `iphone-use-skill` 包设置中添加 GitHub Actions Trusted Publisher：owner `hughlee824`、repository `iphone-use`、workflow filename `publish-skill.yml`、environment `npm`，允许 `npm publish`。
 - 使用 GitHub-hosted runner 与 Node 24，npm 至少 11.5.1；发布 job 只有必要的 `contents: read`、`actions: read` 和 `id-token: write` 权限。无需复制本机登录凭据，也不设置 `NODE_AUTH_TOKEN`。
 
 新 trusted publisher 必须在 npm 要求的期限内完成首次发布，因此在 PR 合并、准备正式运行时配置。具体规则以 [npm 官方 Trusted Publishing 文档](https://docs.npmjs.com/trusted-publishers/)为准。
