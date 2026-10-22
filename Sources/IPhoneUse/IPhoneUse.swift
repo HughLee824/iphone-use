@@ -72,7 +72,7 @@ struct Connect: ParsableCommand {
     @Option(help: "Diagnostic override: a recent Apple netstat -anvl -p tcp file selects direct RSD discovery. Native connections normally use CoreDevice service sockets.") var nativeEndpointInventory: String?
 
     @Flag(help: "Emit connection_progress JSON lines immediately, followed by the final JSON result. Agents should relay requiresUserAction messages while the command is pending.") var progress = false
-    @Flag(help: "Runner only: open the local preview service before authorization, then attach live media when ready. Requires --progress; never opens a browser automatically.") var preview = false
+    @Flag(help: "Runner only: start the local preview and independent CoreDevice video before Runner authorization. Requires --progress; never opens a browser automatically.") var preview = false
     @Option(help: "Port for --preview; otherwise use the saved preview port (default 8765).") var port: Int?
 
     mutating func run() throws {

@@ -94,6 +94,10 @@ final class NativePreviewTests: XCTestCase {
         XCTAssertEqual(try get(url.appendingPathComponent("bezel"), origin: "https://foreign.example").0, 403)
         XCTAssertEqual(try get(url.appendingPathComponent("bezel/unknown")).0, 404)
         preview.close(); preview.close()
+        let stopped = preview.status()
+        XCTAssertEqual(stopped["state"] as? String, "stopped")
+        XCTAssertEqual(stopped["device"] as? NSDictionary, state["device"] as? NSDictionary)
+        XCTAssertEqual(stopped["bezel"] as? NSDictionary, state["bezel"] as? NSDictionary)
         XCTAssertThrowsError(try get(url))
     }
 

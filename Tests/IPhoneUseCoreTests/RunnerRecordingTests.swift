@@ -48,12 +48,13 @@ private final class RunnerRecordingConnectionStub: RunnerRecordingConnection {
 }
 
 final class RunnerRecordingTests: XCTestCase {
-    func testEarlyPreviewReservesOnlyHTTPAndReusesURLAfterAuthorization() throws {
+    func testEarlyPreviewStartsMediaBeforeAuthorizationAndReusesItAfterward() throws {
         var starts = 0
         let connection = RunnerRecordingConnectionStub()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let owner = RunnerNativeRecording(root: root, cancellation: NativeCancellation()) {
+        let owner = RunnerNativeRecording(root: root, cancellation: NativeCancellation(),
+                                          previewDevice: connection.previewDevice) {
             starts += 1; return connection
         }
         defer { _ = owner.close() }
@@ -61,14 +62,46 @@ final class RunnerRecordingTests: XCTestCase {
         owner.connectionStatus = { ["requiresUserAction": !authorized] }
         let early = try owner.reservePreview(options: NativePreviewOptions(port: 0))
         XCTAssertEqual(starts, 0)
+        XCTAssertEqual((early["device"] as? [String: Any])?["productType"] as? String, "iPhone13,3")
+        let bezel = try XCTUnwrap(early["bezel"] as? [String: Any])
+        XCTAssertEqual(bezel["name"] as? String, "iPhone 12 Pro")
         XCTAssertEqual((early["connection"] as? [String: Any])?["requiresUserAction"] as? Bool, true)
+        let waiting = try owner.startPreview(options: NativePreviewOptions(port: 0), duringStartup: true)
+        XCTAssertEqual(starts, 1, "Video must start while Runner authorization is still pending")
+        XCTAssertEqual((waiting["connection"] as? [String: Any])?["requiresUserAction"] as? Bool, true)
+        XCTAssertEqual(waiting["url"] as? String, early["url"] as? String)
         authorized = true
         let live = try owner.startPreview(options: NativePreviewOptions(port: 0))
         XCTAssertEqual(starts, 1)
         XCTAssertEqual(live["url"] as? String, early["url"] as? String)
+        XCTAssertEqual(live["device"] as? NSDictionary, early["device"] as? NSDictionary)
+        XCTAssertEqual(live["bezel"] as? NSDictionary, bezel as NSDictionary)
+        XCTAssertEqual(connection.closed, 0, "Authorization completion must not replace the media connection")
         XCTAssertEqual((live["connection"] as? [String: Any])?["requiresUserAction"] as? Bool, false)
         _ = try owner.stopPreview()
         XCTAssertEqual(connection.closed, 1)
+    }
+
+    func testStartupMediaFailureKeepsAuthorizationPageAndDoesNotRetry() throws {
+        var starts = 0
+        let owner = RunnerNativeRecording(root: try root(), cancellation: NativeCancellation(),
+                                          previewDevice: .init(productType: "iPhone13,3", name: "iPhone 12 Pro")) {
+            starts += 1
+            throw IPhoneUseError("native_media_busy", "Media unavailable")
+        }
+        defer { _ = owner.close() }
+        var phase = "starting"
+        owner.connectionStatus = { ["phase": phase, "requiresUserAction": phase == "starting"] }
+        let early = try owner.reservePreview(options: .init(port: 0))
+        let failed = try owner.startPreview(options: .init(port: 0), duringStartup: true)
+        XCTAssertEqual(starts, 1)
+        XCTAssertEqual(failed["url"] as? String, early["url"] as? String)
+        XCTAssertNotNil(failed["error"] as? String)
+        XCTAssertEqual((failed["bezel"] as? [String: Any])?["name"] as? String, "iPhone 12 Pro")
+        phase = "ready"
+        XCTAssertEqual((owner.previewStatus["connection"] as? [String: Any])?["phase"] as? String, "ready")
+        XCTAssertThrowsError(try owner.startPreview())
+        XCTAssertEqual(starts, 1)
     }
 
     func testPortCollisionDoesNotStartMediaOrPoisonRetryOrInterruptRecording() throws {

@@ -512,13 +512,12 @@ test('frame polling waits for the bounded candidate and retries a decode error',
   assert.equal(p.run('screen===originalScreen'),true);
 });
 
-test('confirmed authorization stays visible even with healthy live media, then clears', () => {
+test('confirmed authorization updates status without covering healthy live media', () => {
   const p=fixture();p.frame(100,1);p.run('lastFrameAt=100');
   const connection={phase:'ready',authorization:'required',reason:'ui_automation_authorization_required',requiresUserAction:true,monitorAvailable:true,evidence:'device_log_exact_runner_pid'};
   p.run(`renderHealth(${JSON.stringify({connection,mediaHealthy:true,frameAgeSeconds:0})})`);
-  assert.equal(p.elements.notice.hidden,false);
-  assert.equal(p.elements['notice-title'].textContent,'在 iPhone 上授权');
-  assert.match(p.elements['notice-message'].textContent,/请在手机上完成“Enable UI Automation”认证/);
+  assert.equal(p.elements.notice.hidden,true);
+  assert.equal(p.elements.state.textContent,'在 iPhone 上授权');
   p.run(`renderHealth(${JSON.stringify({connection:{...connection,authorization:'enabled',requiresUserAction:false},mediaHealthy:true,frameAgeSeconds:0})})`);
   assert.equal(p.elements.notice.hidden,true);
 });
@@ -544,9 +543,25 @@ test('startup guidance is conditional and ordinary connection failure never clai
 test('lost authorization evidence never silently claims recovery while video remains healthy', () => {
   const p=fixture();p.frame(100,1);p.run('lastFrameAt=100');
   p.run(`renderHealth({connection:{phase:'ready',authorization:'unverified',monitorAvailable:false,requiresUserAction:false},mediaHealthy:true,frameAgeSeconds:0})`);
-  assert.equal(p.elements.notice.hidden,false);
-  assert.equal(p.elements['notice-title'].textContent,'请检查 iPhone 上的认证状态');
-  assert.match(p.elements['notice-message'].textContent,/还无法确认/);
+  assert.equal(p.elements.notice.hidden,true);
+  assert.equal(p.elements.state.textContent,'请检查 iPhone 上的认证状态');
+});
+
+test('startup and authorization completion keep live video visible, but missing frames retain guidance', () => {
+  const p=fixture('iPhone13,3',{language:'en'});p.frame(100,1);p.run('lastFrameAt=100');
+  for(const authorization of ['unknown','required','authenticated','enabled']){
+    const connection={phase:'starting',authorization,requiresUserAction:authorization==='required',reason:'ui_automation_authorization_required',monitorAvailable:true,evidence:'device_log_exact_runner_pid'};
+    const status={device:{productType:'iPhone13,3'},bezel:catalog.models['iPhone13,3'],connection,mediaHealthy:true,frameAgeSeconds:0};
+    p.run(`renderHealth(${JSON.stringify(status)})`);
+    assert.equal(p.elements.notice.hidden,true);
+    assert.equal(p.elements.device.dataset.appearance,'official');
+    p.run(`renderHealth(${JSON.stringify({...status,mediaHealthy:false})})`);
+    assert.equal(p.elements.notice.hidden,false);
+    p.run('lastFrameAt=0');
+    p.run(`renderHealth(${JSON.stringify(status)})`);
+    assert.equal(p.elements.notice.hidden,false,'Wait until the browser has decoded a real frame');
+    p.run('lastFrameAt=100');
+  }
 });
 
 
