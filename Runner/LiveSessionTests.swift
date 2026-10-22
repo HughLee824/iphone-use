@@ -486,11 +486,17 @@ final class LiveSessionTests: XCTestCase {
         switch kind {
         case "type":
             if mode == "replace" || mode == "append" {
-                try event { target.tap() }
-                try event { target.typeKey("a", modifierFlags: .command) }
-                if text?.isEmpty == true { try event { target.typeText(XCUIKeyboardKey.delete.rawValue) } }
+                do {
+                    let input = try RunnerTextInput.replacementInput(text ?? "", value: liveSnapshot.value,
+                        secure: liveSnapshot.elementType == .secureTextField, placeholder: liveSnapshot.placeholderValue)
+                    try event { target.tap() }
+                    if !input.isEmpty { try event { target.typeText(input) } }
+                } catch let failure as RunnerTextInput.Failure {
+                    throw CommandError(failure.rawValue, requiresObservation: executionStarted, message: failure.message)
+                }
+            } else if let text, !text.isEmpty {
+                try event { target.typeText(text) }
             }
-            if let text, !text.isEmpty { try event { target.typeText(text) } }
         case "press":
             guard let pressKey else { throw CommandError("invalid_key") }
             let key: XCUIKeyboardKey

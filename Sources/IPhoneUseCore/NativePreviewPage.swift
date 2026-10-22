@@ -43,44 +43,45 @@ enum NativePreviewPage {
     <meta name="color-scheme" content="light dark"><title>iPhone-use · Live preview</title>
     <style>
     *{box-sizing:border-box} [hidden]{display:none!important}
-    :root{color-scheme:light dark;--bg:#f5f5f7;--text:#1d1d1f;--muted:#68686d;--secondary:#515158;--glass:#ffffff40;--solid:#fafafb;--glass-line:#ffffffd9;--glass-edge:#2126370b;--glass-shadow:#1b243518;--button:#ffffff80;--hover:#fff;--pressed:#e8e9ed;--button-line:#2830440d;--separator:#282b330c;--focus:#0067db;--live:#168447;--waiting:#96601d;--error:#c33630;--shadow:#1e304329;font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);background:var(--bg)}
-    @media(prefers-color-scheme:dark){:root{--bg:#161619;--text:#f5f5f7;--muted:#a1a1a9;--secondary:#c3c3ca;--glass:#29292ec9;--solid:#29292e;--glass-line:#ffffff20;--glass-edge:#0005;--glass-shadow:#0003;--button:#ffffff09;--hover:#ffffff18;--pressed:#ffffff23;--button-line:#ffffff09;--separator:#ffffff12;--focus:#91bdff;--live:#80d7a5;--waiting:#e4b670;--error:#ff9b95;--shadow:#0005}}
+    :root{color-scheme:light dark;--bg:#f5f5f7;--text:#1d1d1f;--muted:#68686d;--secondary:#515158;--solid:#fafafb;--button:#ffffff80;--hover:#fff;--pressed:#e8e9ed;--button-line:#2830440d;--focus:#0067db;--live:#168447;--waiting:#96601d;--error:#c33630;--shadow:#1e304329;font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);background:var(--bg)}
+    @media(prefers-color-scheme:dark){:root{--bg:#161619;--text:#f5f5f7;--muted:#a1a1a9;--secondary:#c3c3ca;--solid:#29292e;--button:#ffffff09;--hover:#ffffff18;--pressed:#ffffff23;--button-line:#ffffff09;--focus:#91bdff;--live:#80d7a5;--waiting:#e4b670;--error:#ff9b95;--shadow:#0005}}
     body{margin:0}button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation}button:focus-visible,summary:focus-visible{outline:2px solid var(--focus);outline-offset:4px}
     button:disabled{opacity:.4;cursor:default}
     /* Connection states occupy the screen aperture, beneath the physical bezel. */
     #notice{position:absolute;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:auto;padding:3em 2em;color:#f5f5f7;background:radial-gradient(ellipse at 50% 32%,#1a2639 0%,#10151e 46%,#0b0e14 100%);text-align:center;line-height:1.5;isolation:isolate}
+    #notice[data-kind="disconnected"]{background:#10151e}
+    #notice[data-kind="disconnected"]>*{display:none}
     .notice-brand{position:absolute;top:4.5em;left:0;right:0;color:#99a5b8;font-size:.69em;font-weight:500;letter-spacing:.12em}
     .notice-content{width:100%;max-width:19em;flex:none}
     .notice-art{width:5em;height:5em;margin:0 auto 2em;color:#bad5ff}
-    .notice-art .symbol{display:none}#notice[data-kind="attention"] .symbol-lock,#notice[data-kind="waiting"] .symbol-link,#notice[data-kind="success"] .symbol-check,#notice[data-kind="error"] .symbol-error{display:block}
+    .notice-art .symbol{display:none}#notice[data-kind="waiting"] .symbol-link,#notice[data-kind="success"] .symbol-check,#notice[data-kind="error"] .symbol-error{display:block}
     #notice[data-kind="error"] .notice-art{color:#ffb8af}#notice[data-kind="success"] .notice-art{color:#a9dfc0}
     #notice-title{display:block;margin:0 auto;max-width:10em;font-size:1.8em;font-weight:600;line-height:1.25;letter-spacing:-.035em;text-wrap:balance}
     #notice-message{margin:1em 0 0;color:#b7c1d0;font-size:1em;line-height:1.7;text-wrap:pretty}
-    #notice-prompt{margin:1.5em auto 0;padding:.65em 1em;width:fit-content;border:1px solid #ffffff1c;border-radius:.75em;background:#ffffff05;color:#dce7f8;font-size:.75em;letter-spacing:.01em}
-    #notice-footnote{position:absolute;bottom:4em;left:2em;right:2em;margin:0;color:#a3afc1;font-size:.8em;line-height:1.7;text-wrap:balance}
-    #notice-footnote::before{content:"";display:inline-block;width:.45em;height:.45em;margin-right:.6em;border-radius:50%;background:#91b9ee;vertical-align:.1em}
     #device[data-notice="true"] #placeholder{display:none}
     #notice[data-landscape="true"]{padding:1.5em 4em}#notice[data-landscape="true"] .notice-brand{display:none}
     #notice[data-landscape="true"] .notice-content{max-width:32em}#notice[data-landscape="true"] .notice-art{width:3em;height:3em;margin-bottom:.75em}
     #notice[data-landscape="true"] #notice-title{font-size:1.35em}#notice[data-landscape="true"] #notice-message{margin-top:.65em}
-    #notice[data-landscape="true"] #notice-prompt{margin-top:.75em}#notice[data-landscape="true"] #notice-footnote{position:static;margin-top:1.25em}
-    @media(prefers-contrast:more){#notice-message,#notice-footnote,.notice-brand{color:#e0e7f2}#notice-prompt{border-color:#a7b5c9}}
+    @media(prefers-contrast:more){#notice-message,.notice-brand{color:#e0e7f2}}
+    .authorization-art{display:none}
+    #notice[data-kind="attention"]{background:var(--solid);color:var(--text)}
+    #notice[data-kind="attention"] .notice-brand,#notice[data-kind="attention"] .notice-art{display:none}
+    #notice[data-kind="attention"] .notice-content{max-width:19em}
+    #notice[data-kind="attention"] .authorization-art{display:block;width:2em;height:2em;margin:0 auto 1em;color:var(--muted)}
+    #notice[data-kind="attention"] #notice-title{max-width:none;font-size:1.375em;line-height:1.3;letter-spacing:-.02em}
+    #notice[data-kind="attention"] #notice-message{max-width:17em;margin:.65em auto 0;color:var(--secondary);font-size:.9375em;line-height:1.5}
+    @media(prefers-contrast:more){#notice[data-kind="attention"] .authorization-art,#notice[data-kind="attention"] #notice-message{color:var(--text)}}
     .viewer{position:relative;height:100dvh;display:flex;flex-direction:column;background:var(--bg)}
-    header{position:absolute;z-index:4;top:20px;left:20px;right:20px;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;pointer-events:none}
-    .glass{border:1px solid var(--glass-line);border-radius:32px;background:var(--solid);box-shadow:inset 0 0 0 1px var(--glass-edge),0 8px 28px var(--glass-shadow);pointer-events:auto}
-    @supports ((backdrop-filter:blur(12px)) or (-webkit-backdrop-filter:blur(12px))){.glass{background:var(--glass);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}}
-    .identity{min-width:0;max-width:320px;height:60px;padding:0 18px;display:flex;align-items:center;gap:10px}
-    .mark{width:26px;height:26px}#device-name{min-width:0;margin:0;font-size:14px;line-height:20px;font-weight:500;letter-spacing:-.15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .toolbar{flex:none;display:flex;align-items:center;gap:12px;height:60px;padding:8px 12px}
-    .toolbar button{flex:none;width:40px;height:40px;padding:9px;display:grid;place-items:center;border:1px solid var(--button-line);border-radius:50%;background:var(--button);transition:background-color 120ms ease,transform 120ms ease}
-    .toolbar button:hover{background:var(--hover)}.toolbar button:active{background:var(--pressed);transform:scale(.94)}
-    #appearance-toggle:not([hidden])+#fullscreen:not([hidden])::before{content:"";position:absolute;width:1px;height:24px;left:-7px;top:7px;background:var(--separator)}
-    #fullscreen{position:relative}svg{display:block}.toolbar svg{width:20px;height:20px}#fullscreen .exit-icon{display:none}#fullscreen[data-active="true"] .enter-icon{display:none}#fullscreen[data-active="true"] .exit-icon{display:block}
-    .connection{display:grid;place-items:center;width:26px;height:28px;flex:none;color:var(--waiting)}
+    .identity{position:absolute;left:50%;transform:translateX(-50%);z-index:4;display:flex;align-items:center;justify-content:center;gap:8px;max-width:calc(100% - 40px);min-height:32px;color:var(--secondary)}
+    .device-label{display:flex;align-items:center;gap:8px;min-width:0;height:32px;padding:0 12px;border:1px solid var(--button-line);border-radius:999px;background:var(--solid);box-shadow:0 1px 3px #00000008}
+    .mark{width:18px;height:18px}#device-name{min-width:0;margin:0;font-size:13px;line-height:20px;font-weight:500;letter-spacing:-.1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    #appearance-toggle{flex:none;width:32px;height:32px;padding:7px;display:grid;place-items:center;border:1px solid var(--button-line);border-radius:50%;background:var(--button);transition:background-color 120ms ease,transform 120ms ease}
+    #appearance-toggle:hover{background:var(--hover)}#appearance-toggle:active{background:var(--pressed);transform:scale(.94)}
+    svg{display:block}#appearance-toggle svg{width:16px;height:16px}
+    .connection{display:grid;place-items:center;width:18px;height:24px;flex:none;color:var(--waiting)}
     .connection[data-kind="live"]{color:var(--live)}.connection[data-kind="error"]{color:var(--error)}
-    @media(prefers-reduced-motion:reduce){.toolbar button{transition:none}.toolbar button:active{transform:none}}
-    @media(prefers-reduced-transparency:reduce),(prefers-contrast:more){.glass{background:var(--solid);-webkit-backdrop-filter:none;backdrop-filter:none}}
-    @media(prefers-contrast:more){.glass,.toolbar button{border-color:var(--secondary)}.connection{outline:1px solid currentColor;outline-offset:2px;border-radius:5px}}
+    @media(prefers-reduced-motion:reduce){#appearance-toggle{transition:none}#appearance-toggle:active{transform:none}}
+    @media(prefers-contrast:more){.device-label,#appearance-toggle{border-color:var(--secondary)}.connection{outline:1px solid currentColor;outline-offset:2px;border-radius:5px}}
     .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
     main{min-height:0;width:100%;flex:1;display:flex;flex-direction:column;align-items:center}
     #stage{position:relative;width:100%;flex:1;min-height:0;display:grid;place-items:center;overflow:hidden}
@@ -118,7 +119,6 @@ enum NativePreviewPage {
     #placeholder{z-index:2;position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--muted);font-size:12px}
     #placeholder svg{color:var(--muted)}#device[data-ready="true"] #placeholder{display:none}
     #diagnostics{padding:18px 28px;background:var(--bg);color:var(--secondary);font:12px ui-monospace,monospace}#metrics{white-space:pre-wrap;overflow-wrap:anywhere}summary{cursor:pointer}
-    @media(max-width:600px),(max-height:450px){header{top:12px;left:12px;right:12px;gap:12px}.identity,.toolbar{height:52px}.identity{padding:0 12px;gap:7px}.toolbar{padding:5px 7px;gap:10px}#appearance-toggle:not([hidden])+#fullscreen:not([hidden])::before{left:-6px}}
     </style></head>
     <body><div class="viewer" id="viewer">
     <!-- Heroicons v2.2.0 (https://github.com/tailwindlabs/heroicons), embedded paths unchanged.
@@ -144,18 +144,15 @@ enum NativePreviewPage {
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
     -->
-    <header id="chrome"><div class="identity glass" id="identity"><div class="connection" id="connection" data-kind="waiting" role="status" title="Connecting…"><svg aria-hidden="true" class="mark" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" data-slot="icon">  <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"/></svg><span id="state" class="sr-only">Connecting…</span></div><h1 id="device-name">iPhone</h1></div>
-    <div class="toolbar glass" id="toolbar" role="group" aria-label="Preview controls"><button id="appearance-toggle" hidden title="Use drawn frame" aria-label="Use drawn frame"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" data-slot="icon">  <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 8.25V6a2.25 2.25 0 0 0-2.25-2.25H6A2.25 2.25 0 0 0 3.75 6v8.25A2.25 2.25 0 0 0 6 16.5h2.25m8.25-8.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-7.5A2.25 2.25 0 0 1 8.25 18v-1.5m8.25-8.25h-6a2.25 2.25 0 0 0-2.25 2.25v6"/></svg></button><button id="fullscreen" title="Enter fullscreen" aria-label="Enter fullscreen"><svg aria-hidden="true" class="enter-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" data-slot="icon">  <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15"/></svg><svg aria-hidden="true" class="exit-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" data-slot="icon">  <path stroke-linecap="round" stroke-linejoin="round" d="M9 9V4.5M9 9H4.5M9 9 3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5 5.25 5.25"/></svg></button></div></header>
     <main><div id="stage"><div id="device" data-ready="false"><div id="shell" hidden aria-hidden="true"><i class="side-key action-key"></i><i class="side-key volume-up"></i><i class="side-key volume-down"></i><i class="side-key power-key"></i><i class="side-key camera-key"></i><i class="antenna a"></i><i class="antenna b"></i><i class="antenna c"></i><i class="antenna d"></i></div><div id="hardware" hidden aria-hidden="true"><i id="speaker"></i><i id="cutout" hidden></i></div><div id="gestures" aria-hidden="true"></div><img id="screen" alt="Live iPhone screen" draggable="false"><div id="placeholder"><svg aria-hidden="true" class="mark" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" data-slot="icon">  <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"/></svg><span id="placeholder-label" class="sr-only">Waiting for iPhone screen</span></div><section id="notice" data-kind="waiting" role="status" aria-live="polite" aria-atomic="true" hidden>
     <span class="notice-brand" aria-hidden="true">iPhone-use</span>
     <div class="notice-content"><svg class="notice-art" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
     <path opacity=".35" d="M23 8H17a9 9 0 0 0-9 9v6m49-15h6a9 9 0 0 1 9 9v6M8 57v6a9 9 0 0 0 9 9h6m34 0h6a9 9 0 0 0 9-9v-6"/>
-    <g class="symbol symbol-lock"><rect x="25" y="35" width="30" height="25" rx="7" fill="currentColor" fill-opacity=".06"/><path d="M31 35v-8a9 9 0 0 1 18 0v8M40 46v5"/><circle cx="40" cy="44" r="1.5" fill="currentColor" stroke="none"/></g>
     <g class="symbol symbol-link"><path d="m35 46-3 3a10 10 0 0 1-14-14l10-10a10 10 0 0 1 14 0m3 9 3-3a10 10 0 0 1 14 14L52 55a10 10 0 0 1-14 0M30 40h20"/></g>
     <path class="symbol symbol-check" d="m24 40 11 11 23-24"/>
     <g class="symbol symbol-error"><path d="M40 24v20"/><circle cx="40" cy="54" r="1" fill="currentColor"/></g></svg>
-    <h2 id="notice-title"></h2><p id="notice-message"></p><p id="notice-prompt" hidden>Enable UI Automation</p></div>
-    <p id="notice-footnote" hidden></p></section><img id="bezel" hidden alt="" aria-hidden="true" draggable="false"></div></div>
+    <svg class="authorization-art" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="10" width="13" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14.5v2"/></svg>
+    <h2 id="notice-title"></h2><p id="notice-message"></p></div></section><img id="bezel" hidden alt="" aria-hidden="true" draggable="false"></div><footer class="identity" id="identity"><div class="device-label"><div class="connection" id="connection" data-kind="waiting" role="status" title="Connecting…"><svg aria-hidden="true" class="mark" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" data-slot="icon">  <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"/></svg><span id="state" class="sr-only">Connecting…</span></div><h1 id="device-name">iPhone</h1></div><button id="appearance-toggle" hidden title="Use drawn frame" aria-label="Use drawn frame"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" data-slot="icon">  <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 8.25V6a2.25 2.25 0 0 0-2.25-2.25H6A2.25 2.25 0 0 0 3.75 6v8.25A2.25 2.25 0 0 0 6 16.5h2.25m8.25-8.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-7.5A2.25 2.25 0 0 1 8.25 18v-1.5m8.25-8.25h-6a2.25 2.25 0 0 0-2.25 2.25v6"/></svg></button></footer></div>
     </main>
     </div><details id="diagnostics" hidden><summary id="diagnostics-label">Browser display metrics (last 1,800 frames)</summary><pre id="metrics"></pre></details>
     <script>
@@ -164,44 +161,41 @@ enum NativePreviewPage {
     const device=document.getElementById('device'), stage=document.getElementById('stage'), bezel=document.getElementById('bezel');
     const deviceName=document.getElementById('device-name'), shell=document.getElementById('shell'), hardware=document.getElementById('hardware');
     const cutout=document.getElementById('cutout'), speaker=document.getElementById('speaker');
-    const connection=document.getElementById('connection'), fullscreen=document.getElementById('fullscreen');
-    const appearanceToggle=document.getElementById('appearance-toggle'), toolbar=document.getElementById('toolbar');
+    const connection=document.getElementById('connection');
+    const appearanceToggle=document.getElementById('appearance-toggle');
     const appearanceComparisonEnabled=\(appearanceComparisonEnabled ? "true" : "false");
-    const chrome=document.getElementById('chrome'), identity=document.getElementById('identity');
+    const identity=document.getElementById('identity');
     // Use the primary browser language, not any secondary preference in its list.
     const language=navigator.languages?.[0]||navigator.language||'en';
     const chinese=/^zh(?:-|$)/i.test(language);
     const text=chinese?{
-      controls:'预览控件',title:'iPhone-use · 实时预览',connecting:'正在连接…',drawn:'切换自绘外观',official:'切换官方外观',
-      enterFullscreen:'进入全屏',exitFullscreen:'退出全屏',fullscreenDenied:'浏览器未允许全屏',
+      title:'iPhone-use · 实时预览',connecting:'正在连接…',drawn:'切换自绘外观',official:'切换官方外观',
       screen:'iPhone 实时画面',placeholder:'等待手机画面',diagnostics:'浏览器显示统计（最近 1800 帧）',
       unavailable:'连接不可用',firstFrame:'等待首帧',waiting:'已连接 · 等待新画面',recovering:'正在恢复画面…',
       live:'实时画面',disconnected:'预览已停止或连接断开',
-      authorization:'在 iPhone 上授权',authorizationHelp:'拿起手机，完成系统弹窗中的认证。密码仅在手机上输入。',authorizationFooter:'授权完成后，实时画面会自动出现',
+      authorization:'在 iPhone 上授权',authorizationHelp:'请在手机上完成“Enable UI Automation”认证。',
       runnerStarting:'正在等待 iPhone 就绪',runnerStartingHelp:'请保持手机解锁。如果出现“Enable UI Automation”，请在手机上完成认证。',
       authorized:'授权已完成，正在连接',authorizedHelp:'请保持手机解锁，此页面会自动显示实时画面。',
       authorizationUnknown:'请检查 iPhone 上的认证状态',authorizationUnknownHelp:'请查看手机上的系统弹窗，目前还无法确认认证是否完成。',
       connectionFailed:'连接未完成',connectionHelp:'请检查手机和 USB 连接，然后重试。',previewHelp:'请保持手机解锁，正在等待实时画面。',
       metricsNote:'图片解码完成后的 rAF 绘制机会；页面可见性变化时重置；不代表物理屏幕呈现时间或端到端延迟'
     }:{
-      controls:'Preview controls',title:'iPhone-use · Live preview',connecting:'Connecting…',drawn:'Use drawn frame',official:'Use official frame',
-      enterFullscreen:'Enter fullscreen',exitFullscreen:'Exit fullscreen',fullscreenDenied:'Fullscreen unavailable in this browser',
+      title:'iPhone-use · Live preview',connecting:'Connecting…',drawn:'Use drawn frame',official:'Use official frame',
       screen:'Live iPhone screen',placeholder:'Waiting for iPhone screen',diagnostics:'Browser display metrics (last 1,800 frames)',
       unavailable:'Connection unavailable',firstFrame:'Waiting for first frame',waiting:'Connected · Waiting for a new frame',recovering:'Recovering preview…',
       live:'Live preview',disconnected:'Preview stopped or disconnected',
-      authorization:'Authorize on your iPhone',authorizationHelp:'Pick up your iPhone and approve the system prompt. Enter your passcode only on your phone.',authorizationFooter:'Live preview will appear automatically',
+      authorization:'Authorize on your iPhone',authorizationHelp:'Approve “Enable UI Automation” on your iPhone.',
       runnerStarting:'Waiting for your iPhone',runnerStartingHelp:'Keep your iPhone unlocked. If Enable UI Automation appears, approve it on your phone.',
       authorized:'Authorized · Connecting',authorizedHelp:'Keep the iPhone unlocked. Live preview will appear automatically.',
       authorizationUnknown:'Check authentication on your iPhone',authorizationUnknownHelp:'Check the system prompt on your iPhone. We haven’t been able to confirm that authorization is complete.',
       connectionFailed:'Connection not ready',connectionHelp:'Check your iPhone and USB connection, then try again.',previewHelp:'Keep your iPhone unlocked while the preview connects.',
       metricsNote:'Image decode + rAF opportunity; resets on visibility change; not physical display or glass-to-glass latency'
     };
-    toolbar.setAttribute('aria-label',text.controls);
     document.documentElement.lang=chinese?'zh-CN':'en';document.title=text.title;screen.alt=text.screen;
     document.getElementById('placeholder-label').textContent=text.placeholder;
     document.getElementById('diagnostics-label').textContent=text.diagnostics;
     function labelButton(button,label){button.title=label;button.setAttribute('aria-label',label);}
-    labelButton(fullscreen,text.enterFullscreen);showState(text.connecting,'waiting');
+    showState(text.connecting,'waiting');
     let forceDrawing=false;
     let artworkAvailable=true, rotation='rot0', layoutKey='', lastFrameAt=0;
     let connectedDevice={}, profile=null, identityKey='';
@@ -249,14 +243,10 @@ enum NativePreviewPage {
       connectedDevice=s.device||{};profile=s.bezel||null;
       identityKey=JSON.stringify([connectedDevice,profile]);layout();
     }
-    function fitPreview(width,height,ratioWidth,ratioHeight,controls){
-      const fit=top=>Math.max(0,Math.min((width-40)/ratioWidth,(height-top-40)/ratioHeight));
-      let scale=fit(0),topInset=0;
-      const left=(width-ratioWidth*scale)/2,right=width-left,top=(height-ratioHeight*scale)/2;
-      if(controls.some(r=>left<r.right+12&&right>r.left-12&&top<r.bottom+12)){
-        topInset=Math.max(0,...controls.map(r=>r.bottom))+12;scale=fit(topInset);
-      }
-      return {scale,topInset};
+    function fitPreview(width,height,ratioWidth,ratioHeight,captionHeight){
+      const bottomInset=captionHeight+16;
+      const scale=Math.max(0,Math.min((width-40)/ratioWidth,(height-40-bottomInset)/ratioHeight));
+      return {scale,offsetY:-bottomInset/2,captionTop:(height-bottomInset+ratioHeight*scale)/2+16};
     }
     function layout(){
       const model=Object.hasOwn(drawnModels,connectedDevice.productType)?drawnModels[connectedDevice.productType]:null;
@@ -267,9 +257,9 @@ enum NativePreviewPage {
       const exact=model&&Math.abs(ratio-model[1]/model[2])<.002;
       const name=profile?.name||model?.[0]||connectedDevice.name||connectedDevice.productType||'iPhone';
       if(deviceName.textContent!==name){deviceName.textContent=name;deviceName.title=name;}
-      const key=[w,h,rotation,artworkAvailable,forceDrawing,identityKey,stage.clientWidth,stage.clientHeight,identity.clientWidth,toolbar.clientWidth,chrome.clientHeight].join(':');
+      const key=[w,h,rotation,artworkAvailable,forceDrawing,identityKey,stage.clientWidth,stage.clientHeight,identity.clientHeight].join(':');
       if(key===layoutKey)return;layoutKey=key;
-      appearanceToggle.hidden=!appearanceComparisonEnabled||!canShowOfficial;toolbar.hidden=appearanceToggle.hidden&&fullscreen.hidden;
+      appearanceToggle.hidden=!appearanceComparisonEnabled||!canShowOfficial;
       labelButton(appearanceToggle,forceDrawing?text.official:text.drawn);
       const angle=landscape?(rotation==='rot90'?90:-90):(rotation==='rot180'?180:0);
       const rim=exact?model[3]:12, radius=exact?model[4]:32;
@@ -285,13 +275,12 @@ enum NativePreviewPage {
       const sw=landscape?p.screenHeight:p.screenWidth,sh=landscape?p.screenWidth:p.screenHeight;
       const x=landscape?(angle===90?p.canvasHeight-p.screenY-p.screenHeight:p.screenY):p.screenX;
       const y=landscape?(angle===90?p.screenX:p.canvasWidth-p.screenX-p.screenWidth):p.screenY;
-      const stageRect=stage.getBoundingClientRect();
-      const controls=[identity,toolbar].filter(el=>!el.hidden).map(el=>{const r=el.getBoundingClientRect();return {left:r.left-stageRect.left,right:r.right-stageRect.left,bottom:r.bottom-stageRect.top};});
-      const placement=fitPreview(stage.clientWidth,stage.clientHeight,landscape?fitHeight:fitWidth,landscape?fitWidth:fitHeight,controls);
+      const placement=fitPreview(stage.clientWidth,stage.clientHeight,landscape?fitHeight:fitWidth,landscape?fitWidth:fitHeight,identity.clientHeight);
+      identity.style.top=placement.captionTop+'px';
       const screenScale=placement.scale;
       const scale=screenScale/p.screenWidth;
       device.style.width=width*scale+'px';device.style.height=height*scale+'px';
-      device.style.transform='translate('+((width-sw)/2-x)*scale+'px,'+(((height-sh)/2-y)*scale+placement.topInset/2)+'px)';
+      device.style.transform='translate('+((width-sw)/2-x)*scale+'px,'+(((height-sh)/2-y)*scale+placement.offsetY)+'px)';
       device.dataset.appearance=official?'official':exact?'drawn':'generic';
       screen.style.left=x*scale+'px';screen.style.top=y*scale+'px';
       screen.style.width=sw*scale+'px';screen.style.height=sh*scale+'px';
@@ -329,11 +318,8 @@ enum NativePreviewPage {
     }
     appearanceToggle.addEventListener('click',()=>{if(appearanceComparisonEnabled){forceDrawing=!forceDrawing;layout();}});
     bezel.addEventListener('error',()=>{artworkAvailable=false;layout();});
-    fullscreen.hidden=!document.fullscreenEnabled;
     const layoutObserver=new ResizeObserver(layout);
-    for(const el of [stage,identity,toolbar])layoutObserver.observe(el);layout();
-    fullscreen.addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.getElementById('viewer').requestFullscreen();}catch{labelButton(fullscreen,text.fullscreenDenied);}});
-    document.addEventListener('fullscreenchange',()=>{fullscreen.dataset.active=String(Boolean(document.fullscreenElement));labelButton(fullscreen,document.fullscreenElement?text.exitFullscreen:text.enterFullscreen);});
+    for(const el of [stage,identity])layoutObserver.observe(el);layout();
     function showState(text,kind){state.textContent=text;connection.title=text;connection.dataset.kind=kind;}
     const diagnostic=new URLSearchParams(location.search).has('diagnostics'), samples=[]; let lastSequence=null, failures=0, duplicates=0;
     document.getElementById('diagnostics').hidden=!diagnostic;
@@ -423,8 +409,6 @@ enum NativePreviewPage {
     function showNotice(title,message,kind='waiting'){
       const notice=document.getElementById('notice');notice.hidden=!title;notice.dataset.kind=kind;
       device.dataset.notice=String(Boolean(title));
-      document.getElementById('notice-prompt').hidden=kind!=='attention';
-      const footnote=document.getElementById('notice-footnote');footnote.hidden=kind!=='attention';footnote.textContent=kind==='attention'?text.authorizationFooter:'';
       document.getElementById('notice-title').textContent=title||'';
       document.getElementById('notice-message').textContent=message||'';
     }
@@ -450,7 +434,7 @@ enum NativePreviewPage {
       else if(!lastFrameAt||Date.now()-lastFrameAt>4000){showState(text.recovering,'waiting');showNotice(text.recovering,text.previewHelp);}
       else{showState(text.live,'live');showNotice(null);}
     }
-    async function health(){try{const r=await fetch('state',{cache:'no-store',signal:AbortSignal.timeout(3000)});if(!r.ok)throw Error();renderHealth(await r.json());}catch{showState(text.disconnected,'error');showNotice(text.disconnected,text.connectionHelp,'error');screen.style.opacity=.25;}setTimeout(health,1000);}
+    async function health(){try{const r=await fetch('state',{cache:'no-store',signal:AbortSignal.timeout(3000)});if(!r.ok)throw Error();renderHealth(await r.json());}catch{showState(text.disconnected,'error');showNotice(text.disconnected,null,'disconnected');screen.style.opacity=.25;}setTimeout(health,1000);}
     frames();health();gestures();
     if(diagnostic)setInterval(()=>{const gaps=samples.slice(1).map((s,i)=>s.at-samples[i].at).sort((a,b)=>a-b), span=samples.length>1?samples.at(-1).at-samples[0].at:0;const m=document.getElementById('metrics');m.textContent=JSON.stringify({longTasks,total:{...totals,fps:totals.last>totals.first?(totals.frames-1)*1000/(totals.last-totals.first):0},visibleNewFrames:samples.length,fps:span?(samples.length-1)*1000/span:0,lastNewFrameAgeMs:samples.length?Date.now()-samples.at(-1).at:null,gapP95Ms:gaps[Math.floor(gaps.length*.95)]||0,maxGapMs:gaps.at(-1)||0,gapsOver250ms:gaps.filter(x=>x>250).length,failures,duplicates,note:text.metricsNote},null,2);m.dataset.samples=JSON.stringify(samples);},1000);
         </script></body></html>
