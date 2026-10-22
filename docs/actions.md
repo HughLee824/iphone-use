@@ -53,7 +53,7 @@ iphone-use --session "$SESSION" tap o13:e10 --protect o13:e20
 - tap 元素用完整 `oN:eN`。点坐标形式用 `oN --x --y`，单位为屏幕点；不是 PNG 像素，不能同时指定元素引用。点击范围限制在当前已确认的 App 或弹窗内。
 - swipe 的 up/down/left/right 描述手指移动方向；宿主根据可见 frame 的 20%/80% 位置生成端点。明确端点形式可控制手指移动距离，两种形式均支持下述速度和停留参数。tap/swipe 先校验画面再执行坐标，不依赖 identifier/label 唯一性；阈值、附加保护区域、限制见 [动作前画面校验](screen-guard.md)。
 - insert 直接向指定输入框发送文字，保留已有光标位置，不额外点击字段。它需要现有键盘焦点；需要聚焦时由 agent 先 tap、再 observe。公开 hasFocus 在本设备中不反映键盘焦点，不能据此预检。
-- replace 聚焦输入框后发送 Command-A，非空文本直接覆盖选区；空文本通过 `typeText(XCUIKeyboardKey.delete.rawValue)` 删除选区。没有按 AX value 长度连续退格，也没有自动 Return 或点击提交。
+- Runner replace 在再次核对目标后，用当前可读原文的 UTF-16 长度界定删除次数，聚焦后将成对的 Backspace / Forward Delete（U+0008 / U+007F）与新文本一次交给 XCTest `typeText`；不依赖 Command-A 或光标位于末尾。空文本只执行删除。安全字段、不可读原文、原文与非空 placeholder 相同或原文超过 4096 UTF-8 bytes 时，输入前返回 `replace_value_unavailable`，不猜测长度。没有自动 Return、提交或失败重试。App 可能在聚焦后打开另一个编辑器并继续暴露原字段的 AX 值，因此回执只确认事件执行，调用者必须检查动作后画面中的实际正文。
 - Runner append 读取已校验目标的完整可读原文，将原文和新增文本拼接后走 replace；不依赖当前光标/选区，也不假定 Command-Down 生效。安全字段、无字符串原文、原文与 placeholder 无法区分、拼接后超过 4096 bytes 或含不支持字符时，在输入前拒绝。nil 值不推断为空文本；已有内容的控件处理、格式和 undo 行为仍可能因整段替换改变。宿主验证旧观察，Runner 使用再次核对后的当前快照值构造正文；不从过期 AX 值重建。
 - Runner 文本上限为 4096 UTF-8 字节，支持 LF 换行，但只允许用于明确的 text_view；text_field、secure_text_field、search_field 在聚焦/输入前拒绝多行。当前 Probe 实测 XCTest 把 CRLF 写成两个 LF，因此 Runner 明确拒绝 CR/CRLF，既不静默规范化，也不借用原生粘贴通道。其他控制键仍拒绝；insert/append 不接受空字符串，replace 空字符串表示清空。
 - `--text` 与 `--stdin` 必须且只能选一个。stdin 读取到 EOF，严格解码 UTF-8，不裁剪首尾空格、不去掉末尾换行、不解释转义或执行文本。可用文件重定向或管道；管道生产者需关闭输出。读取到第 4097 字节就拒绝，不为超长输入继续等待 EOF。`--mode replace --stdin < /dev/null` 表示清空。

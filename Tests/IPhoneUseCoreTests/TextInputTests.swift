@@ -2,6 +2,57 @@ import XCTest
 @testable import IPhoneUseCore
 
 final class TextInputTests: XCTestCase {
+    func testRunnerReplacementClearsEveryCaretAndSelectionWithoutSelectAll() throws {
+        let replacement = "上海 XCTest 123"
+        for source in ["old query", "头🙂e\u{301}尾", "line one\nline two", ""] {
+            let original = Array(source.utf16)
+            for start in 0...original.count {
+                for end in start...original.count {
+                    var buffer = original
+                    var cursor = start
+                    var selectionEnd = end
+                    let input = try RunnerTextInput.replacementInput(replacement, value: source,
+                        secure: false, placeholder: nil)
+                    for unit in input.utf16 {
+                        if unit == 8 || unit == 127 {
+                            if selectionEnd > cursor {
+                                buffer.removeSubrange(cursor..<selectionEnd)
+                            } else if unit == 8, cursor > 0 {
+                                buffer.remove(at: cursor - 1); cursor -= 1
+                            } else if unit == 127, cursor < buffer.count {
+                                buffer.remove(at: cursor)
+                            }
+                        } else {
+                            buffer.insert(unit, at: cursor); cursor += 1
+                        }
+                        selectionEnd = cursor
+                    }
+                    XCTAssertEqual(buffer, Array(replacement.utf16))
+                }
+            }
+        }
+    }
+
+    func testRunnerReplacementBoundsDeletionAndPreservesExactPayload() throws {
+        let text = " 头👩‍💻e\u{301}\n尾 "
+        XCTAssertEqual(try RunnerTextInput.replacementInput(text, value: "", secure: false, placeholder: nil), text)
+        XCTAssertEqual(try RunnerTextInput.replacementInput("", value: "old", secure: false, placeholder: nil),
+                       String(repeating: "\u{8}\u{7f}", count: 3))
+        XCTAssertEqual(try RunnerTextInput.replacementInput("", value: "", secure: false, placeholder: nil), "")
+        XCTAssertEqual(try RunnerTextInput.replacementInput("", value: String(repeating: "a", count: 4096),
+            secure: false, placeholder: nil).utf16.count, 8192)
+        for source: Any? in [nil, NSNull(), 42, "Search", String(repeating: "a", count: 4097)] {
+            XCTAssertThrowsError(try RunnerTextInput.replacementInput("new", value: source,
+                secure: false, placeholder: "Search")) {
+                XCTAssertEqual($0 as? RunnerTextInput.Failure, .clearValueUnavailable)
+            }
+        }
+        XCTAssertThrowsError(try RunnerTextInput.replacementInput("new", value: "•••", secure: true, placeholder: nil))
+        let appended = try RunnerTextInput.append("尾", to: "头🙂", secure: false)
+        XCTAssertEqual(try RunnerTextInput.replacementInput(appended, value: "头🙂", secure: false, placeholder: nil),
+                       String(repeating: "\u{8}\u{7f}", count: 3) + "头🙂尾")
+    }
+
     func testRunnerAppendReconstructsExactTextAndRejectsUnreadableOrUnsafeSource() throws {
         let source = " 头🙂\ne\u{301} "
         let suffix = "尾\n"
