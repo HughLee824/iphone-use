@@ -487,10 +487,17 @@ final class LiveSessionTests: XCTestCase {
         case "type":
             if mode == "replace" || mode == "append" {
                 do {
-                    let input = try RunnerTextInput.replacementInput(text ?? "", value: liveSnapshot.value,
-                        secure: liveSnapshot.elementType == .secureTextField, placeholder: liveSnapshot.placeholderValue)
+                    let input = try RunnerTextInput.replacementInput("", value: liveSnapshot.value,
+                        secure: liveSnapshot.elementType == .secureTextField, placeholder: liveSnapshot.placeholderValue,
+                        deleteKey: XCUIKeyboardKey.delete.rawValue)
                     try event { target.tap() }
+                    try event { target.typeKey(XCUIKeyboardKey.downArrow.rawValue, modifierFlags: .command) }
                     if !input.isEmpty { try event { target.typeText(input) } }
+                    guard RunnerTextInput.isCleared(try target.snapshot().value) else {
+                        throw CommandError("replace_clear_unconfirmed", requiresObservation: true,
+                            message: "The field did not report empty after clearing; inspect the observation. Replacement was not inserted and input was not replayed.")
+                    }
+                    if let text, !text.isEmpty { try event { target.typeText(text) } }
                 } catch let failure as RunnerTextInput.Failure {
                     throw CommandError(failure.rawValue, requiresObservation: executionStarted, message: failure.message)
                 }

@@ -17,19 +17,22 @@ enum RunnerTextInput {
         }
     }
 
-    static func replacementInput(_ text: String, value: Any?, secure: Bool, placeholder: String?) throws -> String {
+    static func replacementInput(_ text: String, value: Any?, secure: Bool, placeholder: String?, deleteKey: String) throws -> String {
         guard !secure, let source = value as? String, source.utf8.count <= 4096,
               (source.isEmpty || placeholder.map({ $0.isEmpty || $0 != source }) ?? true) else {
             throw Failure.clearValueUnavailable
         }
-        // Command-A can silently do nothing on iOS. Delete in both directions
-        // through XCTest's text channel so a caret in the middle or a selection
-        // does not leave a suffix. UTF-16 is an upper bound for deletion steps,
-        // including combining marks and emoji; never repeat after a failure.
-        // A focus tap can open another editor while AX retains the original
-        // field's value (rednote search). Do not treat that value as an edit
-        // acknowledgement. The caller must inspect the post-action observation.
-        return String(repeating: "\u{8}\u{7f}", count: source.utf16.count) + text
+        // The caller first moves to the document end using XCTest editing keys.
+        // Only backward Delete is supported by iOS typeText; Forward Delete's
+        // raw value is inserted as a character. UTF-16 bounds deletion even for
+        // combining marks and emoji. Never repeat input after a failure.
+        return String(repeating: deleteKey, count: source.utf16.count) + text
+    }
+
+    // UIKit text views omit AX value after the last character is removed.
+    // Only use this after a validated readable field has been cleared.
+    static func isCleared(_ value: Any?) -> Bool {
+        value == nil || (value as? String)?.isEmpty == true
     }
 
     static func append(_ text: String, to value: Any?, secure: Bool, placeholder: String? = nil) throws -> String {
