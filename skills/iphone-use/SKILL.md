@@ -9,7 +9,7 @@ Use the local `iphone-use` CLI for iPhone observation and input. The agent inter
 
 ## Start once
 
-Workflow version: **0.1.17**. Public packages require **CLI 0.1.0 or later**. The plugin contains instructions, not the CLI or a signed Runner.
+Workflow version: **0.1.18**. Public packages require **CLI 0.1.0 or later**. The plugin contains instructions, not the CLI or a signed Runner.
 
 1. Run `sh scripts/preflight.sh` with its absolute path resolved relative to **this SKILL.md**, not the working directory. It checks the CLI, full Xcode and supported command forms; it does not prove phone readiness. If missing, follow the [first-task guide](https://github.com/HughLee824/iphone-use/blob/main/docs/first-task.md) (`brew install HughLee824/tap/iphone-use`). Restart the client after PATH changes. For an explicitly supplied development build use `--source`, or `--candidate` for a local prerelease package, with `IPHONE_USE_CLI` set to that exact executable. Use that same binary throughout; do not silently switch builds.
 2. Read only the adapter for the actual client: [Codex calls](references/codex-calls.md) when `functions.exec` exposes `tools.exec_command`, [Claude Code calls](references/claude-code.md) in Claude Code, or [DeepSeek Harness calls](references/deepseek-harness.md) in DeepSeek Harness. In Codex, use the start template to execute **one selected command and display its attached screenshot in the same tool call**. Do not split those into separate calls when the template is available. For Cursor, OpenCode, or any other client, read the [portable agent adapter](references/generic-agent.md) and verify shell completion and actual PNG-reading capabilities before connecting. Do not infer a client from a similar tool name.

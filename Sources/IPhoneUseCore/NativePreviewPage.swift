@@ -414,18 +414,19 @@ enum NativePreviewPage {
     }
     function renderHealth(s){
       setDevice(s);const c=s.connection;
-      // Only the Runner UI Automation request may replace live video with this screen.
-      // App permissions remain visible in the live feed; a generic action flag is insufficient.
+      // Authorization describes control readiness, not the independent video.
+      // Never cover a healthy displayed stream with a synthetic permission UI.
+      const visibleMedia=s.mediaHealthy===true&&s.frameAgeSeconds!=null&&lastFrameAt&&Date.now()-lastFrameAt<=4000;
       if(c?.reason==='ui_automation_authorization_required'&&c.requiresUserAction===true&&c.authorization==='required'&&c.monitorAvailable===true&&c.evidence==='device_log_exact_runner_pid'&&c.phase!=='failed'){
-        showState(text.authorization,'waiting');showNotice(text.authorization,text.authorizationHelp,'attention');return;
+        showState(text.authorization,'waiting');showNotice(visibleMedia?null:text.authorization,text.authorizationHelp,'attention');return;
       }
       if(c?.authorization==='unverified'&&c.phase!=='failed'){
-        showState(text.authorizationUnknown,'waiting');showNotice(text.authorizationUnknown,text.authorizationUnknownHelp);return;
+        showState(text.authorizationUnknown,'waiting');showNotice(visibleMedia?null:text.authorizationUnknown,text.authorizationUnknownHelp);return;
       }
       if(c?.phase==='starting'){
         const authorized=c.authorization==='authenticated'||c.authorization==='enabled';
         showState(authorized?text.authorized:text.runnerStarting,'waiting');
-        showNotice(authorized?text.authorized:text.runnerStarting,authorized?text.authorizedHelp:text.runnerStartingHelp,authorized?'success':'waiting');return;
+        showNotice(visibleMedia?null:(authorized?text.authorized:text.runnerStarting),authorized?text.authorizedHelp:text.runnerStartingHelp,authorized?'success':'waiting');return;
       }
       if(c?.phase==='failed'||s.error||!s.mediaHealthy){
         showState(s.error?text.unavailable+': '+s.error:text.unavailable,'error');showNotice(text.connectionFailed,text.connectionHelp,'error');screen.style.opacity=.25;

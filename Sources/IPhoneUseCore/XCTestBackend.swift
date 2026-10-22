@@ -99,7 +99,8 @@ final class XCTestBackend: SessionBackend {
         recordingPlatformSupported = ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 27 &&
             ((details["deviceProperties"] as? [String: Any])?["osVersionNumber"] as? String)?.hasPrefix("27.") == true
         recording = RunnerNativeRecording(device: udid, root: paths.directory.appendingPathComponent("recordings"),
-                                          cancellation: recordingCancellation, previewGeometry: { [weak self] in
+                                          cancellation: recordingCancellation, previewDevice: NativePreviewDevice(details: details),
+                                          previewGeometry: { [weak self] in
             guard let self else { throw IPhoneUseError("backend_unavailable", "Runner is not connected") }
             return try Self.decodePreviewGeometry(self.request("preview-geometry", timeout: 3))
         })
@@ -117,6 +118,9 @@ final class XCTestBackend: SessionBackend {
             let options = NativePreviewOptions(port: try PreviewConfiguration.validate(port: port), explicitPort: true)
             let preview = try recording?.reservePreview(options: options)
             if let url = preview?["url"] as? String { authorization.setPreviewURL(url) }
+            // CoreDevice video does not need XCTest authorization. Start it
+            // before launching Runner and keep this stream throughout startup.
+            _ = try recording?.startPreview(options: options, duringStartup: true)
         }
         authorization.start(device: udid)
         try recordingCancellation.check()
@@ -144,9 +148,6 @@ final class XCTestBackend: SessionBackend {
                     throw IPhoneUseError("unsupported_xctest_runtime", "This XCTest runtime cannot bound application-state waits")
                 }
                 authorization.ready()
-                if let port = config.startupPreviewPort {
-                    _ = try recording?.startPreview(options: NativePreviewOptions(port: try PreviewConfiguration.validate(port: port), explicitPort: true))
-                }
                 return metadata()
             }
             if ProcessInfo.processInfo.systemUptime >= nextProcessCheck {

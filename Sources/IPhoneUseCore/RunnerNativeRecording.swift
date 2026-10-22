@@ -172,6 +172,7 @@ final class RunnerNativeRecording {
     private let cancellation: NativeCancellation
     private let connect: () throws -> RunnerRecordingConnection
     private let previewGeometry: (() throws -> RunnerPreviewGeometry)?
+    private let previewDevice: NativePreviewDevice
     private var connection: RunnerRecordingConnection?
     private var failure: String?
     private var cleanup: [String: Any] = [:]
@@ -190,15 +191,18 @@ final class RunnerNativeRecording {
     }
 
     init(root: URL, cancellation: NativeCancellation,
+         previewDevice: NativePreviewDevice = .unknown,
          previewGeometry: (() throws -> RunnerPreviewGeometry)? = nil,
          connect: @escaping () throws -> RunnerRecordingConnection) {
         previewEventsURL = root.deletingLastPathComponent().appendingPathComponent("preview-events.jsonl")
         recording = NativeStreamRecording(root: root); self.cancellation = cancellation; self.connect = connect
         self.previewGeometry = previewGeometry
+        self.previewDevice = previewDevice
     }
     convenience init(device: String, root: URL, cancellation: NativeCancellation,
+                     previewDevice: NativePreviewDevice,
                      previewGeometry: @escaping () throws -> RunnerPreviewGeometry) {
-        self.init(root: root, cancellation: cancellation, previewGeometry: previewGeometry,
+        self.init(root: root, cancellation: cancellation, previewDevice: previewDevice, previewGeometry: previewGeometry,
                   connect: { try RunnerMediaConnection.open(device: device, cancellation: cancellation) })
     }
 
@@ -283,12 +287,12 @@ final class RunnerNativeRecording {
     var previewGestureRotation: String? { preview?.gestureRotation }
     func reservePreview(options: NativePreviewOptions) throws -> [String: Any] {
         if let preview { return try preview.status(for: options) }
-        let preview = try NativePreview(port: options.port, device: connection?.previewDevice ?? .unknown,
+        let preview = try NativePreview(port: options.port, device: connection?.previewDevice ?? previewDevice,
                                         connectionStatus: connectionStatus)
         self.preview = preview
         return preview.status()
     }
-    func startPreview(options: NativePreviewOptions = NativePreviewOptions()) throws -> [String: Any] {
+    func startPreview(options: NativePreviewOptions = NativePreviewOptions(), duringStartup: Bool = false) throws -> [String: Any] {
         try cancellation.check()
         guard !closed, failure == nil else { throw IPhoneUseError("preview_unavailable", failure ?? "Connection closed") }
         if let preview, connection != nil { return try preview.status(for: options) }
@@ -300,9 +304,16 @@ final class RunnerNativeRecording {
             try attachPreview()
             return preview!.status()
         } catch {
-            self.preview?.close(); self.preview = nil
+            // Video readiness and Runner authorization are independent. Keep
+            // the startup page and its diagnostics when media is unavailable.
+            if duringStartup { self.preview?.suspend(String(describing: error)) }
+            else { self.preview?.close(); self.preview = nil }
             if !recording.isActive { releaseMedia() }
             failure = String(describing: error)
+            if duringStartup {
+                try cancellation.check()
+                return preview!.status()
+            }
             throw error
         }
     }
