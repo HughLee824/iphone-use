@@ -48,29 +48,8 @@ enum NativePreviewPage {
     body{margin:0}button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation}button:focus-visible,summary:focus-visible{outline:2px solid var(--focus);outline-offset:4px}
     button:disabled{opacity:.4;cursor:default}
     /* Connection states occupy the screen aperture, beneath the physical bezel. */
-    #notice{position:absolute;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:auto;padding:3em 2em;color:#f5f5f7;background:radial-gradient(ellipse at 50% 32%,#1a2639 0%,#10151e 46%,#0b0e14 100%);text-align:center;line-height:1.5;isolation:isolate}
-    #notice[data-kind="disconnected"]{background:#10151e}
-    #notice[data-kind="disconnected"]>*{display:none}
-    .notice-brand{position:absolute;top:4.5em;left:0;right:0;color:#99a5b8;font-size:.69em;font-weight:500;letter-spacing:.12em}
-    .notice-content{width:100%;max-width:19em;flex:none}
-    .notice-art{width:5em;height:5em;margin:0 auto 2em;color:#bad5ff}
-    .notice-art .symbol{display:none}#notice[data-kind="waiting"] .symbol-link,#notice[data-kind="success"] .symbol-check,#notice[data-kind="error"] .symbol-error{display:block}
-    #notice[data-kind="error"] .notice-art{color:#ffb8af}#notice[data-kind="success"] .notice-art{color:#a9dfc0}
-    #notice-title{display:block;margin:0 auto;max-width:10em;font-size:1.8em;font-weight:600;line-height:1.25;letter-spacing:-.035em;text-wrap:balance}
-    #notice-message{margin:1em 0 0;color:#b7c1d0;font-size:1em;line-height:1.7;text-wrap:pretty}
+    #notice{position:absolute;z-index:2;background:#10151e;pointer-events:none}
     #device[data-notice="true"] #placeholder{display:none}
-    #notice[data-landscape="true"]{padding:1.5em 4em}#notice[data-landscape="true"] .notice-brand{display:none}
-    #notice[data-landscape="true"] .notice-content{max-width:32em}#notice[data-landscape="true"] .notice-art{width:3em;height:3em;margin-bottom:.75em}
-    #notice[data-landscape="true"] #notice-title{font-size:1.35em}#notice[data-landscape="true"] #notice-message{margin-top:.65em}
-    @media(prefers-contrast:more){#notice-message,.notice-brand{color:#e0e7f2}}
-    .authorization-art{display:none}
-    #notice[data-kind="attention"]{background:var(--solid);color:var(--text)}
-    #notice[data-kind="attention"] .notice-brand,#notice[data-kind="attention"] .notice-art{display:none}
-    #notice[data-kind="attention"] .notice-content{max-width:19em}
-    #notice[data-kind="attention"] .authorization-art{display:block;width:2em;height:2em;margin:0 auto 1em;color:var(--muted)}
-    #notice[data-kind="attention"] #notice-title{max-width:none;font-size:1.375em;line-height:1.3;letter-spacing:-.02em}
-    #notice[data-kind="attention"] #notice-message{max-width:17em;margin:.65em auto 0;color:var(--secondary);font-size:.9375em;line-height:1.5}
-    @media(prefers-contrast:more){#notice[data-kind="attention"] .authorization-art,#notice[data-kind="attention"] #notice-message{color:var(--text)}}
     .viewer{position:relative;height:100dvh;display:flex;flex-direction:column;background:var(--bg)}
     .identity{position:absolute;left:50%;transform:translateX(-50%);z-index:4;display:flex;align-items:center;justify-content:center;gap:8px;max-width:calc(100% - 40px);min-height:32px;color:var(--secondary)}
     .device-label{display:flex;align-items:center;gap:8px;min-width:0;height:32px;padding:0 12px;border:1px solid var(--button-line);border-radius:999px;background:var(--solid);box-shadow:0 1px 3px #00000008}
@@ -116,8 +95,8 @@ enum NativePreviewPage {
     #cutout[data-shape="notch"]::before{content:"";position:absolute;left:calc(0em - var(--shoulder));top:0;width:calc(100% + 2 * var(--shoulder));height:var(--shoulder);background:radial-gradient(circle var(--shoulder) at 0 100%,transparent calc(100% - .3em),#000 100%) left top,radial-gradient(circle var(--shoulder) at 100% 100%,transparent calc(100% - .3em),#000 100%) right top;background-size:var(--shoulder) var(--shoulder);background-repeat:no-repeat}
     #cutout::after{content:"";position:absolute;left:var(--camera-x);top:var(--camera-y);width:var(--camera-size);height:var(--camera-size);transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle at 37% 32%,#293d50 0%,#122130 23%,#080d15 48%,#151e2c 65%,#040609 75%);box-shadow:0 0 0 1em #090b10}
     #speaker{position:absolute;z-index:1;border-radius:8em;background:linear-gradient(#080a0d,#24272b 50%,#090b0e);box-shadow:inset 0 0 0 .6em #33373c}
-    #placeholder{z-index:2;position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--muted);font-size:12px}
-    #placeholder svg{color:var(--muted)}#device[data-ready="true"] #placeholder{display:none}
+    #placeholder{z-index:2;position:absolute;background:#10151e}
+    #device[data-ready="true"] #placeholder{display:none}
     #diagnostics{padding:18px 28px;background:var(--bg);color:var(--secondary);font:12px ui-monospace,monospace}#metrics{white-space:pre-wrap;overflow-wrap:anywhere}summary{cursor:pointer}
     </style></head>
     <body><div class="viewer" id="viewer">
@@ -144,15 +123,7 @@ enum NativePreviewPage {
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
     -->
-    <main><div id="stage"><div id="device" data-ready="false"><div id="shell" hidden aria-hidden="true"><i class="side-key action-key"></i><i class="side-key volume-up"></i><i class="side-key volume-down"></i><i class="side-key power-key"></i><i class="side-key camera-key"></i><i class="antenna a"></i><i class="antenna b"></i><i class="antenna c"></i><i class="antenna d"></i></div><div id="hardware" hidden aria-hidden="true"><i id="speaker"></i><i id="cutout" hidden></i></div><div id="gestures" aria-hidden="true"></div><img id="screen" alt="Live iPhone screen" draggable="false"><div id="placeholder"><svg aria-hidden="true" class="mark" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" data-slot="icon">  <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"/></svg><span id="placeholder-label" class="sr-only">Waiting for iPhone screen</span></div><section id="notice" data-kind="waiting" role="status" aria-live="polite" aria-atomic="true" hidden>
-    <span class="notice-brand" aria-hidden="true">iPhone-use</span>
-    <div class="notice-content"><svg class="notice-art" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <path opacity=".35" d="M23 8H17a9 9 0 0 0-9 9v6m49-15h6a9 9 0 0 1 9 9v6M8 57v6a9 9 0 0 0 9 9h6m34 0h6a9 9 0 0 0 9-9v-6"/>
-    <g class="symbol symbol-link"><path d="m35 46-3 3a10 10 0 0 1-14-14l10-10a10 10 0 0 1 14 0m3 9 3-3a10 10 0 0 1 14 14L52 55a10 10 0 0 1-14 0M30 40h20"/></g>
-    <path class="symbol symbol-check" d="m24 40 11 11 23-24"/>
-    <g class="symbol symbol-error"><path d="M40 24v20"/><circle cx="40" cy="54" r="1" fill="currentColor"/></g></svg>
-    <svg class="authorization-art" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="10" width="13" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14.5v2"/></svg>
-    <h2 id="notice-title"></h2><p id="notice-message"></p></div></section><img id="bezel" hidden alt="" aria-hidden="true" draggable="false"></div><footer class="identity" id="identity"><div class="device-label"><div class="connection" id="connection" data-kind="waiting" role="status" title="Connecting…"><svg aria-hidden="true" class="mark" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" data-slot="icon">  <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"/></svg><span id="state" class="sr-only">Connecting…</span></div><h1 id="device-name">iPhone</h1></div><button id="appearance-toggle" hidden title="Use drawn frame" aria-label="Use drawn frame"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" data-slot="icon">  <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 8.25V6a2.25 2.25 0 0 0-2.25-2.25H6A2.25 2.25 0 0 0 3.75 6v8.25A2.25 2.25 0 0 0 6 16.5h2.25m8.25-8.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-7.5A2.25 2.25 0 0 1 8.25 18v-1.5m8.25-8.25h-6a2.25 2.25 0 0 0-2.25 2.25v6"/></svg></button></footer></div>
+    <main><div id="stage"><div id="device" data-ready="false"><div id="shell" hidden aria-hidden="true"><i class="side-key action-key"></i><i class="side-key volume-up"></i><i class="side-key volume-down"></i><i class="side-key power-key"></i><i class="side-key camera-key"></i><i class="antenna a"></i><i class="antenna b"></i><i class="antenna c"></i><i class="antenna d"></i></div><div id="hardware" hidden aria-hidden="true"><i id="speaker"></i><i id="cutout" hidden></i></div><div id="gestures" aria-hidden="true"></div><img id="screen" alt="Live iPhone screen" draggable="false"><div id="placeholder"><span id="placeholder-label" class="sr-only">Waiting for iPhone screen</span></div><div id="notice" aria-hidden="true" hidden></div><img id="bezel" hidden alt="" aria-hidden="true" draggable="false"></div><footer class="identity" id="identity"><div class="device-label"><div class="connection" id="connection" data-kind="waiting" role="status" title="Connecting…"><svg aria-hidden="true" class="mark" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" data-slot="icon">  <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"/></svg><span id="state" class="sr-only">Connecting…</span></div><h1 id="device-name">iPhone</h1></div><button id="appearance-toggle" hidden title="Use drawn frame" aria-label="Use drawn frame"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" data-slot="icon">  <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 8.25V6a2.25 2.25 0 0 0-2.25-2.25H6A2.25 2.25 0 0 0 3.75 6v8.25A2.25 2.25 0 0 0 6 16.5h2.25m8.25-8.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-7.5A2.25 2.25 0 0 1 8.25 18v-1.5m8.25-8.25h-6a2.25 2.25 0 0 0-2.25 2.25v6"/></svg></button></footer></div>
     </main>
     </div><details id="diagnostics" hidden><summary id="diagnostics-label">Browser display metrics (last 1,800 frames)</summary><pre id="metrics"></pre></details>
     <script>
@@ -173,22 +144,20 @@ enum NativePreviewPage {
       screen:'iPhone 实时画面',placeholder:'等待手机画面',diagnostics:'浏览器显示统计（最近 1800 帧）',
       unavailable:'连接不可用',firstFrame:'等待首帧',waiting:'已连接 · 等待新画面',recovering:'正在恢复画面…',
       live:'实时画面',disconnected:'预览已停止或连接断开',
-      authorization:'在 iPhone 上授权',authorizationHelp:'请在手机上完成“Enable UI Automation”认证。',
-      runnerStarting:'正在等待 iPhone 就绪',runnerStartingHelp:'请保持手机解锁。如果出现“Enable UI Automation”，请在手机上完成认证。',
-      authorized:'授权已完成，正在连接',authorizedHelp:'请保持手机解锁，此页面会自动显示实时画面。',
-      authorizationUnknown:'请检查 iPhone 上的认证状态',authorizationUnknownHelp:'请查看手机上的系统弹窗，目前还无法确认认证是否完成。',
-      connectionFailed:'连接未完成',connectionHelp:'请检查手机和 USB 连接，然后重试。',previewHelp:'请保持手机解锁，正在等待实时画面。',
+      authorization:'在 iPhone 上授权',
+      runnerStarting:'正在等待 iPhone 就绪',
+      authorized:'授权已完成，正在连接',
+      authorizationUnknown:'请检查 iPhone 上的认证状态',
       metricsNote:'图片解码完成后的 rAF 绘制机会；页面可见性变化时重置；不代表物理屏幕呈现时间或端到端延迟'
     }:{
       title:'iPhone-use · Live preview',connecting:'Connecting…',drawn:'Use drawn frame',official:'Use official frame',
       screen:'Live iPhone screen',placeholder:'Waiting for iPhone screen',diagnostics:'Browser display metrics (last 1,800 frames)',
       unavailable:'Connection unavailable',firstFrame:'Waiting for first frame',waiting:'Connected · Waiting for a new frame',recovering:'Recovering preview…',
       live:'Live preview',disconnected:'Preview stopped or disconnected',
-      authorization:'Authorize on your iPhone',authorizationHelp:'Approve “Enable UI Automation” on your iPhone.',
-      runnerStarting:'Waiting for your iPhone',runnerStartingHelp:'Keep your iPhone unlocked. If Enable UI Automation appears, approve it on your phone.',
-      authorized:'Authorized · Connecting',authorizedHelp:'Keep the iPhone unlocked. Live preview will appear automatically.',
-      authorizationUnknown:'Check authentication on your iPhone',authorizationUnknownHelp:'Check the system prompt on your iPhone. We haven’t been able to confirm that authorization is complete.',
-      connectionFailed:'Connection not ready',connectionHelp:'Check your iPhone and USB connection, then try again.',previewHelp:'Keep your iPhone unlocked while the preview connects.',
+      authorization:'Authorize on your iPhone',
+      runnerStarting:'Waiting for your iPhone',
+      authorized:'Authorized · Connecting',
+      authorizationUnknown:'Check authentication on your iPhone',
       metricsNote:'Image decode + rAF opportunity; resets on visibility change; not physical display or glass-to-glass latency'
     };
     document.documentElement.lang=chinese?'zh-CN':'en';document.title=text.title;screen.alt=text.screen;
@@ -285,8 +254,7 @@ enum NativePreviewPage {
       screen.style.left=x*scale+'px';screen.style.top=y*scale+'px';
       screen.style.width=sw*scale+'px';screen.style.height=sh*scale+'px';
       screen.style.borderRadius=p.cornerRadius*scale+'px';
-      for(const id of ['gestures','notice'])for(const property of ['left','top','width','height','borderRadius'])document.getElementById(id).style[property]=screen.style[property];
-      const notice=document.getElementById('notice');notice.style.fontSize=Math.min(sw,sh)*scale/390*16+'px';notice.dataset.landscape=String(landscape);
+      for(const id of ['gestures','notice','placeholder'])for(const property of ['left','top','width','height','borderRadius'])document.getElementById(id).style[property]=screen.style[property];
       document.getElementById('gestures').innerHTML='';
       bezel.hidden=!official;shell.hidden=official;hardware.hidden=official;
       const transform='translate(-50%,-50%) rotate('+angle+'deg)';
@@ -387,6 +355,7 @@ enum NativePreviewPage {
         screen.replaceWith(next);screen=next;rotation=nextRotation;
         if(device.dataset.ready!=='true')device.dataset.ready='true';
         lastFrameAt=Date.now();
+        setScreenCovered(false);
         if(geometryChanged)layout();
         if(objectURL)URL.revokeObjectURL(objectURL);objectURL=nextURL;
         return {decodeWaitMs,layoutMs:performance.now()-layoutStarted};
@@ -406,36 +375,48 @@ enum NativePreviewPage {
       }catch{failures++;screen.style.opacity=.25;retry=100;}
       setTimeout(frames,retry);
     }
-    function showNotice(title,message,kind='waiting'){
-      const notice=document.getElementById('notice');notice.hidden=!title;notice.dataset.kind=kind;
-      device.dataset.notice=String(Boolean(title));
-      document.getElementById('notice-title').textContent=title||'';
-      document.getElementById('notice-message').textContent=message||'';
+    function setScreenCovered(covered){
+      document.getElementById('notice').hidden=!covered;
+      device.dataset.notice=String(covered);
     }
-    function renderHealth(s){
+    function renderHealth(s,newerFrame=false){
       setDevice(s);const c=s.connection;
-      // Authorization describes control readiness, not the independent video.
-      // Never cover a healthy displayed stream with a synthetic permission UI.
-      const visibleMedia=s.mediaHealthy===true&&s.frameAgeSeconds!=null&&lastFrameAt&&Date.now()-lastFrameAt<=4000;
+      // Missing video never proves an authorization request. All unavailable
+      // frames use the same blank cover; control guidance stays in the footer.
+      const recentFrame=lastFrameAt&&Date.now()-lastFrameAt<=4000;
+      const displayedFrame=lastFrameAt&&(recentFrame||s.frameAgeSeconds>2);
+      const visibleMedia=(newerFrame&&recentFrame)||(!s.error&&s.mediaHealthy===true&&s.frameAgeSeconds!=null&&displayedFrame);
+      setScreenCovered(!visibleMedia);
       if(c?.reason==='ui_automation_authorization_required'&&c.requiresUserAction===true&&c.authorization==='required'&&c.monitorAvailable===true&&c.evidence==='device_log_exact_runner_pid'&&c.phase!=='failed'){
-        showState(text.authorization,'waiting');showNotice(visibleMedia?null:text.authorization,text.authorizationHelp,'attention');return;
+        showState(text.authorization,'waiting');return;
       }
       if(c?.authorization==='unverified'&&c.phase!=='failed'){
-        showState(text.authorizationUnknown,'waiting');showNotice(visibleMedia?null:text.authorizationUnknown,text.authorizationUnknownHelp);return;
+        showState(text.authorizationUnknown,'waiting');return;
       }
       if(c?.phase==='starting'){
         const authorized=c.authorization==='authenticated'||c.authorization==='enabled';
-        showState(authorized?text.authorized:text.runnerStarting,'waiting');
-        showNotice(visibleMedia?null:(authorized?text.authorized:text.runnerStarting),authorized?text.authorizedHelp:text.runnerStartingHelp,authorized?'success':'waiting');return;
+        showState(authorized?text.authorized:text.runnerStarting,'waiting');return;
       }
       if(c?.phase==='failed'||s.error||!s.mediaHealthy){
-        showState(s.error?text.unavailable+': '+s.error:text.unavailable,'error');showNotice(text.connectionFailed,text.connectionHelp,'error');screen.style.opacity=.25;
-      }else if(s.frameAgeSeconds==null){showState(text.firstFrame,'waiting');showNotice(text.firstFrame,text.previewHelp);}
-      else if(s.frameAgeSeconds>2){showState(text.waiting,'waiting');showNotice(null);}
-      else if(!lastFrameAt||Date.now()-lastFrameAt>4000){showState(text.recovering,'waiting');showNotice(text.recovering,text.previewHelp);}
-      else{showState(text.live,'live');showNotice(null);}
+        showState(s.error?text.unavailable+': '+s.error:text.unavailable,'error');
+      }else if(s.frameAgeSeconds==null){showState(text.firstFrame,'waiting');}
+      else if(s.frameAgeSeconds>2){showState(text.waiting,'waiting');}
+      else if(!recentFrame){showState(text.recovering,'waiting');}
+      else{showState(text.live,'live');}
     }
-    async function health(){try{const r=await fetch('state',{cache:'no-store',signal:AbortSignal.timeout(3000)});if(!r.ok)throw Error();renderHealth(await r.json());}catch{showState(text.disconnected,'error');showNotice(text.disconnected,null,'disconnected');screen.style.opacity=.25;}setTimeout(health,1000);}
+    async function health(){
+      const frameBeforeRequest=lastFrameAt;
+      try{
+        const r=await fetch('state',{cache:'no-store',signal:AbortSignal.timeout(3000)});if(!r.ok)throw Error();
+        const s=await r.json();
+        // A slow status response must not cover a frame decoded since this request began.
+        renderHealth(s,lastFrameAt!==frameBeforeRequest);
+      }catch{
+        showState(text.disconnected,'error');
+        if(lastFrameAt===frameBeforeRequest)setScreenCovered(true);
+      }
+      setTimeout(health,1000);
+    }
     frames();health();gestures();
     if(diagnostic)setInterval(()=>{const gaps=samples.slice(1).map((s,i)=>s.at-samples[i].at).sort((a,b)=>a-b), span=samples.length>1?samples.at(-1).at-samples[0].at:0;const m=document.getElementById('metrics');m.textContent=JSON.stringify({longTasks,total:{...totals,fps:totals.last>totals.first?(totals.frames-1)*1000/(totals.last-totals.first):0},visibleNewFrames:samples.length,fps:span?(samples.length-1)*1000/span:0,lastNewFrameAgeMs:samples.length?Date.now()-samples.at(-1).at:null,gapP95Ms:gaps[Math.floor(gaps.length*.95)]||0,maxGapMs:gaps.at(-1)||0,gapsOver250ms:gaps.filter(x=>x>250).length,failures,duplicates,note:text.metricsNote},null,2);m.dataset.samples=JSON.stringify(samples);},1000);
         </script></body></html>

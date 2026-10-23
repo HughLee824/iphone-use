@@ -27,9 +27,17 @@ private final class RunnerRecordingConnectionStub: RunnerRecordingConnection {
     var previewDevice = NativePreviewDevice(productType: "iPhone13,3", name: "iPhone 12 Pro")
     var previewRefreshes = 0
     var failRefresh = false
-    func previewNeedsRefresh() throws -> Bool { changed }
+    var pollError: Error?
+    var refreshError: Error?
+    var onPoll: (() -> Void)?
+    func previewNeedsRefresh() throws -> Bool {
+        onPoll?()
+        if let pollError { throw pollError }
+        return changed
+    }
     func refreshPreview() throws {
         previewRefreshes += 1
+        if let refreshError { throw refreshError }
         if failRefresh { throw TransportError(description: "Lost scoped refresh reply", possiblySent: true) }
         if let refreshedRotation { rotation = refreshedRotation }
         changed = false
@@ -48,6 +56,63 @@ private final class RunnerRecordingConnectionStub: RunnerRecordingConnection {
 }
 
 final class RunnerRecordingTests: XCTestCase {
+    func testHealthyPreviewAndRecordingSurvivePollTimeoutsThenResumeChecks() throws {
+        let connection = RunnerRecordingConnectionStub()
+        let directory = try root()
+        let owner = RunnerNativeRecording(root: directory.appendingPathComponent("recordings"), cancellation: NativeCancellation()) { connection }
+        defer { _ = owner.close() }
+        let preview = try owner.startPreview(options: .init(port: 0))
+        _ = try owner.start(duration: 30)
+        for code in ["coredevice_timeout", "coredevice_initialization_timeout", "coredevice_timeout"] {
+            connection.pollError = IPhoneUseError(code, "Fixture read timed out")
+            XCTAssertFalse(owner.previewTick())
+            XCTAssertEqual(connection.closed, 0)
+            XCTAssertEqual(connection.previewRefreshes, 0)
+            XCTAssertEqual(owner.previewStatus["url"] as? String, preview["url"] as? String)
+        }
+        let events = try String(contentsOf: directory.appendingPathComponent("preview-events.jsonl"), encoding: .utf8)
+        XCTAssertEqual(events.components(separatedBy: "poll_deferred").count - 1, 3)
+        connection.pollError = nil
+        XCTAssertFalse(owner.previewTick())
+        XCTAssertEqual(owner.status()["state"] as? String, "waiting_for_frame")
+        connection.changed = true
+        XCTAssertTrue(owner.previewTick(), "A later confirmed rotation still refreshes normally")
+        XCTAssertEqual(connection.previewRefreshes, 1)
+        XCTAssertEqual(connection.closed, 0)
+        XCTAssertEqual(owner.previewStatus["url"] as? String, preview["url"] as? String)
+    }
+
+    func testTimeoutDoesNotHideUnhealthyMediaOrCancellationAndOtherErrorsRemainTerminal() throws {
+        for (code, healthy, cancelled) in [("coredevice_timeout", false, false), ("coredevice_timeout", true, true),
+            ("device_locked", true, false), ("capture_unavailable", true, false),
+            ("coredevice_failed", true, false), ("coredevice_cancelled", true, false)] {
+            let connection = RunnerRecordingConnectionStub(), cancellation = NativeCancellation()
+            let owner = RunnerNativeRecording(root: try root(), cancellation: cancellation) { connection }
+            defer { _ = owner.close() }
+            _ = try owner.startPreview(options: .init(port: 0))
+            connection.receiver.healthy = healthy
+            connection.pollError = IPhoneUseError(code, "Fixture failure")
+            if cancelled { connection.onPoll = { cancellation.cancel() } }
+            XCTAssertTrue(owner.previewTick())
+            XCTAssertEqual(connection.closed, 1)
+            XCTAssertNil(owner.previewStatus["url"])
+        }
+    }
+
+    func testTimeoutAfterRefreshBeginsCannotBeDeferredOrReplayed() throws {
+        let connection = RunnerRecordingConnectionStub()
+        let owner = RunnerNativeRecording(root: try root(), cancellation: NativeCancellation()) { connection }
+        defer { _ = owner.close() }
+        _ = try owner.startPreview(options: .init(port: 0))
+        connection.changed = true
+        connection.refreshError = IPhoneUseError("coredevice_timeout", "Read after media stop timed out")
+        XCTAssertTrue(owner.previewTick())
+        XCTAssertEqual(connection.closed, 1)
+        XCTAssertEqual(connection.previewRefreshes, 1)
+        XCTAssertFalse(owner.previewTick())
+        XCTAssertThrowsError(try owner.startPreview(options: .init(port: 0)))
+    }
+
     func testEarlyPreviewStartsMediaBeforeAuthorizationAndReusesItAfterward() throws {
         var starts = 0
         let connection = RunnerRecordingConnectionStub()

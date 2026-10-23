@@ -2,6 +2,18 @@ import XCTest
 @testable import IPhoneUseCore
 
 final class NativePreviewEventsTests: XCTestCase {
+    func testPollTimeoutDeferralRequiresHealthyMediaAndDecoder() {
+        let error = IPhoneUseError("coredevice_timeout", "Fixture timeout")
+        XCTAssertTrue(NativePreviewPoll.canDefer(error, health: ["healthy": true]))
+        for health: [String: Any] in [[:], ["healthy": false],
+            ["healthy": true, "snapshots": ["closed": true]],
+            ["healthy": true, "snapshots": ["waitingForKeyframe": true]]] {
+            XCTAssertFalse(NativePreviewPoll.canDefer(error, health: health))
+        }
+        XCTAssertFalse(NativePreviewPoll.canDefer(TransportError(description: "Lost reply", possiblySent: true),
+                                                health: ["healthy": true]))
+    }
+
     func testTransitionFactsKeepCountersWithoutTimingSamplesAndUsePrivateFile() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

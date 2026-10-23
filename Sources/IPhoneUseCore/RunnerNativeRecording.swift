@@ -331,6 +331,7 @@ final class RunnerNativeRecording {
     }
     func previewTick() -> Bool {
         guard let preview, let connection, !closed, !cancellation.isCancelled else { return false }
+        var checkingDisplay = true
         do {
             let recovery = previewContinuity.needsRecovery(connection.previewReceiver?.snapshots?.status() ?? [:])
             var changed = recovery
@@ -339,6 +340,7 @@ final class RunnerNativeRecording {
                 changed = try connection.previewNeedsRefresh()
                 if changed { reason = connection.previewRefreshReason }
             }
+            checkingDisplay = false
             if !changed, let previewGeometry, let display = connection.previewDisplay {
                 // CoreDevice can report the SAME stale axes for both its PNG
                 // and display metadata. XCTest supplies only negative evidence;
@@ -361,6 +363,11 @@ final class RunnerNativeRecording {
             if changed { previewEvent("refresh_completed", reason: reason, connection: connection) }
             return changed
         } catch {
+            if checkingDisplay, !cancellation.isCancelled,
+               NativePreviewPoll.canDefer(error, health: connection.source.health()) {
+                previewEvent("poll_deferred", reason: String(describing: error), connection: connection)
+                return false // A status timeout is not evidence that the independent video stopped.
+            }
             failure = String(describing: error)
             preview.suspend(failure!); preview.close(); self.preview = nil
             recording.endSegment(reason: "preview_display_unavailable")
