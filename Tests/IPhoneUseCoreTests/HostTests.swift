@@ -643,6 +643,36 @@ final class HostTests: XCTestCase {
         }
     }
 
+    func testTouchPastePrewriteFailureDoesNotBlockHostActionsInEitherMode() throws {
+        for native in [true, false] {
+            let backend = ControlledBackend(); backend.nativeTextFixture = native
+            let io = TouchPasteTestIO(); io.failSnapshotAt = 1
+            let clipboard = TouchPasteSession { .init(io: io, close: { true }) }
+            let (paths, session, finished) = try host(timeout: 5, backend: backend, native: native, touchPaste: clipboard)
+            defer { _ = try? call(paths, session: session, op: "disconnect"); wait(for: [finished], timeout: 3) }
+            _ = try call(paths, session: session, op: "observe")
+            let stage = try call(paths, session: session, op: "type-with-method", fields: ["reference": "o1", "mode": "insert", "textMethod": "touch-paste", "text": "中文"])
+            XCTAssertEqual(stage["outcome"] as? String, "not_dispatched")
+            let result = try XCTUnwrap(stage["result"] as? [String: Any])
+            let appleError = result["applePasteboardError"] as? [String: Any]
+            XCTAssertEqual(appleError?["code"] as? Int, 26006)
+            XCTAssertFalse(String(describing: stage).contains("private clipboard text"))
+            XCTAssertEqual(io.writes, 0)
+            XCTAssertEqual(backend.inputCount, 0)
+            let refreshed = try call(paths, session: session, op: "observe")
+            let reference = (refreshed["result"] as! [String: Any])["observation"] as! String
+            let tap = try call(paths, session: session, op: "tap", fields: ["reference": reference, "x": 100, "y": 200])
+            XCTAssertEqual(tap["ok"] as? Bool, true)
+            let observed = try call(paths, session: session, op: "observe")
+            let current = (observed["result"] as! [String: Any])["observation"] as! String
+            let typed = try call(paths, session: session, op: "type", fields: ["reference": native ? current : "\(current):e27", "mode": "insert", "text": "test"])
+            XCTAssertEqual(typed["ok"] as? Bool, true)
+            let opened = try call(paths, session: session, op: "open", fields: ["bundleId": "com.example.fixture"])
+            XCTAssertEqual(opened["ok"] as? Bool, true)
+            XCTAssertEqual(io.writes, 0)
+        }
+    }
+
     func testTouchPasteCaptureFailureRetainsTransactionAndDisconnectRestores() throws {
         for native in [true, false] {
             let backend = ControlledBackend(); backend.nativeTextFixture = native

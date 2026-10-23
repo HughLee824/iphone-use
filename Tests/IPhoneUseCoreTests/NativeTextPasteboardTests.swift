@@ -44,6 +44,33 @@ private final class PasteboardTransport: NativeTransport {
 }
 
 final class NativeTextPasteboardTests: XCTestCase {
+    func testAppleServiceErrorKeepsKnownReasonWithoutPrivateReplyFields() throws {
+        for code in [26006, 99999] {
+            let reply: [String: Any] = ["error": ["domain": "com.apple.dt.CoreDeviceError", "code": code,
+                "userInfo": ["NSLocalizedDescription": "private clipboard text", "NSUnderlyingError": "private nested error"],
+                "userInfoWithNSSecureCoding": Data("private archive".utf8)],
+                "pasteboard": ["items": ["private payload"]]]
+            XCTAssertThrowsError(try AppleTextPasteboardIO.snapshotReply(reply, command: "PULL_REPLY")) {
+                let error = $0 as? IPhoneUseError
+                XCTAssertEqual(error?.code, "native_pasteboard_failed")
+                let details = error?.diagnostics["applePasteboardError"] as? [String: Any]
+                XCTAssertEqual(details?["domain"] as? String, "com.apple.dt.CoreDeviceError")
+                XCTAssertEqual(details?["code"] as? Int, code)
+                XCTAssertTrue(String(describing: $0).contains(String(code)))
+                if code == 26006 { XCTAssertTrue(String(describing: $0).contains("transient, confidential, or already synchronized")) }
+                XCTAssertFalse(String(describing: $0).contains("private"))
+                XCTAssertFalse(String(describing: error?.diagnostics).contains("private"))
+            }
+        }
+        for error: Any in ["private string", ["domain": "private domain", "code": 26006],
+                           ["domain": "com.apple.dt.CoreDeviceError", "code": "private code"]] {
+            XCTAssertThrowsError(try AppleTextPasteboardIO.snapshotReply(["error": error], command: "PULL_REPLY")) {
+                XCTAssertFalse(String(describing: $0).contains("private"))
+                XCTAssertTrue(($0 as? IPhoneUseError)?.diagnostics.isEmpty == true)
+            }
+        }
+    }
+
     func testIdentityQueriesDoNotResolveDataAndBackupStillRequiresAllFlavors() throws {
         let transport = PasteboardTransport()
         let board = NativeTextPasteboard(io: AppleTextPasteboardIO(transport: transport, cancellation: NativeCancellation()))

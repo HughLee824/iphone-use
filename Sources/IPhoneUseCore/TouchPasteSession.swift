@@ -59,9 +59,19 @@ final class TouchPasteSession {
             try next.checkOwnership()
             next.endInputAttempt()
         } catch {
+            // Preserve failure-phase facts before releasing a transaction that never
+            // attempted a write. Also discard its transport: a read timeout poisons it.
+            var result: [String: Any] = ["pasteboard": status, "inputReportsSent": 0, "textInserted": false]
+            if !next.hasAttemptedWrite {
+                result["cleanup"] = close()
+                board = nil
+            }
+            if let details = (error as? IPhoneUseError)?.diagnostics["applePasteboardError"] {
+                result["applePasteboardError"] = details
+            }
             throw ActionFailure(code: "touch_paste_stage_failed", description: "Clipboard staging failed; no input was sent: \(error)",
                 possiblyExecuted: next.status["writeUncertain"] as? Bool == true, requiresObservation: true,
-                result: ["pasteboard": status, "inputReportsSent": 0, "textInserted": false])
+                result: result)
         }
         return ["textInputMethod": "touch-paste", "phase": "awaiting_touch_paste", "textInserted": false,
                 "inputReportsSent": 0, "automaticReplayAllowed": false, "pasteboard": status,

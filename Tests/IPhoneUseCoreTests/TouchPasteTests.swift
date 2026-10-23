@@ -6,8 +6,23 @@ final class TouchPasteTestIO: NativeTextPasteboard.IO {
     var count = 1
     var writes = 0
     var failWrite = false
-    func snapshot() throws -> NativeTextPasteboard.Snapshot { .init(changeCount: count, nonce: "test") }
-    func read() throws -> [NativeTextPasteboard.Item] { items }
+    var failSnapshotAt: Int?
+    var snapshots = 0
+    var failRead = false
+    var changeOnRead = false
+    func snapshot() throws -> NativeTextPasteboard.Snapshot {
+        snapshots += 1
+        if snapshots == failSnapshotAt {
+            _ = try AppleTextPasteboardIO.snapshotReply(["error": ["domain": "com.apple.dt.CoreDeviceError", "code": 26006,
+                "userInfo": ["NSLocalizedDescription": "private clipboard text"]]], command: "PULL_REPLY")
+        }
+        return .init(changeCount: count, nonce: "test")
+    }
+    func read() throws -> [NativeTextPasteboard.Item] {
+        if failRead { throw TransportError(description: "Read timed out", possiblySent: true) }
+        if changeOnRead { count += 1 }
+        return items
+    }
     func write(_ items: [NativeTextPasteboard.Item], cleanup: Bool) throws {
         self.items = items; count += 1; writes += 1
         if failWrite { throw TransportError(description: "Lost reply", possiblySent: true) }
@@ -15,6 +30,62 @@ final class TouchPasteTestIO: NativeTextPasteboard.IO {
 }
 
 final class TouchPasteTests: XCTestCase {
+    func testPrewriteFailuresReleasePendingAndConnectionWithoutReplay() throws {
+        for failure in ["snapshot", "read", "verify", "changed"] {
+            let io = TouchPasteTestIO(), original = io.items
+            io.failSnapshotAt = failure == "snapshot" ? 1 : failure == "verify" ? 2 : nil
+            io.failRead = failure == "read"
+            io.changeOnRead = failure == "changed"
+            var opens = 0, closes = 0
+            let session = TouchPasteSession {
+                opens += 1
+                return .init(io: io, close: { closes += 1; return true })
+            }
+            XCTAssertThrowsError(try session.stage("payload", observation: "o1")) {
+                let error = $0 as? ActionFailure
+                XCTAssertEqual(error?.possiblyExecuted, false)
+                let status = error?.result?["pasteboard"] as? [String: Any]
+                XCTAssertEqual(status?["restorePending"] as? Bool, false)
+                XCTAssertEqual(status?["writeUncertain"] as? Bool, false)
+                XCTAssertNotNil(status?["preparationPhase"])
+                XCTAssertNil(status?["transactionID"])
+            }
+            XCTAssertFalse(session.pending, failure)
+            XCTAssertEqual(closes, 1)
+            XCTAssertEqual(opens, 1)
+            XCTAssertEqual(io.writes, 0)
+            XCTAssertEqual(io.items, original)
+            XCTAssertNoThrow(try session.checkOwnership())
+            io.failSnapshotAt = nil; io.failRead = false; io.changeOnRead = false
+            _ = try session.stage("explicit next request", observation: "o2")
+            XCTAssertEqual(opens, 2)
+            XCTAssertTrue(session.pending)
+            XCTAssertEqual(io.writes, 1)
+            XCTAssertEqual(session.close()["pasteboardRestoreAcknowledged"] as? Bool, true)
+            XCTAssertEqual(io.items, original)
+            XCTAssertEqual(closes, 2)
+        }
+    }
+
+    func testPostwriteVerificationAndOwnershipFailuresKeepPending() throws {
+        for failAt in [3, 5] {
+            let io = TouchPasteTestIO()
+            io.failSnapshotAt = failAt
+            var closes = 0
+            let session = TouchPasteSession { .init(io: io, close: { closes += 1; return true }) }
+            XCTAssertThrowsError(try session.stage("payload", observation: "o1"))
+            XCTAssertTrue(session.pending)
+            XCTAssertNotNil(session.status["transactionID"])
+            XCTAssertEqual(io.writes, 1)
+            XCTAssertEqual(closes, 0)
+            XCTAssertThrowsError(try session.stage("again", observation: "o2"))
+            XCTAssertEqual(io.writes, 1)
+            let result = session.close()
+            XCTAssertEqual(result["pasteboardRestoreAcknowledged"] as? Bool, failAt == 5)
+            XCTAssertEqual(io.writes, failAt == 5 ? 2 : 1)
+        }
+    }
+
     func testBothModesAcceptOnlyExplicitStagingWithScreenshotAndLiteralText() throws {
         for native in [true, false] {
             let request: [String: Any] = ["reference": "o1", "mode": "insert", "textMethod": "touch-paste", "text": "中文\r\nEnglish 🙂"]

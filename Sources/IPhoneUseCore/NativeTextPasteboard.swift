@@ -24,6 +24,7 @@ final class NativeTextPasteboard {
     private var payload: [Item]?
     private var owned: Snapshot?
     private var writeUncertain = false
+    private(set) var hasAttemptedWrite = false
     private var closed: [String: Any]?
     private var transactionID: String?
     private var sourceObservationID: String?
@@ -70,6 +71,7 @@ final class NativeTextPasteboard {
         confirmationAfter = ProcessInfo.processInfo.systemUptime
         if owned != nil, current == next { preparationPhase = "ready"; return }
         // Mark before submission: a failed service reply may follow a device-side write.
+        hasAttemptedWrite = true
         writeUncertain = true; owned = nil; payload = next
         preparationPhase = "write_payload"
         try io.write(next, cleanup: false)
@@ -148,6 +150,16 @@ final class AppleTextPasteboardIO: NativeTextPasteboard.IO {
             "dataPolicy": [policy: [:]]], timeout: 8), command: "PULL_REPLY")
     }
     static func snapshotReply(_ reply: [String: Any], command: String) throws -> [String: Any] {
+        if let error = reply["error"] as? [String: Any],
+           error["domain"] as? String == "com.apple.dt.CoreDeviceError", let code = error["code"] as? Int {
+            // Only known domain/code pairs get a fixed explanation. Remote userInfo,
+            // localized messages and archived errors may include clipboard contents.
+            let reason = code == 26006
+                ? "Apple refused clipboard synchronization because its contents are marked transient, confidential, or already synchronized by another mechanism."
+                : "Apple clipboard service rejected the operation; remote error details were omitted."
+            throw IPhoneUseError("native_pasteboard_failed", "\(reason) (com.apple.dt.CoreDeviceError \(code))",
+                diagnostics: ["applePasteboardError": ["domain": "com.apple.dt.CoreDeviceError", "code": code, "reason": reason]])
+        }
         guard reply["error"] == nil, reply["command"] as? String == command,
               let snapshot = reply["pasteboard"] as? [String: Any],
               let metadata = snapshot["metadata"] as? [String: Any],
