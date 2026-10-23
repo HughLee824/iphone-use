@@ -78,7 +78,7 @@ private final class ControlledBackend: SessionBackend {
         if failObservation { throw IPhoneUseError("capture_failed", "Fixture capture failure") }
         if nativeTextFixture {
             return CapturedObservation(nodes: [], metadata: ["backend": "apple-native",
-                "screenContext": try jsonObject(JSONEncoder().encode(screenTestContext()))], screenshot: try screenPNG(patches: nativeCaretFixture ? [(CGRect(x:50,y:150,width:2,height:20),[7,193,96])] : []))
+                "screenContext": try jsonObject(JSONEncoder().encode(screenTestContext()))], screenshot: try screenPNG(patches: nativeCaretFixture ? [(CGRect(x: 50, y: 150, width: 2, height: 20), [7, 193, 96])] : []))
         }
         return try observationFixture()
     }
@@ -266,21 +266,21 @@ final class HostTests: XCTestCase {
 
     func testCaretWireOperationsRequireExplicitConfirmationAndConsumeObservation() throws {
         let backend = ControlledBackend(); backend.nativeTextFixture = true; backend.nativeCaretFixture = true
-        let (paths, session, finished) = try host(timeout:5,backend:backend,native:true)
-        defer { _ = try? call(paths,session:session,op:"disconnect"); wait(for:[finished],timeout:3) }
+        let (paths, session, finished) = try host(timeout: 5, backend: backend, native: true)
+        defer { _ = try? call(paths, session: session, op: "disconnect"); wait(for: [finished], timeout: 3) }
         for op in ["type-with-caret", "press-with-caret"] {
-            let observed = try call(paths,session:session,op:"observe")
-            let reference = (observed["result"] as! [String:Any])["observation"] as! String
-            var fields: [String:Any] = ["reference":reference,"mode":"insert","text":"a","key":"left","fieldRect":"18,139,354,160"]
-            let missing = try call(paths,session:session,op:op,fields:fields)
-            XCTAssertEqual((missing["error"] as? [String:Any])?["code"] as? String,"invalid_caret_region")
+            let observed = try call(paths, session: session, op: "observe")
+            let reference = (observed["result"] as! [String: Any])["observation"] as! String
+            var fields: [String: Any] = ["reference": reference, "mode": "insert", "text": "a", "key": "left", "fieldRect": "18,139,354,160"]
+            let missing = try call(paths, session: session, op: op, fields: fields)
+            XCTAssertEqual((missing["error"] as? [String: Any])?["code"] as? String, "invalid_caret_region")
             fields["caretRect"] = "49,149,4,22"
-            let accepted = try call(paths,session:session,op:op,fields:fields)
-            XCTAssertEqual(accepted["ok"] as? Bool,true)
-            let stale = try call(paths,session:session,op:op,fields:fields)
-            XCTAssertEqual(stale["outcome"] as? String,"not_dispatched")
+            let accepted = try call(paths, session: session, op: op, fields: fields)
+            XCTAssertEqual(accepted["ok"] as? Bool, true)
+            let stale = try call(paths, session: session, op: op, fields: fields)
+            XCTAssertEqual(stale["outcome"] as? String, "not_dispatched")
         }
-        XCTAssertEqual(backend.actionCount,2)
+        XCTAssertEqual(backend.actionCount, 2)
     }
 
     func testScopedPreparationSelectsTextObservationAndRejectsMalformedRequestBeforeRegistration() throws {

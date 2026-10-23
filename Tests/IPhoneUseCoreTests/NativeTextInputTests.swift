@@ -157,7 +157,7 @@ final class NativeTextInputTests: XCTestCase {
             XCTAssertEqual(action.fields["mode"] as? String, mode)
             let guardValue = try XCTUnwrap(cache.resolveTarget(for: action).textGuard)
             XCTAssertEqual(guardValue.policy.maxRegionChange, 0)
-            let changed = try screenPNG(patches: [(CGRect(x: 50, y: 160, width: 4, height: 10), [0,0,0])])
+            let changed = try screenPNG(patches: [(CGRect(x: 50, y: 160, width: 4, height: 10), [0, 0, 0])])
             XCTAssertFalse(try guardValue.check(png: changed, context: context).accepted)
         }
         for native in [false, true] {
@@ -195,7 +195,7 @@ final class NativeTextInputTests: XCTestCase {
 
     func testReadOnlyPreflightAlwaysUsesOriginalGuardAndHasBoundedAttempts() throws {
         let context = screenTestContext(), baseline = try screenPNG()
-        let changed = try screenPNG(patches: [(CGRect(x: 50, y: 160, width: 4, height: 10), [0,0,0])])
+        let changed = try screenPNG(patches: [(CGRect(x: 50, y: 160, width: 4, height: 10), [0, 0, 0])])
         let guardValue = try ScreenGuard(png: baseline, context: context,
             rects: [ScreenRect(CGRect(x: 18, y: 146, width: 354, height: 36))], policy: .init())
         let metadata: [String: Any] = ["displayID": UInt64(1), "screenContext": try jsonObject(JSONEncoder().encode(context))]
@@ -220,7 +220,7 @@ final class NativeTextInputTests: XCTestCase {
 
     func testPreflightTracePreservesEachComparisonWithoutChangingBaseline() throws {
         let context = screenTestContext(), baseline = try screenPNG()
-        let changed = try screenPNG(patches: [(CGRect(x: 50, y: 160, width: 4, height: 10), [0,0,0])])
+        let changed = try screenPNG(patches: [(CGRect(x: 50, y: 160, width: 4, height: 10), [0, 0, 0])])
         let guardValue = try ScreenGuard(png: baseline, context: context,
             rects: [ScreenRect(CGRect(x: 18, y: 146, width: 354, height: 36))], policy: .init())
         let metadata: [String: Any] = ["displayID": UInt64(1), "screenContext": try jsonObject(JSONEncoder().encode(context))]

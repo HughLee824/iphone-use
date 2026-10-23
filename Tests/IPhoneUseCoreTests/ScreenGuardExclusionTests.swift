@@ -58,9 +58,9 @@ final class ScreenGuardExclusionTests: XCTestCase {
 
     func testAreaCellsAverageAllPixelsAndKeepUnevenEdgeCells() throws {
         let rect = ScreenRect(CGRect(x: 0, y: 0, width: 5, height: 1))
-        let png = try screenPNG(width: 5, height: 1, patches: [(CGRect(x: 0, y: 0, width: 1, height: 1), [0,0,0])])
+        let png = try screenPNG(width: 5, height: 1, patches: [(CGRect(x: 0, y: 0, width: 1, height: 1), [0, 0, 0])])
         let image = try ScreenImage(png: png)
-        XCTAssertEqual(Array(try image.areaRGB(rect: rect, screen: rect, columns: 2, rows: 1)), [128,128,128,255,255,255])
+        XCTAssertEqual(Array(try image.areaRGB(rect: rect, screen: rect, columns: 2, rows: 1)), [128, 128, 128, 255, 255, 255])
         XCTAssertThrowsError(try image.areaRGB(rect: rect, screen: rect, columns: 6, rows: 1))
         XCTAssertThrowsError(try image.areaRGB(rect: rect, screen: rect, columns: 0, rows: 1))
     }
@@ -70,7 +70,7 @@ final class ScreenGuardExclusionTests: XCTestCase {
         let ignored = ScreenRect(CGRect(x: 18, y: 89, width: 177, height: 60))
         let adjacent = ScreenRect(CGRect(x: 195, y: 89, width: 30, height: 60))
         let value = try ScreenGuard(png: screenPNG(), context: context, rects: [adjacent], policy: .init(), ignoring: ignored)
-        let frame = try screenPNG(patches: [(ignored.cgRect, [0,0,0]), (CGRect(x: 196, y: 110, width: 2, height: 10), [0,0,0])])
+        let frame = try screenPNG(patches: [(ignored.cgRect, [0, 0, 0]), (CGRect(x: 196, y: 110, width: 2, height: 10), [0, 0, 0])])
         let check = try value.check(png: frame, context: context)
         XCTAssertEqual(check.ignoredRect, ignored)
         XCTAssertGreaterThan(check.regionChanges[0], 0)
@@ -151,9 +151,11 @@ final class ScreenGuardExclusionTests: XCTestCase {
             let action = try DeviceAction(operation: kind, request: request, allowScreenText: true)
             let guardValue = try XCTUnwrap(cache.resolveTarget(for: action).textGuard)
             XCTAssertEqual(guardValue.regions.map(\.rect), [ScreenRect(field)])
-            XCTAssertTrue(try guardValue.check(png: screenPNG(patches: [(video, [0,0,0])]), context: context).accepted)
-            XCTAssertFalse(try guardValue.check(png: screenPNG(patches: [(video, [0,0,0]),
-                (CGRect(x: 50, y: 155, width: 10, height: 15), [0,0,0])]), context: context).accepted)
+            XCTAssertTrue(
+                try guardValue.check(png: screenPNG(patches: [(video, [0, 0, 0])]), context: context).accepted
+            )
+            XCTAssertFalse(try guardValue.check(png: screenPNG(patches: [(video, [0, 0, 0]),
+                (CGRect(x: 50, y: 155, width: 10, height: 15), [0, 0, 0])]), context: context).accepted)
             for value in ["20,150,100,20", "0,0,390,400", "-1,400,180,80"] {
                 var invalid = request; invalid["ignoreRect"] = value
                 XCTAssertThrowsError(try cache.resolveTarget(for: DeviceAction(operation: kind, request: invalid, allowScreenText: true)))

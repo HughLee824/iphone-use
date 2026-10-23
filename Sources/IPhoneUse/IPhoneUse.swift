@@ -509,7 +509,6 @@ struct Press: ParsableCommand {
     }
 }
 
-
 struct RecordStart: ParsableCommand {
     static let configuration = CommandConfiguration(commandName: "record-start", abstract: "Start an owned native media recording in either control mode; status reports its MP4.")
     @OptionGroup var options: SessionOptions

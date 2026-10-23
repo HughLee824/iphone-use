@@ -450,7 +450,7 @@ final class NativeRecordingTests: XCTestCase {
                 let length = bytes[offset..<offset+4].reduce(0) { $0 << 8 | Int($1) }; offset += 4
                 nals.append(Data(bytes[offset..<offset+length])); offset += length
             }
-            let sync = nals.contains { [19,20].contains(Int(($0[0] >> 1) & 63)) }
+            let sync = nals.contains { [19, 20].contains(Int(($0[0] >> 1) & 63)) }
             units.append(NativeVideoAccessUnit(timestamp: UInt32(units.count * 2400), nals: nals, keyframe: sync))
         }
         XCTAssertEqual(reader.status, .completed); XCTAssertEqual(units.count, 20)

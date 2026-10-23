@@ -10,13 +10,13 @@ final class NativeTextPhaseTests: XCTestCase {
     private var caret: ScreenRect { ScreenRect(stroke.insetBy(dx: -1, dy: -1)) }
 
     func testAnyColorAndUnequalOpacityNeedOnlyOneCurrentFrame() throws {
-        for bg: [UInt8] in [[255,255,255], [20,20,20]] {
-            for color: [UInt8] in [[0,0,0], [255,255,255], [220,30,40], [135,20,180], [7,193,96], [20,90,240]] where color != bg {
+        for bg: [UInt8] in [[255, 255, 255], [20, 20, 20]] {
+            for color: [UInt8] in [[0, 0, 0], [255, 255, 255], [220, 30, 40], [135, 20, 180], [7, 193, 96], [20, 90, 240]] where color != bg {
                 func frame(_ alpha: Double) throws -> Data {
-                    try screenPNG(patches: [(context.screen.cgRect,bg), (stroke, zip(bg,color).map { UInt8((Double($0)+(Double($1)-Double($0))*alpha).rounded()) })])
+                    try screenPNG(patches: [(context.screen.cgRect, bg), (stroke, zip(bg, color).map { UInt8((Double($0)+(Double($1)-Double($0))*alpha).rounded()) })])
                 }
                 for sourceAlpha in [1.0, 0.5, 0.25] {
-                    if zip(bg,color).map({ abs(Double($0)-Double($1))*sourceAlpha }).max()! < 32 { continue }
+                    if zip(bg, color).map({ abs(Double($0)-Double($1))*sourceAlpha }).max()! < 32 { continue }
                     let source = try frame(sourceAlpha)
                     let guardValue = try NativeTextFieldGuard(png: source, context: context, field: field)
                     let bound = try NativeBoundCaretGuard(field: guardValue, caret: caret, observationID: "o1")
@@ -30,7 +30,7 @@ final class NativeTextPhaseTests: XCTestCase {
     }
 
     func testMissingConfirmationDoesNotLearnFromRepeatedFrames() throws {
-        let value = try NativeTextFieldGuard(png: screenPNG(patches: [(stroke,[7,193,96])]), context: context, field: field)
+        let value = try NativeTextFieldGuard(png: screenPNG(patches: [(stroke, [7, 193, 96])]), context: context, field: field)
         let current = try value.pixels(png: screenPNG(), context: context)
         for _ in 0..<6 {
             XCTAssertEqual(value.compare(current, caret: nil), .none)
@@ -42,9 +42,9 @@ final class NativeTextPhaseTests: XCTestCase {
         // The recorded Apple PNG averaged 254 and 255 on the two sides.
         // Its hidden caret was 255, projecting slightly past zero opacity.
         for (background, flank, color): ([UInt8], [UInt8], [UInt8]) in [
-            ([255,255,255], [254,254,255], [131,224,176]),
-            ([0,0,0], [1,1,0], [124,31,79]),
-            ([128,128,128], [127,127,128], [30,50,70])
+            ([255, 255, 255], [254, 254, 255], [131, 224, 176]),
+            ([0, 0, 0], [1, 1, 0], [124, 31, 79]),
+            ([128, 128, 128], [127, 127, 128], [30, 50, 70])
         ] {
             let unchanged = [(context.screen.cgRect, background),
                 (CGRect(x: 48, y: 149, width: 1, height: 22), flank)]
@@ -70,12 +70,12 @@ final class NativeTextPhaseTests: XCTestCase {
 
     func testConfirmedPixelsAreExcludedEvenBesidePlaceholder() throws {
         let placeholder = CGRect(x: 52, y: 155, width: 8, height: 10)
-        let background: [(CGRect, [UInt8])] = [(placeholder, [178,178,178])]
-        let value = try NativeTextFieldGuard(png: screenPNG(patches: background + [(stroke,[7,193,96])]),
+        let background: [(CGRect, [UInt8])] = [(placeholder, [178, 178, 178])]
+        let value = try NativeTextFieldGuard(png: screenPNG(patches: background + [(stroke, [7, 193, 96])]),
                                              context: context, field: field)
         let bound = try NativeBoundCaretGuard(field: value, caret: ScreenRect(stroke), observationID: "o1")
-        for patches in [background, background + [(stroke,[220,30,40])],
-                        background + [(stroke,[0,0,0])]] {
+        for patches in [background, background + [(stroke, [220, 30, 40])],
+                        background + [(stroke, [0, 0, 0])]] {
             let current = try value.pixels(png: screenPNG(patches: patches), context: context)
             XCTAssertEqual(value.compare(current, caret: bound), .caret)
         }
@@ -83,16 +83,16 @@ final class NativeTextPhaseTests: XCTestCase {
 
     func testOutsidePixelsRemainProtectedAndMaskNeverFollowsCaret() throws {
         let text = CGRect(x: 52, y: 155, width: 8, height: 10)
-        let source = try screenPNG(patches: [(stroke,[7,193,96]), (text,[178,178,178])])
+        let source = try screenPNG(patches: [(stroke, [7, 193, 96]), (text, [178, 178, 178])])
         let value = try NativeTextFieldGuard(png: source, context: context, field: field)
         let bound = try NativeBoundCaretGuard(field: value, caret: ScreenRect(stroke), observationID: "o1")
         let frames = try [
-            screenPNG(patches: [(text,[178,178,178]),(stroke.offsetBy(dx: 1, dy: 0),[7,193,96])]),
-            screenPNG(patches: [(text,[178,178,178]),(stroke.offsetBy(dx: 10, dy: 0),[7,193,96])]),
+            screenPNG(patches: [(text, [178, 178, 178]), (stroke.offsetBy(dx: 1, dy: 0), [7, 193, 96])]),
+            screenPNG(patches: [(text, [178, 178, 178]), (stroke.offsetBy(dx: 10, dy: 0), [7, 193, 96])]),
             screenPNG(), // Deletion of adjacent text is not a caret change.
-            screenPNG(patches: [(text,[100,100,100])]),
-            screenPNG(patches: [(text,[178,178,178]),(CGRect(x: 90, y: 150, width: 1, height: 20),[0,0,0])]),
-            screenPNG(patches: [(stroke.insetBy(dx: -10, dy: 0),[100,150,200])])
+            screenPNG(patches: [(text, [100, 100, 100])]),
+            screenPNG(patches: [(text, [178, 178, 178]), (CGRect(x: 90, y: 150, width: 1, height: 20), [0, 0, 0])]),
+            screenPNG(patches: [(stroke.insetBy(dx: -10, dy: 0), [100, 150, 200])])
         ]
         for png in frames {
             let current = try value.pixels(png: png, context: context)
@@ -103,7 +103,7 @@ final class NativeTextPhaseTests: XCTestCase {
     }
 
     func testNoChangesStillUseDirectComparisonWithoutCaret() throws {
-        let png = try screenPNG(patches: [(stroke,[0,0,0])])
+        let png = try screenPNG(patches: [(stroke, [0, 0, 0])])
         let value = try NativeTextFieldGuard(png: png, context: context, field: field)
         XCTAssertEqual(value.compare(try value.pixels(png: png, context: context), caret: nil), .pixels)
         let rotated = ScreenContext(screen: context.screen, scope: context.scope, orientation: 3, keyboardCount: 0)
@@ -112,16 +112,18 @@ final class NativeTextPhaseTests: XCTestCase {
 
     func testAntialiasedTipsAndUnchangedAdjacentText() throws {
         func frame(_ alpha: Double) throws -> Data {
-            func c(_ opacity: Double) -> [UInt8] { [7,193,96].map { UInt8((255+(Double($0)-255)*opacity).rounded()) } }
-            return try screenPNG(patches: [(CGRect(x: 42,y: 150,width: 4,height: 20),[0,0,0]),
-                (stroke,c(alpha)), (CGRect(x:50,y:150,width:1,height:1),c(alpha*0.2))])
+            func c(_ opacity: Double) -> [UInt8] {
+                [7, 193, 96].map { UInt8((255+(Double($0)-255)*opacity).rounded()) }
+            }
+            return try screenPNG(patches: [(CGRect(x: 42, y: 150, width: 4, height: 20), [0, 0, 0]),
+                (stroke, c(alpha)), (CGRect(x: 50, y: 150, width: 1, height: 1), c(alpha*0.2))])
         }
         let value = try NativeTextFieldGuard(png: frame(0.5), context: context, field: field)
         let bound = try NativeBoundCaretGuard(field: value, caret: caret, observationID: "o1")
-        for alpha in [0.0,0.25,1.0] {
-            XCTAssertNotEqual(value.compare(try value.pixels(png: frame(alpha),context:context),caret:bound),.none)
+        for alpha in [0.0, 0.25, 1.0] {
+            XCTAssertNotEqual(value.compare(try value.pixels(png: frame(alpha), context: context), caret: bound), .none)
         }
-        XCTAssertEqual(bound.observationID,"o1")
+        XCTAssertEqual(bound.observationID, "o1")
     }
 }
 
@@ -137,7 +139,7 @@ extension NativeTextPhaseTests {
             func frame(_ patches: [(CGRect, [UInt8])]) throws -> Data {
                 try screenPNG(width: 390 * scale, height: 844 * scale, patches: patches)
             }
-            let source = try frame([(actual, [135,20,180])])
+            let source = try frame([(actual, [135, 20, 180])])
             let value = try NativeTextFieldGuard(png: source, context: context,
                 field: ScreenRect(CGRect(x: 8, y: 468, width: 295, height: 44)))
             let bound = try NativeBoundCaretGuard(field: value, caret: ScreenRect(selected), observationID: "o1")
@@ -160,7 +162,7 @@ extension NativeTextPhaseTests {
                 CGRect(x: native.minX, y: native.minY - 2, width: native.width, height: 1),
                 CGRect(x: native.minX, y: native.maxY + 1, width: native.width, height: 1)
             ] {
-                let changed = try value.pixels(png: frame([(outside, [0,0,0])]), context: context)
+                let changed = try value.pixels(png: frame([(outside, [0, 0, 0])]), context: context)
                 XCTAssertEqual(value.compare(changed, caret: bound), .none)
             }
         }
@@ -180,36 +182,39 @@ extension NativeTextPhaseTests {
     }
 
     func testFractionalFieldCoordinatesKeepNativeCaretGeometry() throws {
-        let scoped = ScreenRect(CGRect(x:18.25,y:139.25,width:354,height:160))
-        let png = try screenPNG(width:780,height:1688,patches:[(CGRect(x:100,y:300,width:4,height:40),[0,0,0])])
-        let value = try NativeTextFieldGuard(png:png,context:context,field:scoped)
-        let bound = try NativeBoundCaretGuard(field:value,caret:caret,observationID:"o1")
-        XCTAssertEqual(bound.caret,caret)
-        XCTAssertEqual(value.compare(try value.pixels(png:screenPNG(width:780,height:1688),context:context),caret:bound),.caret)
+        let scoped = ScreenRect(CGRect(x: 18.25, y: 139.25, width: 354, height: 160))
+        let png = try screenPNG(
+            width: 780, height: 1688,
+            patches: [(CGRect(x: 100, y: 300, width: 4, height: 40), [0, 0, 0])]
+        )
+        let value = try NativeTextFieldGuard(png: png, context: context, field: scoped)
+        let bound = try NativeBoundCaretGuard(field: value, caret: caret, observationID: "o1")
+        XCTAssertEqual(bound.caret, caret)
+        XCTAssertEqual(value.compare(try value.pixels(png: screenPNG(width: 780, height: 1688), context: context), caret: bound), .caret)
     }
 
     func testActionBindingRequiresCurrentObservationAndIsNotInherited() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let cache = ObservationCache(directory:directory)
-        let png = try screenPNG(patches:[(stroke,[7,193,96])])
-        let capture = CapturedObservation(nodes:[],metadata:["backend":"apple-native","screenContext":try jsonObject(JSONEncoder().encode(context))],screenshot:png)
+        let cache = ObservationCache(directory: directory)
+        let png = try screenPNG(patches: [(stroke, [7, 193, 96])])
+        let capture = CapturedObservation(nodes: [], metadata: ["backend": "apple-native", "screenContext": try jsonObject(JSONEncoder().encode(context))], screenshot: png)
         _ = try cache.store(capture)
-        var request: [String:Any] = ["reference":"o1","mode":"insert","text":"a","fieldRect":"18,139,354,160","caretRect":"49,149,4,22"]
-        let action = try DeviceAction(operation:"type",request:request,allowScreenText:true)
-        XCTAssertEqual(try cache.resolveTarget(for:action).textCaretGuard?.observationID,"o1")
-        XCTAssertThrowsError(try DeviceAction(operation:"type",request:request))
-        var invalid = request; invalid.removeValue(forKey:"fieldRect")
-        XCTAssertThrowsError(try DeviceAction(operation:"type",request:invalid,allowScreenText:true))
-        for rect in ["0,0,2,20","49,149,40,22","49,149,nan,22","49,149,4,2"] {
+        var request: [String: Any] = ["reference": "o1", "mode": "insert", "text": "a", "fieldRect": "18,139,354,160", "caretRect": "49,149,4,22"]
+        let action = try DeviceAction(operation: "type", request: request, allowScreenText: true)
+        XCTAssertEqual(try cache.resolveTarget(for: action).textCaretGuard?.observationID, "o1")
+        XCTAssertThrowsError(try DeviceAction(operation: "type", request: request))
+        var invalid = request; invalid.removeValue(forKey: "fieldRect")
+        XCTAssertThrowsError(try DeviceAction(operation: "type", request: invalid, allowScreenText: true))
+        for rect in ["0,0,2,20", "49,149,40,22", "49,149,nan,22", "49,149,4,2"] {
             invalid = request; invalid["caretRect"] = rect
-            XCTAssertThrowsError(try DeviceAction(operation:"type",request:invalid,allowScreenText:true))
+            XCTAssertThrowsError(try DeviceAction(operation: "type", request: invalid, allowScreenText: true))
         }
-        let previous = cache.beginAction(); cache.finishAction(previous:previous,dispatched:true)
-        XCTAssertThrowsError(try cache.resolveTarget(for:action))
+        let previous = cache.beginAction(); cache.finishAction(previous: previous, dispatched: true)
+        XCTAssertThrowsError(try cache.resolveTarget(for: action))
         _ = try cache.store(capture)
-        request["reference"] = "o2"; request.removeValue(forKey:"caretRect")
-        XCTAssertNil(try cache.resolveTarget(for:DeviceAction(operation:"type",request:request,allowScreenText:true)).textCaretGuard)
-        XCTAssertThrowsError(try cache.resolveTarget(for:action))
+        request["reference"] = "o2"; request.removeValue(forKey: "caretRect")
+        XCTAssertNil(try cache.resolveTarget(for: DeviceAction(operation: "type", request: request, allowScreenText: true)).textCaretGuard)
+        XCTAssertThrowsError(try cache.resolveTarget(for: action))
     }
 }

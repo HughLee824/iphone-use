@@ -54,7 +54,7 @@ final class NativeInputTimingTests: XCTestCase {
                         return CapturedObservation(nodes: [], metadata: ["displayID": UInt64(1),
                             "displayRotation": "rot0", "nativeRotation": "rot0", "captureSource": "native_media",
                             "screenContext": try jsonObject(JSONEncoder().encode(context))],
-                            screenshot: changed ? try screenPNG(patches: [(CGRect(x: 190, y: 590, width: 20, height: 20), [0,0,0])]) : original)
+                            screenshot: changed ? try screenPNG(patches: [(CGRect(x: 190, y: 590, width: 20, height: 20), [0, 0, 0])]) : original)
                     }
             }
             if changed {
@@ -136,7 +136,7 @@ final class NativeInputTimingTests: XCTestCase {
             }
             try check(original)
             clock += 12 // Backup, stage and verify the clipboard.
-            let final = changed ? try screenPNG(patches: [(CGRect(x: 50, y: 180, width: 30, height: 20), [0,0,0])]) : original
+            let final = changed ? try screenPNG(patches: [(CGRect(x: 50, y: 180, width: 30, height: 20), [0, 0, 0])]) : original
             var inputs = 0
             do {
                 try check(final)
@@ -183,7 +183,7 @@ final class NativeInputTimingTests: XCTestCase {
                             clock += scenario == "slow_png" ? 8 : 2
                             return CapturedObservation(nodes: [], metadata: ["displayID": UInt64(1),
                                 "screenContext": try jsonObject(JSONEncoder().encode(context))],
-                                screenshot: scenario == "changed" ? try screenPNG(patches: [(CGRect(x: 0, y: 0, width: 100, height: 100), [0,0,0])]) : png)
+                                screenshot: scenario == "changed" ? try screenPNG(patches: [(CGRect(x: 0, y: 0, width: 100, height: 100), [0, 0, 0])]) : png)
                         }, resynchronize: {
                             refreshes += 1; clock += scenario == "total_expired" ? 28 : 9
                             return scenario == "orientation_changed"

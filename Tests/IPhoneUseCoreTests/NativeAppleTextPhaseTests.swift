@@ -47,28 +47,28 @@ final class NativeAppleTextPhaseTests: XCTestCase {
     }
 
     func testConfirmedCaretUsesOneFrameAndRetainsContextChecks() throws {
-        let source = try screenPNG(patches: [(stroke,[7,193,96])]), state = CaptureState()
+        let source = try screenPNG(patches: [(stroke, [7, 193, 96])]), state = CaptureState()
         let result = try capture(source: source, frames: [screenPNG()], state: state, confirmCaret: true)
         XCTAssertTrue(result.0.accepted)
         XCTAssertTrue(result.0.fieldCaretMatch)
-        XCTAssertEqual(result.0.caretObservationID,"o1")
-        XCTAssertEqual(result.1,1)
-        XCTAssertEqual(state.screenshots,1)
-        XCTAssertEqual(state.lockChecks,2)
-        XCTAssertEqual(state.displayChecks,2)
+        XCTAssertEqual(result.0.caretObservationID, "o1")
+        XCTAssertEqual(result.1, 1)
+        XCTAssertEqual(state.screenshots, 1)
+        XCTAssertEqual(state.lockChecks, 2)
+        XCTAssertEqual(state.displayChecks, 2)
     }
 
     func testConfirmedMaskIsExcludedBeforeGlobalReductionButPageStillProtected() throws {
-        let source = try screenPNG(patches: [(stroke,[7,193,96])])
+        let source = try screenPNG(patches: [(stroke, [7, 193, 96])])
         let hidden = try screenPNG()
         let result = try capture(source: source, frames: [hidden], state: CaptureState(), confirmCaret: true)
         XCTAssertEqual(result.0.screenChange, 0)
         XCTAssertEqual(result.0.result["fieldAlgorithm"] as? String, "field-bound-caret-exclusion-v3")
-        let pageChange = try screenPNG(patches: [(CGRect(x: 0, y: 400, width: 390, height: 200),[0,0,0])])
+        let pageChange = try screenPNG(patches: [(CGRect(x: 0, y: 400, width: 390, height: 200), [0, 0, 0])])
         XCTAssertThrowsError(try capture(source: source, frames: [pageChange], state: CaptureState(), confirmCaret: true)) {
             XCTAssertEqual(($0 as? ActionFailure)?.code, "screen_changed")
         }
-        let textChange = try screenPNG(patches: [(CGRect(x: 100, y: 150, width: 2, height: 20),[0,0,0])])
+        let textChange = try screenPNG(patches: [(CGRect(x: 100, y: 150, width: 2, height: 20), [0, 0, 0])])
         XCTAssertThrowsError(try capture(source: source, frames: [textChange], state: CaptureState(), confirmCaret: true)) {
             XCTAssertEqual(($0 as? ActionFailure)?.code, "text_field_changed")
         }
@@ -76,30 +76,30 @@ final class NativeAppleTextPhaseTests: XCTestCase {
 
     func testCaretAndSeparateVideoExclusionsComposeWithoutHidingStaticChanges() throws {
         let video = ScreenRect(CGRect(x: 30, y: 400, width: 200, height: 200))
-        let source = try screenPNG(patches: [(stroke,[7,193,96])])
-        let frame = try screenPNG(patches: [(video.cgRect,[0,0,0])])
+        let source = try screenPNG(patches: [(stroke, [7, 193, 96])])
+        let frame = try screenPNG(patches: [(video.cgRect, [0, 0, 0])])
         let result = try capture(source: source, frames: [frame], state: CaptureState(), confirmCaret: true, ignored: video)
         XCTAssertTrue(result.0.accepted)
         XCTAssertEqual(result.0.screenChange, 0)
         XCTAssertEqual(result.0.ignoredRect, video)
-        let changed = try screenPNG(patches: [(video.cgRect,[0,0,0]),
-            (CGRect(x: 0, y: 650, width: 390, height: 150),[0,0,0])])
+        let changed = try screenPNG(patches: [(video.cgRect, [0, 0, 0]),
+            (CGRect(x: 0, y: 650, width: 390, height: 150), [0, 0, 0])])
         XCTAssertThrowsError(try capture(source: source, frames: [changed], state: CaptureState(), confirmCaret: true, ignored: video)) {
             XCTAssertEqual(($0 as? ActionFailure)?.code, "screen_changed")
         }
     }
 
     func testMissingCaretConfirmationReturnsOneRejectedImageWithoutRetry() throws {
-        let source = try screenPNG(patches: [(stroke,[7,193,96])]), state = CaptureState()
+        let source = try screenPNG(patches: [(stroke, [7, 193, 96])]), state = CaptureState()
         let hidden = try screenPNG()
-        XCTAssertThrowsError(try capture(source:source,frames:[hidden,source],state:state)) {
+        XCTAssertThrowsError(try capture(source: source, frames: [hidden, source], state: state)) {
             let failure = $0 as? ActionFailure
-            XCTAssertEqual(failure?.code,"caret_confirmation_required")
-            XCTAssertEqual(failure?.possiblyExecuted,false)
-            XCTAssertEqual(failure?.result?["preInputCaptures"] as? Int,1)
-            XCTAssertEqual(failure?.rejectedCapture?.screenshot,hidden)
+            XCTAssertEqual(failure?.code, "caret_confirmation_required")
+            XCTAssertEqual(failure?.possiblyExecuted, false)
+            XCTAssertEqual(failure?.result?["preInputCaptures"] as? Int, 1)
+            XCTAssertEqual(failure?.rejectedCapture?.screenshot, hidden)
         }
-        XCTAssertEqual(state.screenshots,1)
+        XCTAssertEqual(state.screenshots, 1)
     }
 
     func testAppleBurstRetainsFinalLockDisplayAndCancellationGuards() throws {

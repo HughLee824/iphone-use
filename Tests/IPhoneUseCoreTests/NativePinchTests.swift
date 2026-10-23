@@ -43,12 +43,12 @@ final class NativePinchTests: XCTestCase {
     func testTwoIndependentSlotsReleaseAndFullTimestamp() {
         let down = NativePinchReport.make(contact: true, points: [(0x1234, 0x5678), (0x9abc, 0xdef0)], timestamp: 0x0102030405060708)
         XCTAssertEqual(down.count, 58)
-        XCTAssertEqual(Array(down.prefix(13)), [9,2,5,0xc2,0x34,0x12,0x78,0x56,0xc3,0xbc,0x9a,0xf0,0xde])
-        XCTAssertEqual(Array(down[40...44]), [2,3,0,0,0])
-        XCTAssertEqual(Array(down[45...52]), [8,7,6,5,4,3,2,1])
-        let up = NativePinchReport.make(contact: false, points: [(1,2),(3,4)], timestamp: 0)
+        XCTAssertEqual(Array(down.prefix(13)), [9, 2, 5, 0xc2, 0x34, 0x12, 0x78, 0x56, 0xc3, 0xbc, 0x9a, 0xf0, 0xde])
+        XCTAssertEqual(Array(down[40...44]), [2, 3, 0, 0, 0])
+        XCTAssertEqual(Array(down[45...52]), [8, 7, 6, 5, 4, 3, 2, 1])
+        let up = NativePinchReport.make(contact: false, points: [(1, 2), (3, 4)], timestamp: 0)
         XCTAssertEqual(up[1], 2); XCTAssertEqual(up[3], 2); XCTAssertEqual(up[8], 3)
-        XCTAssertEqual(Array(up[40...41]), [2,3])
+        XCTAssertEqual(Array(up[40...41]), [2, 3])
     }
     func testBothPathsGuardedAndMappedInThreeOrientations() throws {
         for rotation in ["rot0", "rot90", "rot270"] {
@@ -58,7 +58,7 @@ final class NativePinchTests: XCTestCase {
                 let mapped = try NativeCoordinateMapper.map(p, screen: g.screenGuard.context.screen, rotation: rotation)
                 XCTAssertEqual(plan.start[i].0, mapped.0); XCTAssertEqual(plan.start[i].1, mapped.1)
                 let rect = CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8)
-                let changed = try screenPNG(width: g.screenGuard.pixelWidth, height: g.screenGuard.pixelHeight, patches: [(rect,[0,0,0])])
+                let changed = try screenPNG(width: g.screenGuard.pixelWidth, height: g.screenGuard.pixelHeight, patches: [(rect, [0, 0, 0])])
                 XCTAssertFalse(try g.screenGuard.check(png: changed, context: g.screenGuard.context).accepted)
             }
             let half = plan.points(at: 0.5)
@@ -109,7 +109,7 @@ final class NativePinchTests: XCTestCase {
     func testCancelOrFailedSendReleasesBothAndNeverReplays() throws {
         let plan = try NativePinchPlan(gesture: gesture(), rotation: "rot0")
         for mode in ["cancel", "send", "media", "deadline"] {
-            for phase in [0,1,4] {
+            for phase in [0, 1, 4] {
                 let t = PinchTransport(), cancel = NativeCancellation(); var now = 0.0
                 let hid = NativeHIDAdapter(transport: t, cancellation: cancel, wait: { now += $0 }, uptime: { now })
                 try hid.prepare()
@@ -149,7 +149,7 @@ final class NativePinchTests: XCTestCase {
         }
         XCTAssertTrue(hid.releaseUncertain); XCTAssertFalse(hid.isAvailable)
         XCTAssertLessThan(t.reports.count, 10)
-        XCTAssertEqual(t.reports.suffix(2).map { $0[8] }, [3,3])
+        XCTAssertEqual(t.reports.suffix(2).map { $0[8] }, [3, 3])
         XCTAssertEqual(hid.release()["releaseUncertain"] as? Bool, true)
     }
 }

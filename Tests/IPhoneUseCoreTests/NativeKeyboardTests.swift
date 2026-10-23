@@ -75,7 +75,7 @@ final class NativeKeyboardTests: XCTestCase {
         let action = try DeviceAction(operation: "press", request: request, allowScreenText: true)
         let guardValue = try XCTUnwrap(cache.resolveTarget(for: action).textGuard)
         XCTAssertEqual(guardValue.regions.map(\.rect), [action.textRegion!])
-        let changed = try screenPNG(patches: [(CGRect(x: 50, y: 160, width: 4, height: 10), [0,0,0])])
+        let changed = try screenPNG(patches: [(CGRect(x: 50, y: 160, width: 4, height: 10), [0, 0, 0])])
         XCTAssertFalse(try guardValue.check(png: changed, context: context).accepted)
         _ = try cache.store(capture)
         XCTAssertThrowsError(try cache.resolveTarget(for: action))
@@ -256,16 +256,16 @@ final class NativeKeyboardTests: XCTestCase {
         XCTAssertEqual(transport.reports.count, 2)
     }
     func testASCIIValidationIsAtomicAndUSMappingIncludesModifiersAndPunctuation() throws {
-        XCTAssertEqual(try NativeKeyboard.keys(for: "aZ0!? ", mode: "insert"), [[4], [225,29], [39], [225,30], [225,56], [44]])
+        XCTAssertEqual(try NativeKeyboard.keys(for: "aZ0!? ", mode: "insert"), [[4], [225, 29], [39], [225, 30], [225, 56], [44]])
         for byte in UInt8(32)...126 { XCTAssertFalse(try NativeKeyboard.keys(for: String(UnicodeScalar(byte)), mode: "insert").isEmpty) }
         for text in ["", "a北京", "abc\n", String(repeating: "a", count: 65)] {
             XCTAssertThrowsError(try NativeKeyboard.keys(for: text, mode: "insert"))
         }
         XCTAssertThrowsError(try NativeKeyboard.keys(for: "a", mode: "replace"))
-        let report = NativeKeyboard.report([4,225], timestamp: 0x010203040506)
+        let report = NativeKeyboard.report([4, 225], timestamp: 0x010203040506)
         XCTAssertEqual(report.count, 39); XCTAssertEqual(report[0], 1)
         XCTAssertEqual(report[1], 16); XCTAssertEqual(report[29], 2)
-        XCTAssertEqual(Array(report[31..<37]), [6,5,4,3,2,1])
+        XCTAssertEqual(Array(report[31..<37]), [6, 5, 4, 3, 2, 1])
         XCTAssertTrue(NativeKeyboard.report([], timestamp: 1)[1..<31].allSatisfy { $0 == 0 })
     }
     func testTypingQueuesKeyThenEmptySetAndNeverRemovesBorrowedOrForeignKeyboard() throws {
@@ -278,7 +278,7 @@ final class NativeKeyboardTests: XCTestCase {
         XCTAssertEqual(result["charactersQueued"] as? Int, 3)
         XCTAssertEqual(result["focusConfirmed"] as? Bool, false)
         XCTAssertEqual(transport.reports.count, 8)
-        for index in [1,4,7] { XCTAssertTrue(transport.reports[index][1..<31].allSatisfy { $0 == 0 }) }
+        for index in [1, 4, 7] { XCTAssertTrue(transport.reports[index][1..<31].allSatisfy { $0 == 0 }) }
         XCTAssertEqual(transport.reports[2][29], 2)
         XCTAssertEqual(transport.reports[2][4], 0) // Modifier-only precedes Z.
         XCTAssertEqual(transport.reports[3][4], 32)
@@ -372,11 +372,11 @@ final class NativeKeyboardTests: XCTestCase {
         let guardValue = try XCTUnwrap(cache.resolveTarget(for: action).textGuard)
         XCTAssertEqual(guardValue.policy.maxRegionChange, 0)
         XCTAssertEqual(guardValue.policy.maxScreenChange, 0.01)
-        let statusChange = try screenPNG(patches: [(CGRect(x: 20, y: 10, width: 6, height: 8), [0,0,0])])
+        let statusChange = try screenPNG(patches: [(CGRect(x: 20, y: 10, width: 6, height: 8), [0, 0, 0])])
         XCTAssertTrue(try guardValue.check(png: statusChange, context: context).accepted)
-        let fieldChange = try screenPNG(patches: [(CGRect(x: 50, y: 160, width: 4, height: 10), [0,0,0])])
+        let fieldChange = try screenPNG(patches: [(CGRect(x: 50, y: 160, width: 4, height: 10), [0, 0, 0])])
         XCTAssertFalse(try guardValue.check(png: fieldChange, context: context).accepted)
-        let largeChange = try screenPNG(patches: [(CGRect(x: 0, y: 600, width: 390, height: 200), [0,0,0])])
+        let largeChange = try screenPNG(patches: [(CGRect(x: 0, y: 600, width: 390, height: 200), [0, 0, 0])])
         XCTAssertFalse(try guardValue.check(png: largeChange, context: context).accepted)
         var outside = request; outside["fieldRect"] = "380,146,354,36"
         XCTAssertThrowsError(try cache.resolveTarget(for: DeviceAction(operation: "type", request: outside, allowScreenText: true)))

@@ -274,8 +274,8 @@ final class AppleNativeTests: XCTestCase {
         let screen = ScreenRect(CGRect(x: 0, y: 0, width: 844, height: 390))
         let points = [CGPoint(x: 0, y: 0), CGPoint(x: 844, y: 0), CGPoint(x: 0, y: 390), CGPoint(x: 844, y: 390), CGPoint(x: 211, y: 292.5)]
         let expected: [String: [[UInt16]]] = [
-            "rot90": [[0,65535], [0,0], [65535,65535], [65535,0], [49151,49151]],
-            "rot270": [[65535,0], [65535,65535], [0,0], [0,65535], [16384,16384]]]
+            "rot90": [[0, 65535], [0, 0], [65535, 65535], [65535, 0], [49151, 49151]],
+            "rot270": [[65535, 0], [65535, 65535], [0, 0], [0, 65535], [16384, 16384]]]
         for rotation in ["rot90", "rot270"] {
             for (index, point) in points.enumerated() {
                 let mapped = try NativeCoordinateMapper.map(point, screen: screen, rotation: rotation)
@@ -294,10 +294,10 @@ final class AppleNativeTests: XCTestCase {
         let gesture = CoordinateGesture(start: start, end: end, screenGuard: guardValue, motion: SwipeMotion(velocity: 600))
         let left = try NativeSwipePlan(gesture: gesture, rotation: "rot90")
         let right = try NativeSwipePlan(gesture: gesture, rotation: "rot270")
-        XCTAssertEqual([left.start.0, left.start.1], [16384,49151])
-        XCTAssertEqual([left.end.0, left.end.1], [49151,16384])
-        XCTAssertEqual([right.start.0, right.start.1], [49151,16384])
-        XCTAssertEqual([right.end.0, right.end.1], [16384,49151])
+        XCTAssertEqual([left.start.0, left.start.1], [16384, 49151])
+        XCTAssertEqual([left.end.0, left.end.1], [49151, 16384])
+        XCTAssertEqual([right.start.0, right.start.1], [49151, 16384])
+        XCTAssertEqual([right.end.0, right.end.1], [16384, 49151])
         XCTAssertEqual(left.movementDuration, hypot(1266, 585) / 600, accuracy: 0.00001)
         XCTAssertEqual(left.movementDuration, right.movementDuration)
         XCTAssertEqual(left.point(at: 0.5).0, 32768)
@@ -408,7 +408,7 @@ final class AppleNativeTests: XCTestCase {
             try gesture.validate(kind: "double-tap")
             let mapped = try NativeCoordinateMapper.map(gesture.start, screen: screen, rotation: rotation)
             XCTAssertNotEqual(mapped.0, mapped.1)
-            let changed = try screenPNG(width: width, height: height, patches: [(CGRect(x: 90, y: 140, width: 20, height: 20), [0,0,0])])
+            let changed = try screenPNG(width: width, height: height, patches: [(CGRect(x: 90, y: 140, width: 20, height: 20), [0, 0, 0])])
             XCTAssertFalse(try gesture.screenGuard.check(png: changed, context: context).accepted)
             _ = try cache.store(capture)
             XCTAssertThrowsError(try cache.resolveTarget(for: action))

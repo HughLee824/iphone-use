@@ -46,7 +46,8 @@ private final class RunnerRecordingConnectionStub: RunnerRecordingConnection {
     var previewReceiver: NativeRTPReceiver? { previewVideo }
     var previewDisplay: NativeDisplay? {
         try? NativeDisplay(["backlightState": "activeOn", "displays": [["primary": true, "displayId": 1,
-            "bounds": [[0,0],[32,48]], "pointScale": 1, "currentOrientation": rotation, "nativeOrientation": "rot0"]]])
+            "bounds": [[0, 0], [32, 48]], "pointScale": 1,
+            "currentOrientation": rotation, "nativeOrientation": "rot0"]]])
     }
     func verifyDisplay() throws { if changed { throw IPhoneUseError("display_changed", "Fixture rotated") } }
     func close() -> [String: Any] {

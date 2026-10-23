@@ -35,7 +35,7 @@ final class RunnerGestureTests: XCTestCase {
                 XCTAssertEqual(gesture.pinch, PinchMotion(fromDistance: 80, toDistance: 200, duration: 0.7))
                 XCTAssertEqual(gesture.screenGuard.regions.count, 2)
             }
-            let changed = try screenPNG(patches: [(CGRect(x: kind == "pinch" ? 151 : 190, y: 295, width: 8, height: 8), [0,0,0])])
+            let changed = try screenPNG(patches: [(CGRect(x: kind == "pinch" ? 151 : 190, y: 295, width: 8, height: 8), [0, 0, 0])])
             XCTAssertFalse(try gesture.screenGuard.check(png: changed, context: gesture.screenGuard.context).accepted)
         }
     }

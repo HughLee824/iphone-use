@@ -454,7 +454,6 @@ private final class RotationProbeController: UIViewController, UIContextMenuInte
     }
 }
 
-
 // Ordinary form shortcuts. These handlers only navigate focus or end editing;
 // text and selection edits are performed by UIKit's standard text editor.
 private final class KeyboardProbeInput: UITextView {
@@ -544,7 +543,6 @@ private final class KeyboardProbeController: UIViewController, UITextViewDelegat
     }
 }
 
-
 private final class DoubleTapProbeController: UIViewController, UITextViewDelegate {
     private let controls = UIStackView(), target = UILabel(), text = UITextView(), facts = UILabel()
     private var doubles = 0, singles = 0
@@ -592,7 +590,6 @@ private final class DoubleTapProbeController: UIViewController, UITextViewDelega
             "Selection UTF16: \(range.location),\(range.length)\nSelected: \(selected)"
     }
 }
-
 
 private final class PinchProbeController: UIViewController, UIScrollViewDelegate, UIGestureRecognizerDelegate {
     private let controls = UIStackView(), facts = UILabel(), scroll = UIScrollView(), canvas = UIView()

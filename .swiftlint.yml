@@ -1,0 +1,19 @@
+# Run from the repository root: swiftlint lint --strict
+# Use SwiftLint's standard default rules; do not suppress existing violations.
+# Configuration reference: https://github.com/realm/SwiftLint#configuration
+included:
+  - Package.swift
+  - Sources
+  - Runner
+  - Tests
+  - scripts
+
+excluded:
+  - .build
+  - .swiftpm
+  - .local
+  - build
+  - DerivedData
+  - spikes
+
+reporter: xcode

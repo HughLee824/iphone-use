@@ -225,17 +225,17 @@ final class AgentOutputTests: XCTestCase {
     }
 
     func testBoundCaretMatchPreservesOriginalObservationIdentity() {
-        let check: [String:Any] = ["accepted":true,"screenChange":0.0,"maxScreenChange":0.01,
-            "regionChanges":[0.2],"maxRegionChange":0.0,"fieldPixelsMatch":false,"fieldCaretMatch":true,
-            "caretObservationID":"o9", "caretRect":["x":19.0,"y":479.0,"width":2.0,"height":20.0],
-            "caretExclusionRect":["x":19.0,"y":478.6666667,"width":2.0,"height":20.6666667]]
-        let compact = AgentOutput.summarize(["result":["screenGuard":check]])
-        let comparison = (compact["agentSummary"] as! [String:Any])["comparison"] as! [String:Any]
-        XCTAssertEqual(comparison["fieldMatch"] as? String,"caret")
-        XCTAssertEqual(comparison["caretObservationID"] as? String,"o9")
-        XCTAssertEqual((comparison["caretExclusionRect"] as? [String:Double])?["y"],478.6666667)
-        XCTAssertEqual((comparison["caretRect"] as? [String:Double])?["y"],479)
-        XCTAssertEqual(comparison["mismatches"] as? [String],[])
+        let check: [String: Any] = ["accepted": true, "screenChange": 0.0, "maxScreenChange": 0.01,
+            "regionChanges": [0.2], "maxRegionChange": 0.0, "fieldPixelsMatch": false, "fieldCaretMatch": true,
+            "caretObservationID": "o9", "caretRect": ["x": 19.0, "y": 479.0, "width": 2.0, "height": 20.0],
+            "caretExclusionRect": ["x": 19.0, "y": 478.6666667, "width": 2.0, "height": 20.6666667]]
+        let compact = AgentOutput.summarize(["result": ["screenGuard": check]])
+        let comparison = (compact["agentSummary"] as! [String: Any])["comparison"] as! [String: Any]
+        XCTAssertEqual(comparison["fieldMatch"] as? String, "caret")
+        XCTAssertEqual(comparison["caretObservationID"] as? String, "o9")
+        XCTAssertEqual((comparison["caretExclusionRect"] as? [String: Double])?["y"], 478.6666667)
+        XCTAssertEqual((comparison["caretRect"] as? [String: Double])?["y"], 479)
+        XCTAssertEqual(comparison["mismatches"] as? [String], [])
     }
 
     func testAppearanceMatchDoesNotReportProtectedFieldFailure() {

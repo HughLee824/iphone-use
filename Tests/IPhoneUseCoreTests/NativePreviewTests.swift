@@ -164,7 +164,7 @@ final class NativePreviewTests: XCTestCase {
         let frame = NativeVideoSnapshot.Frame(image: NativeDecodedVideoFrame(pixels: buffer, nativeWidth: 32, nativeHeight: 48), firstPacketAt: 1, completedAt: 2, timestamp: 1)
         for rotation in ["rot0", "rot90", "rot270"] {
             let display = try NativeDisplay(["backlightState": "activeOn", "displays": [["primary": true, "displayId": 1,
-                "bounds": [[0,0],[32,48]], "pointScale": 1, "currentOrientation": rotation, "nativeOrientation": "rot0"]]])
+                "bounds": [[0, 0], [32, 48]], "pointScale": 1, "currentOrientation": rotation, "nativeOrientation": "rot0"]]])
             let data = try NativePreview.encode(frame, display: display, context: CIContext(options: [.useSoftwareRenderer: true]))
             let image = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
             let decoded = try XCTUnwrap(CGImageSourceCreateImageAtIndex(image, 0, nil))
@@ -285,8 +285,8 @@ final class NativePreviewTests: XCTestCase {
     }
 
     func testHalfTurnNeedsDistinctAgreementAndDoesNotGuessOnSymmetricFrames() {
-        let upright = Data([255,0,0, 0,255,0, 0,0,255, 0,0,0])
-        let inverted = Data([0,0,0, 0,0,255, 0,255,0, 255,0,0])
+        let upright = Data([255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0])
+        let inverted = Data([0, 0, 0, 0, 0, 255, 0, 255, 0, 255, 0, 0])
         XCTAssertTrue(NativePreviewOrientation.halfTurnConflict(reference: upright, preview: inverted))
         XCTAssertFalse(NativePreviewOrientation.halfTurnConflict(reference: upright, preview: upright))
         XCTAssertFalse(NativePreviewOrientation.halfTurnConflict(reference: Data(repeating: 0, count: 12), preview: Data(repeating: 0, count: 12)))
@@ -437,7 +437,7 @@ final class NativePreviewTests: XCTestCase {
         try withPreviewReceiver { receiver, _ in
             let preview = try NativePreview(port: 0); defer { preview.close() }
             preview.attach(receiver, display: try NativeDisplay(["backlightState": "activeOn", "displays": [["primary": true,
-                "displayId": 1, "bounds": [[0,0],[390,844]], "pointScale": 1, "currentOrientation": "rot0", "nativeOrientation": "rot0"]]]))
+                "displayId": 1, "bounds": [[0, 0], [390, 844]], "pointScale": 1, "currentOrientation": "rot0", "nativeOrientation": "rot0"]]]))
             DispatchQueue.global().asyncAfter(deadline: .now() + 0.15) { preview.showGesture(gesture) }
             let started = ProcessInfo.processInfo.systemUptime
             let response = try get(try XCTUnwrap(URL(string: preview.url + "gestures?after=0")))
@@ -473,7 +473,7 @@ final class NativePreviewTests: XCTestCase {
             let preview = try NativePreview(port: 0); defer { preview.close() }
             func display(_ rotation: String) throws -> NativeDisplay {
                 try NativeDisplay(["backlightState": "activeOn", "displays": [["primary": true, "displayId": 1,
-                    "bounds": [[0,0],[390,844]], "pointScale": 1, "currentOrientation": rotation, "nativeOrientation": "rot0"]]])
+                    "bounds": [[0, 0], [390, 844]], "pointScale": 1, "currentOrientation": rotation, "nativeOrientation": "rot0"]]])
             }
             func events(_ query: String = "?after=0") throws -> [[String: Any]] {
                 let response = try get(try XCTUnwrap(URL(string: preview.url + "gestures" + query)))
@@ -509,7 +509,7 @@ final class NativePreviewTests: XCTestCase {
             })
             defer { release.signal(); preview.close() }
             let display = try NativeDisplay(["backlightState": "activeOn", "displays": [["primary": true, "displayId": 1,
-                "bounds": [[0,0],[12,18]], "pointScale": 1, "currentOrientation": "rot0", "nativeOrientation": "rot0"]]])
+                "bounds": [[0, 0], [12, 18]], "pointScale": 1, "currentOrientation": "rot0", "nativeOrientation": "rot0"]]])
             preview.attach(receiver, display: display)
             send(1)
             wait(for: [entered], timeout: 2)
@@ -536,7 +536,7 @@ final class NativePreviewTests: XCTestCase {
             })
             defer { release.signal(); preview.close() }
             let display = try NativeDisplay(["backlightState": "activeOn", "displays": [["primary": true, "displayId": 1,
-                "bounds": [[0,0],[12,18]], "pointScale": 1, "currentOrientation": "rot0", "nativeOrientation": "rot0"]]])
+                "bounds": [[0, 0], [12, 18]], "pointScale": 1, "currentOrientation": "rot0", "nativeOrientation": "rot0"]]])
             preview.attach(receiver, display: display); send(1)
             wait(for: [entered], timeout: 2)
             send(2)

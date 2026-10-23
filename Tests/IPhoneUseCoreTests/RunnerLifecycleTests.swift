@@ -66,7 +66,7 @@ final class RunnerLifecycleTests: XCTestCase {
         let fields = try XCTestBackend.actionFields(action, target: target)
         XCTAssertNotNil(fields["screenGuard"])
         XCTAssertNil((fields["target"] as? [String: Any])?["path"])
-        let changed = try screenPNG(patches: [(CGRect(x: 0, y: 0, width: 390, height: 150), [0,0,0])])
+        let changed = try screenPNG(patches: [(CGRect(x: 0, y: 0, width: 390, height: 150), [0, 0, 0])])
         XCTAssertFalse(try guardValue.check(png: changed, context: guardValue.context).accepted)
         let previous = cache.beginAction(); cache.finishAction(previous: previous, dispatched: true)
         XCTAssertThrowsError(try cache.resolveTarget(for: action))

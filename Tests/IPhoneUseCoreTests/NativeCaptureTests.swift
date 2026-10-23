@@ -457,7 +457,7 @@ final class NativeCaptureTests: XCTestCase {
             XCTAssertEqual(failure?.result?["captureSourceChanged"] as? Bool, true)
             XCTAssertEqual(failure?.rejectedCapture?.screenshot, applePNG)
         }
-        applePNG = try screenPNG(width: 12, height: 18, patches: [(CGRect(x: 0, y: 0, width: 6, height: 9), [0,0,0])])
+        applePNG = try screenPNG(width: 12, height: 18, patches: [(CGRect(x: 0, y: 0, width: 6, height: 9), [0, 0, 0])])
         XCTAssertThrowsError(try preflight("coredevice_screenshot")) {
             XCTAssertEqual(($0 as? ActionFailure)?.possiblyExecuted, false)
             XCTAssertEqual(($0 as? ActionFailure)?.rejectedCapture?.screenshot, applePNG)
@@ -465,7 +465,7 @@ final class NativeCaptureTests: XCTestCase {
     }
 
     func testInvalidApplePixelsCannotBecomeObservations() throws {
-        let black = try screenPNG(width: 12, height: 18, patches: [(CGRect(x: 0, y: 0, width: 12, height: 18), [0,0,0])])
+        let black = try screenPNG(width: 12, height: 18, patches: [(CGRect(x: 0, y: 0, width: 12, height: 18), [0, 0, 0])])
         for png in [Data("broken PNG".utf8), black, try screenPNG(width: 18, height: 12)] {
             var screenshots = 0
             let cli = AppleDeviceCLI(device: "fixture", cancellation: NativeCancellation(), reader: { arguments in
