@@ -193,6 +193,7 @@ final class SessionHost {
             close(reason: "disconnect", requestID: id, reply: reply)
             return
         }
+        let pendingAtAdmission = lifecycle.pending
         guard lifecycle.accept(at: ProcessInfo.processInfo.systemUptime) else {
             reject("session_closed", "Session has expired or is closing; connect again")
             if lifecycle.isExpired(at: ProcessInfo.processInfo.systemUptime) { close(reason: "idle_timeout") }
@@ -447,6 +448,7 @@ final class SessionHost {
             control.sync {
                 lifecycle.finish(effective: effective, at: ProcessInfo.processInfo.systemUptime)
                 if operation == "status" {
+                    response["pendingOperationsAtRequest"] = pendingAtAdmission
                     response["hostPid"] = ProcessInfo.processInfo.processIdentifier
                     response["idleTimeoutSeconds"] = config.idleTimeoutSeconds
                     response["idleRemainingSeconds"] = max(0, config.idleTimeoutSeconds - (ProcessInfo.processInfo.systemUptime - lifecycle.lastActivity))

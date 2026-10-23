@@ -191,6 +191,21 @@ fi
                 self.assertIn(f"Live preview: {expected}.", result.stdout)
                 self.assertEqual(log.read_text(), "preview --help\n")
 
+    def test_reuse_capability_is_help_only_and_optional(self):
+        original = (self.bin / "iphone-use").read_text().split("\n", 1)[1]
+        self.assertNotIn("Session reuse: available", self.run_check().stdout)
+        self.write_command("iphone-use", '''
+if [ "$1" = connect ]; then
+  [ "$#" -eq 2 ] && [ "$2" = --help ] || exit 98
+  printf '%s\\n' '--mode --reuse'
+  exit 0
+fi
+''' + original)
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Session reuse: available", result.stdout)
+        self.assertIn("Borrowed sessions and their preview remain running", result.stdout)
+
     def test_missing_cli_and_unsupported_versions_fail_with_next_step(self):
         (self.bin / "iphone-use").unlink()
         result = self.run_check()

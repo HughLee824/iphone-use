@@ -15,7 +15,7 @@ struct SessionOptions: ParsableArguments {
 struct IPhoneUse: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "iphone-use", abstract: "Eyes and hands for agents operating a real iPhone.", version: RunnerSetup.releaseVersion,
-        subcommands: [Configuration.self, Setup.self, BuildRunner.self, Devices.self, Connect.self, Status.self, Apps.self, Open.self, Terminate.self, Relaunch.self, Observe.self, Inspect.self, Tap.self, DoubleTap.self, Pinch.self, LongPress.self, Swipe.self, Home.self, TypeText.self, TextPrepare.self, TextFinish.self, Press.self, RecordStart.self, RecordStop.self, Preview.self, Disconnect.self, Host.self, AuthorizationMonitor.self])
+        subcommands: [Configuration.self, Setup.self, BuildRunner.self, Devices.self, Sessions.self, Connect.self, Status.self, Apps.self, Open.self, Terminate.self, Relaunch.self, Observe.self, Inspect.self, Tap.self, DoubleTap.self, Pinch.self, LongPress.self, Swipe.self, Home.self, TypeText.self, TextPrepare.self, TextFinish.self, Press.self, RecordStart.self, RecordStop.self, Preview.self, Disconnect.self, Host.self, AuthorizationMonitor.self])
     @OptionGroup var options: SessionOptions
 }
 
@@ -67,6 +67,7 @@ struct Connect: ParsableCommand {
     @Option(help: "Connected iPhone UDID or CoreDevice identifier.") var device: String
     @Option(help: "Runner source workflow: explicit signed .xctestrun. Packaged Runner users run setup once, then omit this option.") var xctestrun: String?
     @Option(help: "Idle duration, such as 30m, 60m or 10s.") var idleTimeout = "30m"
+    @Flag(help: "Reuse an existing healthy session for this device and mode, or connect if none exists. Preserves its preview and timeout; reused sessions must not be disconnected automatically at task completion.") var reuse = false
     @Option(help: "standard (screenshot/HID, no Runner setup) or runner (XCTest). Omit to use saved preferences; fresh users default to standard.") var mode: String?
     @Option(help: "Compatibility option: apple-native = standard; xctest = runner. Conflicting options are rejected.") var backend: String?
     @Option(help: "Diagnostic override: a recent Apple netstat -anvl -p tcp file selects direct RSD discovery. Native connections normally use CoreDevice service sockets.") var nativeEndpointInventory: String?
@@ -88,6 +89,10 @@ struct Connect: ParsableCommand {
             let report: (([String: Any]) -> Void)? = progress ? { value in
                 if var data = try? jsonData(value) { data.append(10); FileHandle.standardOutput.write(data) }
             } : nil
+            if reuse, let existing = try SessionDiscovery.reuse(device: device, mode: selection.mode,
+                xctestrun: xctestrun, endpointInventory: nativeEndpointInventory, previewPort: port) {
+                return existing
+            }
             if selection.mode == .standard {
                 return try SessionClient.connectNative(device: device, idleTimeout: timeout, endpointInventory: nativeEndpointInventory, modeSource: selection.source)
             }
@@ -152,6 +157,14 @@ struct Devices: ParsableCommand {
     static let configuration = CommandConfiguration(abstract: "List devices known to CoreDevice; connect checks session readiness.")
     mutating func run() throws {
         try output { ["ok": true, "result": ["devices": try DeviceDiscovery.devices()]] }
+    }
+}
+
+struct Sessions: ParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "Discover existing sessions in the current user's state directory without changing device UI or preview.")
+    @Option(help: "Filter by the device ID used to connect.") var device: String?
+    mutating func run() throws {
+        try output { try SessionDiscovery.list(device: device) }
     }
 }
 
