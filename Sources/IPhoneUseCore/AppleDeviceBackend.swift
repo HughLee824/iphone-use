@@ -35,7 +35,10 @@ struct NativeDisplay: Equatable {
         pixelWidth = bounds[1][quarterTurn ? 1 : 0].doubleValue
         pixelHeight = bounds[1][quarterTurn ? 0 : 1].doubleValue
         self.scale = scale.doubleValue
-        self.rotation = rotation; nativeRotation = native; backlightOn = result["backlightState"] as? String == "activeOn"
+        self.rotation = rotation; nativeRotation = native
+        // XCTest can leave an unlocked, visible display dimmed. Both active
+        // states are lit; inactive and unknown states still fail closed.
+        backlightOn = ["activeOn", "activeDimmed"].contains(result["backlightState"] as? String ?? "")
     }
 }
 

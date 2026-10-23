@@ -521,4 +521,19 @@ final class NativeCaptureTests: XCTestCase {
             XCTAssertThrowsError(try NativeSnapshotImage.validateNativeRectangle(image, width: 18, height: 12))
         }
     }
+
+    func testGeometryAcceptsFourRowHeightAlignmentWithoutAcceptingOtherMismatches() throws {
+        let buffer = try pixels(width: 1216, height: 2656)
+        let padded = NativeDecodedVideoFrame(pixels: buffer, nativeWidth: 1206, nativeHeight: 2624)
+        XCTAssertNoThrow(try NativeSnapshotImage.validateNativeRectangle(padded, width: 1206, height: 2622))
+        for (width, height) in [(1204, 2622), (1206, 2620), (1206, 2623), (1206, 2626)] {
+            XCTAssertThrowsError(try NativeSnapshotImage.validateNativeRectangle(padded, width: width, height: height))
+        }
+        for height in [2620, 2623, 2626] {
+            let wrong = NativeDecodedVideoFrame(pixels: buffer, nativeWidth: 1206, nativeHeight: height)
+            XCTAssertThrowsError(try NativeSnapshotImage.validateNativeRectangle(wrong, width: 1206, height: 2622))
+        }
+        let undersized = NativeDecodedVideoFrame(pixels: try pixels(width: 1216, height: 2622), nativeWidth: 1206, nativeHeight: 2624)
+        XCTAssertThrowsError(try NativeSnapshotImage.validateNativeRectangle(undersized, width: 1206, height: 2622))
+    }
 }

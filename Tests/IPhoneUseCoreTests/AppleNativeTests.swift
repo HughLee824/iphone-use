@@ -843,6 +843,16 @@ final class AppleNativeTests: XCTestCase {
         XCTAssertThrowsError(try NativeDisplay(["displays": []]))
     }
 
+    func testNativeDisplayAcceptsDimmedBacklightButRejectsInactiveAndUnknownStates() throws {
+        let active = try boundDisplay("rot0")
+        let dimmed = try boundDisplay("rot0", backlight: "activeDimmed")
+        XCTAssertTrue(dimmed.backlightOn)
+        XCTAssertEqual(dimmed, active, "Dimming must not invalidate unchanged display geometry")
+        for state in ["off", "inactive", "unknown", ""] {
+            XCTAssertFalse(try boundDisplay("rot0", backlight: state).backlightOn, state)
+        }
+    }
+
     private func boundDisplay(_ rotation: String, scale: Double = 3, backlight: String = "activeOn") throws -> NativeDisplay {
         try NativeDisplay(["backlightState": backlight, "displays": [["primary": true, "displayId": 1,
             "bounds": [[0, 0], [1170, 2532]], "pointScale": scale, "currentOrientation": rotation, "nativeOrientation": "rot0"]]])
