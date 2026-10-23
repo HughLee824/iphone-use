@@ -38,10 +38,13 @@ final class NativeDisplayMediaSession {
     // orientation. Read again only AFTER a confirmed, UUID-scoped stop.
     // Returns whether any bound display geometry changed across the refresh.
     @discardableResult
-    func resynchronizeOrientation(mayReplace: Bool, check: () throws -> Void = {}, readDisplay: () throws -> NativeDisplay) throws -> Bool {
+    func resynchronizeOrientation(mayReplace: Bool, check: () throws -> Void = {},
+                                  readDisplay: () throws -> NativeDisplay) throws -> Bool {
         guard !closed, failure == nil, mayReplace, let current = session,
               current.health()["healthy"] as? Bool == true else {
-            throw IPhoneUseError("native_orientation_unverified", "Cannot resynchronize orientation while media or input is not ready")
+            throw IPhoneUseError(
+                "native_orientation_unverified", "Cannot resynchronize orientation while media or input is not ready"
+            )
         }
         try check()
         let previousGeometry = geometry
@@ -57,7 +60,9 @@ final class NativeDisplayMediaSession {
             timings["stop"] = (stoppedAt - started) * 1000
             lastOrientationRefreshCleanup = cleanup
             guard cleanup["mediaStopAcknowledged"] as? Bool == true else {
-                throw IPhoneUseError("native_orientation_unverified", "Owned media stop was not confirmed; no replacement was started")
+                throw IPhoneUseError(
+                    "native_orientation_unverified", "Owned media stop was not confirmed; no replacement was started"
+                )
             }
             session = nil; geometry = nil; boundDisplay = nil
             try check()
@@ -88,7 +93,9 @@ final class NativeDisplayMediaSession {
 
     private func bind(_ display: NativeDisplay, mayReplace: Bool, forRecording: Bool) throws {
         guard !closed, failure == nil else {
-            throw IPhoneUseError("native_media_display_refresh_failed", failure ?? "Media binding is closed; reconnect explicitly")
+            throw IPhoneUseError(
+                "native_media_display_refresh_failed", failure ?? "Media binding is closed; reconnect explicitly"
+            )
         }
         let next = display.geometry
         guard forRecording || geometry != next else { return }
@@ -100,10 +107,16 @@ final class NativeDisplayMediaSession {
         do {
             if let session {
                 let cleanup = session.close()
-                if forRecording { lastRecordingRefreshCleanup = cleanup }
-                else { lastRefreshCleanup = cleanup }
+                if forRecording {
+                    lastRecordingRefreshCleanup = cleanup
+                } else {
+                    lastRefreshCleanup = cleanup
+                }
                 guard cleanup["mediaStopAcknowledged"] as? Bool == true else {
-                    throw IPhoneUseError("native_media_display_refresh_failed", "Owned media stop was not confirmed; no replacement stream was started")
+                    throw IPhoneUseError(
+                        "native_media_display_refresh_failed",
+                        "Owned media stop was not confirmed; no replacement stream was started"
+                    )
                 }
                 self.session = nil
             }
@@ -115,8 +128,11 @@ final class NativeDisplayMediaSession {
             }
             geometry = next; boundDisplay = display
             if replacing {
-                if forRecording { recordingRefreshCount += 1 }
-                else { refreshCount += 1 }
+                if forRecording {
+                    recordingRefreshCount += 1
+                } else {
+                    refreshCount += 1
+                }
             }
         } catch {
             failure = String(describing: error)
@@ -134,7 +150,9 @@ final class NativeDisplayMediaSession {
         result["displayRefreshCount"] = refreshCount
         result["recordingRefreshCount"] = recordingRefreshCount
         result["orientationRefreshCount"] = orientationRefreshCount
-        if let lastOrientationRefreshTimings { result["lastOrientationRefreshTimingsMs"] = lastOrientationRefreshTimings }
+        if let lastOrientationRefreshTimings {
+            result["lastOrientationRefreshTimingsMs"] = lastOrientationRefreshTimings
+        }
         if let lastOrientationRefreshCleanup { result["lastOrientationRefreshCleanup"] = lastOrientationRefreshCleanup }
         if let lastRecordingRefreshCleanup { result["lastRecordingRefreshCleanup"] = lastRecordingRefreshCleanup }
         if let lastRefreshCleanup { result["lastDisplayRefreshCleanup"] = lastRefreshCleanup }
@@ -147,7 +165,8 @@ final class NativeDisplayMediaSession {
 
     func close() -> [String: Any] {
         closed = true
-        var result = session?.close() ?? lastOrientationRefreshCleanup ?? lastRefreshCleanup ?? ["mediaStopAcknowledged": true]
+        var result = session?.close() ?? lastOrientationRefreshCleanup ?? lastRefreshCleanup
+            ?? ["mediaStopAcknowledged": true]
         result["displayRefreshCount"] = refreshCount
         result["recordingRefreshCount"] = recordingRefreshCount
         result["orientationRefreshCount"] = orientationRefreshCount

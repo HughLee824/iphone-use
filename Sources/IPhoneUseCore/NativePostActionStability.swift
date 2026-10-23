@@ -16,7 +16,9 @@ enum NativePostActionStability {
     static func localizedChangeBounds(_ comparison: FrameComparison, frame: FrameFingerprint,
                                       screen: ScreenRect, previous: CGRect?) -> CGRect? {
         guard comparison.dimensionsMatch, let pixels = comparison.changedBounds,
-              Double(comparison.changedPixels) / Double(frame.width * frame.height) <= maximumChangedFraction else { return nil }
+              Double(comparison.changedPixels) / Double(frame.width * frame.height) <= maximumChangedFraction else {
+            return nil
+        }
         let scaleX = screen.width / Double(frame.width), scaleY = screen.height / Double(frame.height)
         let points = CGRect(x: screen.x + pixels.minX * scaleX, y: screen.y + pixels.minY * scaleY,
                             width: pixels.width * scaleX, height: pixels.height * scaleY)
@@ -51,18 +53,25 @@ enum NativePostActionStability {
             let began = now()
             attempts += 1
             let frame: CapturedObservation
-            do { frame = try sample(deadline) }
-            catch let error as IPhoneUseError where ["capture_timeout", "input_preflight_timeout", "coredevice_timeout"].contains(error.code) {
+            do {
+                frame = try sample(deadline)
+            } catch let error as IPhoneUseError where [
+                "capture_timeout", "input_preflight_timeout", "coredevice_timeout"
+            ].contains(error.code) {
                 lastError = "capture_deadline_exceeded"
                 lastCaptureDiagnostics = error.diagnostics
-                captureSamples.append(["attempt": attempts, "elapsedMs": (now() - began) * 1000, "errorCode": error.code])
+                captureSamples.append([
+                    "attempt": attempts, "elapsedMs": (now() - began) * 1000, "errorCode": error.code
+                ])
                 break
             } catch let error as IPhoneUseError where error.code == "capture_context_changed" {
                 // Rotation during acquisition is not a stable sample. Keep the
                 // total deadline and require a new run of consistent frames.
                 lastError = error.code
                 lastCaptureDiagnostics = error.diagnostics
-                captureSamples.append(["attempt": attempts, "elapsedMs": (now() - began) * 1000, "errorCode": error.code])
+                captureSamples.append([
+                    "attempt": attempts, "elapsedMs": (now() - began) * 1000, "errorCode": error.code
+                ])
                 anchor = nil; anchorContext = nil; anchorIdentity = nil; consecutive = 0
                 exclusionInvalidated = true; geometrySamples = 0
                 pause(min(0.2, max(0, deadline - now())))
@@ -73,10 +82,14 @@ enum NativePostActionStability {
                                    "captureTimingsMs": frame.metadata["captureTimingsMs"] ?? [:]])
             guard frame.metadata["captureSource"] as? String == "coredevice_screenshot",
                   let raw = frame.metadata["screenContext"] as? [String: Any] else {
-                throw IPhoneUseError("invalid_action_frame", "Post-action stability requires an Apple PNG and screen context")
+                throw IPhoneUseError(
+                    "invalid_action_frame", "Post-action stability requires an Apple PNG and screen context"
+                )
             }
             let context = try JSONDecoder().decode(ScreenContext.self, from: jsonData(raw))
-            guard context.valid else { throw IPhoneUseError("invalid_action_frame", "Invalid post-action display context") }
+            guard context.valid else {
+                throw IPhoneUseError("invalid_action_frame", "Invalid post-action display context")
+            }
             let identity = try jsonData(frame.metadata.filter {
                 ["deviceID", "sessionGeneration", "displayID", "displayRotation", "nativeRotation"].contains($0.key)
             })
@@ -111,8 +124,7 @@ enum NativePostActionStability {
             if readinessEquivalent {
                 consecutive += 1
                 if let toleratedBounds { localBounds = toleratedBounds; localChangeComparisons += 1 }
-            }
-            else {
+            } else {
                 // Compare against a fixed anchor: small drift must accumulate.
                 anchor = fingerprint; anchorContext = context; anchorIdentity = identity
                 unchangedSince = finished; consecutive = 1
@@ -125,17 +137,24 @@ enum NativePostActionStability {
         }
         try checkCancellation()
         guard let latest else {
-            throw IPhoneUseError("post_action_capture_timeout", "Input was not replayed; no valid post-action screenshot was acquired before the deadline",
+            throw IPhoneUseError(
+                "post_action_capture_timeout",
+                "Input was not replayed; no valid post-action screenshot was acquired before the deadline",
                 diagnostics: ["reason": "no_valid_sample", "samples": samples, "attempts": attempts,
                     "elapsedMs": (now() - started) * 1000, "timeoutMs": timeout * 1000,
                     "captureSamples": captureSamples, "lastCaptureDiagnostics": lastCaptureDiagnostics])
         }
         var metadata = latest.metadata
         let reason: String
-        if stable { reason = "stable" }
-        else if comparison?["readinessEquivalent"] as? Bool == false { reason = "dynamic_or_transitioning" }
-        else if consecutive < requiredFrames { reason = "insufficient_stable_samples" }
-        else { reason = "observation_deadline_exceeded" }
+        if stable {
+            reason = "stable"
+        } else if comparison?["readinessEquivalent"] as? Bool == false {
+            reason = "dynamic_or_transitioning"
+        } else if consecutive < requiredFrames {
+            reason = "insufficient_stable_samples"
+        } else {
+            reason = "observation_deadline_exceeded"
+        }
         metadata["postActionStability"] = [
             "stable": stable, "reason": reason,
             "algorithm": "apple-png-yiq-local-readiness-v2", "samples": samples, "attempts": attempts,
@@ -147,7 +166,9 @@ enum NativePostActionStability {
             "localizedChange": ["comparisons": localChangeComparisons,
                 "maximumChangedFraction": maximumChangedFraction, "maximumAreaPoints": maximumLocalArea,
                 "maximumDimensionPoints": maximumLocalDimension,
-                "boundsPoints": localBounds.map { ["x": $0.minX, "y": $0.minY, "width": $0.width, "height": $0.height] } as Any? ?? NSNull()],
+                "boundsPoints": localBounds.map {
+                    ["x": $0.minX, "y": $0.minY, "width": $0.width, "height": $0.height]
+                } as Any? ?? NSNull()],
             "lastCaptureError": lastError as Any? ?? NSNull(), "lastCaptureDiagnostics": lastCaptureDiagnostics,
             "captureSamples": captureSamples, "exclusionInvalidated": exclusionInvalidated,
             "automaticReplayAllowed": false

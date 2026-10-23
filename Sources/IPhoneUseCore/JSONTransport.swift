@@ -36,11 +36,17 @@ enum JSONTransport {
             connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, complete, error in
                 guard outcome == nil else { return }
                 buffer.append(data ?? Data())
-                if buffer.count > limit { fail("Response exceeds size limit") }
-                else if let end = buffer.firstIndex(of: 10) { finish(.success(Data(buffer[..<end]))) }
-                else if let error { fail(String(describing: error)) }
-                else if complete { fail("Connection closed before response") }
-                else { receive() }
+                if buffer.count > limit {
+                    fail("Response exceeds size limit")
+                } else if let end = buffer.firstIndex(of: 10) {
+                    finish(.success(Data(buffer[..<end])))
+                } else if let error {
+                    fail(String(describing: error))
+                } else if complete {
+                    fail("Connection closed before response")
+                } else {
+                    receive()
+                }
             }
         }
         connection.stateUpdateHandler = { state in
@@ -124,8 +130,11 @@ final class JSONServer {
                         self.sendResponse(wire, on: connection, completion: sent)
                     }
                 }
-            } else if complete { connection.cancel() }
-            else { receive(connection, buffer: buffer) }
+            } else if complete {
+                connection.cancel()
+            } else {
+                receive(connection, buffer: buffer)
+            }
         }
     }
 
@@ -146,8 +155,11 @@ final class JSONServer {
         func awaitPeerClose() {
             connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { _, _, complete, error in
                 guard !finished else { return }
-                if complete || error != nil { finish() }
-                else { awaitPeerClose() } // Never dispatch another request on this connection.
+                if complete || error != nil {
+                    finish()
+                } else {
+                    awaitPeerClose()
+                } // Never dispatch another request on this connection.
             }
         }
         deadline.setEventHandler { finish() }
