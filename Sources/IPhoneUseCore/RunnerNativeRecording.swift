@@ -102,8 +102,8 @@ private final class RunnerMediaConnection: RunnerRecordingConnection {
             throw IPhoneUseError("device_locked", "Unlock the iPhone before recording")
         }
         let display = try cli.display()
-        guard display.backlightOn, display.nativeRotation == "rot0", NativeVideoOrientation(rawValue: display.rotation) != nil else {
-            throw IPhoneUseError("native_recording_orientation_unsupported", "Need a lit display with a verified native portrait axis")
+        guard display.nativeRotation == "rot0", NativeVideoOrientation(rawValue: display.rotation) != nil else {
+            throw IPhoneUseError("native_recording_orientation_unsupported", "Need a verified native portrait display axis")
         }
         self.display = display
         let paired = try ASPairedTunnel(udid: udid, deviceIdentifier: identifier, endpointInventory: nil)
@@ -122,7 +122,10 @@ private final class RunnerMediaConnection: RunnerRecordingConnection {
         while receiver.recordingConfiguration()["RTPClockRate"] == nil, ProcessInfo.processInfo.systemUptime < deadline {
             try cancellation.check(); Thread.sleep(forTimeInterval: 0.05)
         }
-        try verifyDisplay()
+        let current = try NativeCaptureChecks.read(requireBacklight: false) { try self.cli.read($0) }.display
+        guard current.geometry == display.geometry else {
+            throw IPhoneUseError("display_changed", "Display geometry changed while preparing video")
+        }
     }
 
     func verifyDisplay() throws {
@@ -130,16 +133,17 @@ private final class RunnerMediaConnection: RunnerRecordingConnection {
         guard try cli.read(["device", "info", "lockState"])["passcodeRequired"] as? Bool == false else {
             throw IPhoneUseError("device_locked", "Device locked during recording")
         }
-        guard try cli.display() == display else { throw IPhoneUseError("display_changed", "Display changed during recording") }
+        let current = try cli.display()
+        guard current.backlightOn else { throw IPhoneUseError("capture_unavailable", "Wake the display before recording") }
+        guard current == display else { throw IPhoneUseError("display_changed", "Display changed during recording") }
     }
 
     func previewNeedsRefresh() throws -> Bool {
-        let current = try NativeCaptureChecks.read { try self.cli.read($0, timeout: 3) }.display
-        guard current.backlightOn else { throw IPhoneUseError("device_locked", "Display is not awake") }
+        let current = try NativeCaptureChecks.read(requireBacklight: false) { try self.cli.read($0, timeout: 3) }.display
         guard media?.health()["healthy"] as? Bool == true else {
             throw IPhoneUseError("native_media_unhealthy", "Preview media connection lost")
         }
-        if current != display { previewRefreshReason = "display_metadata_changed"; return true }
+        if current.geometry != display?.geometry { previewRefreshReason = "display_metadata_changed"; return true }
         do { try media?.recordingReceiver?.snapshots?.rejectConflictingGeometry(current) }
         catch { previewRefreshReason = "frame_geometry_conflict: \(error)"; return true }
         let changed = try previewOrientation.needsRefresh(cli: cli, snapshots: media?.recordingReceiver?.snapshots, display: current)
@@ -149,7 +153,7 @@ private final class RunnerMediaConnection: RunnerRecordingConnection {
     func refreshPreview() throws {
         guard let media else { throw IPhoneUseError("preview_unavailable", "Media is unavailable") }
         try media.resynchronizeOrientation(mayReplace: true, check: { try self.cancellation.check() }) {
-            try NativeCaptureChecks.read { try self.cli.read($0, timeout: 3) }.display
+            try NativeCaptureChecks.read(requireBacklight: false) { try self.cli.read($0, timeout: 3) }.display
         }
         display = media.boundDisplay; receiver = media.recordingReceiver
     }

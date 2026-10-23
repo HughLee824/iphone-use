@@ -5,19 +5,10 @@ import Foundation
 // before capture; do not rotate pixels, reconnect HID, or replay an input.
 // Calls are serialized by SessionHost, including capture and shutdown.
 final class NativeDisplayMediaSession {
-    private struct Geometry: Equatable {
-        let id: UInt64
-        let width: Double, height: Double, scale: Double
-        let rotation: String, nativeRotation: String
-        init(_ display: NativeDisplay) {
-            id = display.id; width = display.pixelWidth; height = display.pixelHeight
-            scale = display.scale; rotation = display.rotation; nativeRotation = display.nativeRotation
-        }
-    }
     private let makeSession: () throws -> NativeMediaSession
     private let startSession: (NativeMediaSession, NativeDisplay) throws -> Void
     private var session: NativeMediaSession?
-    private var geometry: Geometry?
+    private var geometry: NativeDisplay.Geometry?
     private(set) var boundDisplay: NativeDisplay?
     private var failure: String?
     private var closed = false
@@ -37,7 +28,7 @@ final class NativeDisplayMediaSession {
     var recordingReceiver: NativeRTPReceiver? { session?.recordingReceiver }
     var isActive: Bool { session != nil }
 
-    func matchesDisplay(_ display: NativeDisplay) -> Bool { geometry == Geometry(display) }
+    func matchesDisplay(_ display: NativeDisplay) -> Bool { geometry == display.geometry }
 
     func ensureDisplay(_ display: NativeDisplay, mayReplace: Bool) throws {
         try bind(display, mayReplace: mayReplace, forRecording: false)
@@ -73,7 +64,6 @@ final class NativeDisplayMediaSession {
             let display = try readDisplay()
             let readAt = ProcessInfo.processInfo.systemUptime
             timings["readDisplay"] = (readAt - stoppedAt) * 1000
-            guard display.backlightOn else { throw IPhoneUseError("capture_unavailable", "Wake the display before resynchronizing") }
             try check()
             try bind(display, mayReplace: true, forRecording: false)
             try check()
@@ -100,7 +90,7 @@ final class NativeDisplayMediaSession {
         guard !closed, failure == nil else {
             throw IPhoneUseError("native_media_display_refresh_failed", failure ?? "Media binding is closed; reconnect explicitly")
         }
-        let next = Geometry(display)
+        let next = display.geometry
         guard forRecording || geometry != next else { return }
         let replacing = session != nil
         if let session, !mayReplace || session.health()["healthy"] as? Bool != true {

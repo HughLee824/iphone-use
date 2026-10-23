@@ -324,6 +324,35 @@ final class NativeCaptureTests: XCTestCase {
             return ["passcodeRequired": false]
         })
     }
+    func testPreviewChecksIgnoreBacklightButRetainLockAndGeometryRequirements() throws {
+        for state: String? in ["activeOn", "activeDimmed", "off", "inactive", "futureState", nil] {
+            var facts = display()
+            facts["backlightState"] = state
+            let reply = facts
+            let result = try NativeCaptureChecks.read(requireBacklight: false) {
+                $0.last == "lockState" ? ["passcodeRequired": false] : reply
+            }
+            XCTAssertEqual(result.display.geometry, try NativeDisplay(display()).geometry)
+            if !["activeOn", "activeDimmed"].contains(state) {
+                XCTAssertThrowsError(try NativeCaptureChecks.read {
+                    $0.last == "lockState" ? ["passcodeRequired": false] : reply
+                }, "Screenshot/input checks must still reject \(state ?? "missing")")
+            }
+        }
+        for lock: [String: Any] in [[:], ["passcodeRequired": true]] {
+            XCTAssertThrowsError(try NativeCaptureChecks.read(requireBacklight: false) {
+                $0.last == "lockState" ? lock : self.display(backlight: "futureState")
+            }) { XCTAssertEqual(($0 as? IPhoneUseError)?.code, "device_locked") }
+        }
+        XCTAssertThrowsError(try NativeCaptureChecks.read(requireBacklight: false) {
+            $0.last == "lockState" ? ["passcodeRequired": false] : ["displays": []]
+        }) { XCTAssertEqual(($0 as? IPhoneUseError)?.code, "native_display_unavailable") }
+        XCTAssertThrowsError(try NativeCaptureChecks.read(requireBacklight: false) { args in
+            if args.last == "lockState" { throw IPhoneUseError("coredevice_timeout", "Fixture timeout") }
+            return self.display(backlight: "off")
+        }) { XCTAssertEqual(($0 as? IPhoneUseError)?.code, "coredevice_timeout") }
+    }
+
     func testConfirmedLockOrBacklightOffTakesPrecedenceOverSiblingTimeout() {
         for locked in [true, false] {
             XCTAssertThrowsError(try NativeCaptureChecks.read { arguments in

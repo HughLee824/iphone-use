@@ -4,6 +4,16 @@ import ImageIO
 import AppleNativeBridge
 
 struct NativeDisplay: Equatable {
+    struct Geometry: Equatable {
+        let id: UInt64
+        let width: Double, height: Double, scale: Double
+        let rotation: String, nativeRotation: String
+        init(_ display: NativeDisplay) {
+            id = display.id; width = display.pixelWidth; height = display.pixelHeight
+            scale = display.scale; rotation = display.rotation; nativeRotation = display.nativeRotation
+        }
+    }
+    var geometry: Geometry { Geometry(self) }
     let id: UInt64
     let pixelWidth: Double
     let pixelHeight: Double
@@ -846,8 +856,8 @@ final class AppleDeviceBackend: SessionBackend {
         }
     }
     private func ensurePreviewMedia(_ display: NativeDisplay) throws {
-        guard display.backlightOn, display.nativeRotation == "rot0", NativeVideoOrientation(rawValue: display.rotation) != nil else {
-            throw IPhoneUseError("preview_display_unavailable", "Preview needs a lit display with supported orientation")
+        guard display.nativeRotation == "rot0", NativeVideoOrientation(rawValue: display.rotation) != nil else {
+            throw IPhoneUseError("preview_display_unavailable", "Preview needs supported display orientation")
         }
         if media == nil { media = try makeMediaSession() }
         try media?.ensureDisplay(display, mayReplace: hid?.state == .ready)
@@ -862,7 +872,7 @@ final class AppleDeviceBackend: SessionBackend {
         }
         let preview = try NativePreview(port: options.port, device: previewDevice); self.preview = preview; previewFailure = nil
         do {
-            let facts = try NativeCaptureChecks.read { try cli.read($0) }
+            let facts = try NativeCaptureChecks.read(requireBacklight: false) { try cli.read($0) }
             try ensurePreviewMedia(facts.display)
             return preview.status()
         } catch {
@@ -881,8 +891,7 @@ final class AppleDeviceBackend: SessionBackend {
         guard let preview, !stopped, !cancellation.isCancelled, let cli, controlError == nil else { return false }
         var checkingDisplay = true
         do {
-            let display = try NativeCaptureChecks.read { try cli.read($0, timeout: 3) }.display
-            guard display.backlightOn else { throw IPhoneUseError("device_locked", "Display is not awake") }
+            let display = try NativeCaptureChecks.read(requireBacklight: false) { try cli.read($0, timeout: 3) }.display
             let recovery = previewContinuity.needsRecovery(media?.recordingReceiver?.snapshots?.status() ?? [:])
             var changed = recovery || media?.matchesDisplay(display) != true
             var reason = recovery ? "decoder_continuity_lost" : "display_metadata_changed"
@@ -902,7 +911,7 @@ final class AppleDeviceBackend: SessionBackend {
                 guard recordingMediaCleanup["mediaStopAcknowledged"] as? Bool != false else {
                     throw IPhoneUseError("native_media_cleanup_unconfirmed", "Media stop unconfirmed")
                 }
-                let refreshed = try NativeCaptureChecks.read { try cli.read($0, timeout: 3) }.display
+                let refreshed = try NativeCaptureChecks.read(requireBacklight: false) { try cli.read($0, timeout: 3) }.display
                 try ensurePreviewMedia(refreshed)
                 NativePreviewEvents.append(to: paths.directory.appendingPathComponent("preview-events.jsonl"),
                     event: "refresh_completed", reason: reason, source: media?.health() ?? [:])

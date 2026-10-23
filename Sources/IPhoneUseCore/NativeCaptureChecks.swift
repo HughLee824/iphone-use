@@ -111,7 +111,8 @@ enum NativeCaptureChecks {
         var replies: [String: Result<[String: Any], Error>] = [:]
         var timings: [String: Double] = [:]
     }
-    static func read(_ operation: @escaping ([String]) throws -> [String: Any]) throws -> (display: NativeDisplay, timings: [String: Double]) {
+    // Preview validates video separately; screenshot/input callers keep the strict default.
+    static func read(requireBacklight: Bool = true, _ operation: @escaping ([String]) throws -> [String: Any]) throws -> (display: NativeDisplay, timings: [String: Double]) {
         let results = Results(), group = DispatchGroup()
         for (name, argument) in [("lock", "lockState"), ("display", "displays")] {
             group.enter()
@@ -131,13 +132,13 @@ enum NativeCaptureChecks {
         if case .success(let lock) = results.replies["lock"]! {
             guard lock["passcodeRequired"] as? Bool == false else { throw IPhoneUseError("device_locked", "Unlock the iPhone before observing") }
         }
-        if case .success(let facts) = results.replies["display"]! {
+        if requireBacklight, case .success(let facts) = results.replies["display"]! {
             guard try NativeDisplay(facts).backlightOn else { throw IPhoneUseError("capture_unavailable", "The display backlight is off; wake the iPhone before observing") }
         }
         let lock = try results.replies["lock"]!.get()
         guard lock["passcodeRequired"] as? Bool == false else { throw IPhoneUseError("device_locked", "Unlock the iPhone before observing") }
         let display = try NativeDisplay(results.replies["display"]!.get())
-        guard display.backlightOn else { throw IPhoneUseError("capture_unavailable", "The display backlight is off; wake the iPhone before observing") }
+        guard !requireBacklight || display.backlightOn else { throw IPhoneUseError("capture_unavailable", "The display backlight is off; wake the iPhone before observing") }
         return (display, results.timings)
     }
 }

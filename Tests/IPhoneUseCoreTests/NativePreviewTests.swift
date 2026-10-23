@@ -306,6 +306,92 @@ final class NativePreviewTests: XCTestCase {
         XCTAssertEqual(preview.status()["maxFPS"] as? Int, 30)
     }
 
+    private func previewDisplay(backlight: String?) throws -> NativeDisplay {
+        var facts: [String: Any] = ["displays": [["primary": true, "displayId": 1,
+            "bounds": [[0, 0], [12, 18]], "pointScale": 1,
+            "currentOrientation": "rot0", "nativeOrientation": "rot0"]]]
+        facts["backlightState"] = backlight
+        return try NativeDisplay(facts)
+    }
+
+    func testVideoFramesDrivePreviewRegardlessOfBacklightAndQuietFramesAreRetained() throws {
+        try withPreviewReceiver { receiver, send in
+            let preview = try NativePreview(port: 0)
+            defer { preview.close() }
+            preview.attach(receiver, display: try previewDisplay(backlight: nil))
+            XCTAssertEqual(preview.status()["state"] as? String, "waiting")
+            send(1)
+            let encoded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                preview.status()["encodedFrames"] as? Int == 1
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [encoded], timeout: 2), .completed)
+            let url = try XCTUnwrap(URL(string: preview.url + "frame"))
+            let jpeg = try get(url)
+            XCTAssertEqual(jpeg.0, 200)
+            for state: String? in ["activeOn", "activeDimmed", "off", "inactive", "futureState", nil] {
+                preview.attach(receiver, display: try previewDisplay(backlight: state))
+                XCTAssertEqual(preview.status()["state"] as? String, "streaming")
+                XCTAssertEqual(try get(url).1, jpeg.1, "Metadata alone must not clear a usable frame")
+            }
+            // Cross the initial-frame deadline without sending another frame.
+            let quiet = expectation(description: "Quiet screen remains usable")
+            DispatchQueue.global().asyncAfter(deadline: .now() + 3.2) { quiet.fulfill() }
+            wait(for: [quiet], timeout: 4)
+            XCTAssertEqual(preview.status()["state"] as? String, "streaming")
+            XCTAssertEqual(preview.status()["encodedFrames"] as? Int, 1)
+            XCTAssertEqual(try get(url).1, jpeg.1)
+        }
+    }
+
+    func testNoVideoFrameTimesOutAndRecoversOnlyWhenAValidFrameArrives() throws {
+        try withPreviewReceiver { receiver, send in
+            let preview = try NativePreview(port: 0)
+            defer { preview.close() }
+            let display = try previewDisplay(backlight: "activeOn")
+            preview.attach(receiver, display: display)
+            let failed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                preview.status()["state"] as? String == "unavailable"
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [failed], timeout: 4), .completed)
+            XCTAssertEqual(preview.status()["error"] as? String, "No valid video frame received within 3 seconds")
+            preview.attach(receiver, display: display)
+            XCTAssertEqual(preview.status()["state"] as? String, "unavailable", "Polling cannot reset the deadline or error")
+            send(1)
+            let recovered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                preview.status()["state"] as? String == "streaming"
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [recovered], timeout: 2), .completed)
+            receiver.close()
+            XCTAssertNotEqual(preview.status()["state"] as? String, "streaming", "An old JPEG cannot hide a closed transport")
+        }
+    }
+
+    func testDecodedFrameWithConflictingGeometryIsNotUsablePreview() throws {
+        try withPreviewReceiver { receiver, send in
+            let preview = try NativePreview(port: 0)
+            defer { preview.close() }
+            let wrongDisplay = try NativeDisplay(["displays": [["primary": true, "displayId": 1,
+                "bounds": [[0, 0], [100, 100]], "pointScale": 1,
+                "currentOrientation": "rot0", "nativeOrientation": "rot0"]]])
+            preview.attach(receiver, display: wrongDisplay)
+            send(1)
+            let rejected = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                preview.status()["state"] as? String == "unavailable"
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [rejected], timeout: 2), .completed)
+            XCTAssertEqual(preview.status()["encodedFrames"] as? Int, 0)
+            let url = try XCTUnwrap(URL(string: preview.url + "frame"))
+            XCTAssertEqual(try get(url).0, 503)
+
+            preview.attach(receiver, display: try previewDisplay(backlight: "futureState"))
+            let recovered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                preview.status()["state"] as? String == "streaming"
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [recovered], timeout: 2), .completed)
+            XCTAssertEqual(try get(url).0, 200)
+        }
+    }
+
     private func withPreviewReceiver(_ body: (NativeRTPReceiver, (UInt8) -> Void) throws -> Void) throws {
         var pixels: CVPixelBuffer?
         XCTAssertEqual(CVPixelBufferCreate(nil, 12, 18, kCVPixelFormatType_32BGRA, nil, &pixels), kCVReturnSuccess)

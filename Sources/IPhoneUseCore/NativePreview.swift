@@ -33,6 +33,7 @@ final class NativePreview {
     private var jpegActiveWidth = 0
     private var jpegActiveHeight = 0
     private var jpeg: Data?
+    private var firstFrameDeadline: Double?
     private var frameAt: Double?
     private var encodedFrames = 0
     private var lastTick: Double?
@@ -103,16 +104,17 @@ final class NativePreview {
             if let device, device.productType != self.device.productType || device.name != self.device.name {
                 self.device = device; bezel = NativePreviewBezel.load(device: device)
             }
-            if self.receiver !== receiver || self.display != display {
+            if self.receiver !== receiver || self.display?.geometry != display.geometry {
                 gestures.clear()
                 jpeg = nil; frameAt = nil; lastSubmittedFrameAt = nil; bindingGeneration += 1
+                firstFrameDeadline = ProcessInfo.processInfo.systemUptime + 3; error = nil
             }
-            self.receiver = receiver; self.display = display; error = nil
+            self.receiver = receiver; self.display = display
         }
     }
 
     func suspend(_ reason: String) {
-        queue.sync { gestures.clear(); bindingGeneration += 1; receiver = nil; display = nil; jpeg = nil; frameAt = nil; lastSubmittedFrameAt = nil; error = reason }
+        queue.sync { gestures.clear(); bindingGeneration += 1; receiver = nil; display = nil; jpeg = nil; frameAt = nil; firstFrameDeadline = nil; lastSubmittedFrameAt = nil; error = reason }
     }
 
     var gestureRotation: String? { queue.sync { display?.rotation } }
@@ -149,6 +151,11 @@ final class NativePreview {
         let started = ProcessInfo.processInfo.systemUptime
         let tickGap = lastTick.map { (started - $0) * 1000 } ?? 0
         lastTick = started; maxTickGapMs = max(maxTickGapMs, tickGap)
+        // A listener or live transport is not proof of usable video. Bound the
+        // initial wait; a quiet screen keeps its already validated last frame.
+        if !closed, let firstFrameDeadline, started >= firstFrameDeadline, error == nil {
+            error = "No valid video frame received within 3 seconds"
+        }
         guard !closed, !contexts.isEmpty, let receiver, let display, receiver.health()["healthy"] as? Bool == true else { return }
         guard let frame = receiver.snapshots?.previewFrame(includeReducedResolution: true) else {
             if let failure = receiver.snapshots?.status()["lastError"] as? String { error = failure; jpeg = nil }
@@ -181,7 +188,7 @@ final class NativePreview {
                 switch result {
                 case .success(let encoded):
                     jpegActiveWidth = frame.image.activeWidth; jpegActiveHeight = frame.image.activeHeight
-                    jpeg = encoded.data; jpegRotation = display.rotation; frameAt = frame.completedAt; lastEncodeMs = encodeMs; encodedFrames += 1; error = nil
+                    jpeg = encoded.data; jpegRotation = display.rotation; frameAt = frame.completedAt; lastEncodeMs = encodeMs; encodedFrames += 1; error = nil; firstFrameDeadline = nil
                 case .failure(let failure):
                     error = String(describing: failure); jpeg = nil
                     if lastSubmittedFrameAt == frame.completedAt { lastSubmittedFrameAt = nil }
