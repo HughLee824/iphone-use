@@ -58,6 +58,9 @@ if text_help=$("$cli" text-prepare --help 2>/dev/null) && printf '%s\n' "$text_h
   echo 'Scoped text preparation: available. Before the first input, text-prepare once; then inspect the returned screenshot and focus the field if needed.'
 fi
 connect_help=$("$cli" connect --help)
+if printf '%s\n' "$connect_help" | grep -q -- '--reuse'; then
+  echo 'Session reuse: available. Use connect --reuse; record reused/lifecycle. Borrowed sessions and their preview remain running at task completion unless explicitly asked to disconnect. sessions lists existing endpoints.'
+fi
 if printf '%s\n' "$connect_help" | grep -q -- '--progress'; then
   echo 'Connection progress: available. Use connect --progress, relay human-action events immediately, and keep the same pending command. Runner can add --preview to show authorization before readiness; --port overrides the startup preview port.'
 fi

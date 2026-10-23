@@ -82,6 +82,9 @@ public enum SessionClient {
             if let response = try? call(session: session, operation: "status", timeout: 4), response["ok"] as? Bool == true {
                 var response = response
                 response["directory"] = paths.directory.path
+                response["device"] = device
+                response["reused"] = false
+                response["lifecycle"] = ["ownership": "created", "disconnectOnFinish": true]
                 return response
             }
             Thread.sleep(forTimeInterval: 0.2)
