@@ -198,7 +198,7 @@ final class NativePreview {
     }
 
     private static func encodeJPEG(_ frame: NativeVideoSnapshot.Frame, display: NativeDisplay, context: CIContext) throws -> EncodedJPEG {
-        _ = try NativeSnapshotImage.validateGeometry(frame, display: display, allowReducedResolution: true)
+        let native = try NativeSnapshotImage.validateGeometry(frame, display: display, allowReducedResolution: true)
         let pixels = frame.pixels
         // VRA scales the entire encoded canvas, including its right/bottom
         // padding, into the top-left active rectangle. Crop the proportional
@@ -206,8 +206,8 @@ final class NativePreview {
         // active rectangle would include padding and shift screen landmarks.
         let scaleX = Double(CVPixelBufferGetWidth(pixels)) / Double(frame.image.activeWidth)
         let scaleY = Double(CVPixelBufferGetHeight(pixels)) / Double(frame.image.activeHeight)
-        let nativeWidth = Double(frame.image.nativeWidth) / scaleX
-        let nativeHeight = Double(frame.image.nativeHeight) / scaleY
+        let nativeWidth = Double(native.width) / scaleX
+        let nativeHeight = Double(native.height) / scaleY
         // CI coordinates start at the bottom, pixel-buffer rows at the top.
         var image = CIImage(cvPixelBuffer: pixels).cropped(to: CGRect(x: 0,
             y: Double(CVPixelBufferGetHeight(pixels)) - nativeHeight,

@@ -77,6 +77,26 @@ final class NativePreviewResolutionTests: XCTestCase {
         XCTAssertThrowsError(try NativePreview.encode(frame, display: display()))
     }
 
+    func testAlignedNativeHeightStillCropsToAppleDisplayBounds() throws {
+        let buffer = try pixels(activeWidth: 64, activeHeight: 128)
+        let context = CIContext(options: [.useSoftwareRenderer: true])
+        for rotation in ["rot0", "rot90", "rot270"] {
+            let display = try NativeDisplay(["backlightState": "activeDimmed", "displays": [["primary": true, "displayId": 1,
+                "bounds": [[0, 0], [48, 94]], "pointScale": 1, "currentOrientation": rotation, "nativeOrientation": "rot0"]]])
+            func encode(height: Int) throws -> Data {
+                try NativePreview.encode(.init(image: .init(pixels: buffer, nativeWidth: 48, nativeHeight: height),
+                    firstPacketAt: 1, completedAt: 2, timestamp: 1), display: display, context: context)
+            }
+            // Alignment metadata must not stretch or include the extra rows.
+            let aligned = try encode(height: 96)
+            XCTAssertEqual(aligned, try encode(height: 94))
+            let source = try XCTUnwrap(CGImageSourceCreateWithData(aligned as CFData, nil))
+            let image = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+            XCTAssertEqual(image.width, rotation == "rot0" ? 48 : 94)
+            XCTAssertEqual(image.height, rotation == "rot0" ? 94 : 48)
+        }
+    }
+
     func testReducedFramesUpdatePreviewButNeverPrimeObservationOrRecording() throws {
         let buffer = try pixels(activeWidth: 64, activeHeight: 128)
         let full = NativeDecodedVideoFrame(pixels: buffer, nativeWidth: 48, nativeHeight: 96)
