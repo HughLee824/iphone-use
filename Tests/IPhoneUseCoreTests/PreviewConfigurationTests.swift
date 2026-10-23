@@ -3,7 +3,8 @@ import XCTest
 
 final class PreviewConfigurationTests: XCTestCase {
     private func store() throws -> (URL, PreviewConfiguration) {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("preview-config-\(UUID().uuidString)")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "preview-config-\(UUID().uuidString)")
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         return (root, try PreviewConfiguration(environment: ["IPHONE_USE_CONFIG_DIR": root.path]))
     }
@@ -21,15 +22,18 @@ final class PreviewConfigurationTests: XCTestCase {
         XCTAssertEqual(try config.get()["port"] as? Int, 9876)
         XCTAssertEqual(try config.startFields(port: nil)["port"] as? Int, 9876)
         XCTAssertEqual(try config.startFields(port: 9877)["port"] as? Int, 9877)
-        XCTAssertEqual(try config.get()["port"] as? Int, 9876, "A one-time override must not save preferences")
-        let attributes = try FileManager.default.attributesOfItem(atPath: root.appendingPathComponent("preview.json").path)
+        XCTAssertEqual(
+            try config.get()["port"] as? Int, 9876, "A one-time override must not save preferences")
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: root.appendingPathComponent("preview.json").path)
         XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
     }
 
     func testPortOnlySettingNeverCreatesOrInfersMode() throws {
         let (root, config) = try store()
         _ = try config.set(port: 1024)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("config.json").path))
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: root.appendingPathComponent("config.json").path))
         _ = try config.set(port: 65535)
         XCTAssertEqual(try config.get()["port"] as? Int, 65535)
         for port in [-1, 0, 1023, 65536, Int.max] {
@@ -40,9 +44,11 @@ final class PreviewConfigurationTests: XCTestCase {
     }
 
     func testMalformedConfigurationIsPreservedAndExplicitPortBypassesIt() throws {
-        for data in ["{", "{}", "{\"version\":2,\"port\":8765}", "{\"version\":true,\"port\":8765}",
-                     "{\"version\":1,\"port\":true}", "{\"version\":1,\"port\":8765.5}",
-                     "{\"version\":1,\"port\":0}", "{\"version\":1,\"port\":8765,\"extra\":1}"] {
+        for data in [
+            "{", "{}", "{\"version\":2,\"port\":8765}", "{\"version\":true,\"port\":8765}",
+            "{\"version\":1,\"port\":true}", "{\"version\":1,\"port\":8765.5}",
+            "{\"version\":1,\"port\":0}", "{\"version\":1,\"port\":8765,\"extra\":1}"
+        ] {
             let (root, config) = try store()
             try SessionPaths.secureDirectory(root)
             let file = root.appendingPathComponent("preview.json")
@@ -60,7 +66,9 @@ final class PreviewConfigurationTests: XCTestCase {
         }
         let (root, config) = try store()
         try SessionPaths.secureDirectory(root)
-        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("preview.json"), withDestinationURL: root.appendingPathComponent("missing"))
+        try FileManager.default.createSymbolicLink(
+            at: root.appendingPathComponent("preview.json"),
+            withDestinationURL: root.appendingPathComponent("missing"))
         XCTAssertThrowsError(try config.get())
         XCTAssertThrowsError(try config.set(port: 9876))
     }

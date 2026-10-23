@@ -10,16 +10,27 @@ enum RunnerTextInput {
 
         var message: String {
             switch self {
-            case .valueUnavailable: return "Runner append requires readable non-secure text, distinct from any placeholder"
-            case .invalidResult: return "Appended result must fit 4096 UTF-8 bytes and contain no unsupported control keys"
-            case .clearValueUnavailable: return "Runner replace requires readable non-secure text of at most 4096 UTF-8 bytes, distinct from any placeholder"
+            case .valueUnavailable:
+                return "Runner append requires readable non-secure text, distinct from any placeholder"
+            case .invalidResult:
+                return "Appended result must fit 4096 UTF-8 bytes and contain no unsupported control keys"
+            case .clearValueUnavailable:
+                return
+                    """
+                    Runner replace requires readable non-secure text of at most 4096 UTF-8 bytes, distinct\
+                     from any placeholder
+                    """
             }
         }
     }
 
-    static func replacementInput(_ text: String, value: Any?, secure: Bool, placeholder: String?, deleteKey: String) throws -> String {
+    static func replacementInput(
+        _ text: String, value: Any?, secure: Bool, placeholder: String?, deleteKey: String
+    )
+        throws -> String {
         guard !secure, let source = value as? String, source.utf8.count <= 4096,
-              (source.isEmpty || placeholder.map({ $0.isEmpty || $0 != source }) ?? true) else {
+            source.isEmpty || placeholder.map({ $0.isEmpty || $0 != source }) ?? true
+        else {
             throw Failure.clearValueUnavailable
         }
         // The caller first moves to the document end using XCTest editing keys.
@@ -35,16 +46,22 @@ enum RunnerTextInput {
         value == nil || (value as? String)?.isEmpty == true
     }
 
-    static func append(_ text: String, to value: Any?, secure: Bool, placeholder: String? = nil) throws -> String {
+    static func append(_ text: String, to value: Any?, secure: Bool, placeholder: String? = nil) throws
+        -> String {
         guard !secure, let source = value as? String,
-              placeholder.map({ $0.isEmpty || $0 != source }) ?? true else { throw Failure.valueUnavailable }
+            placeholder.map({ $0.isEmpty || $0 != source }) ?? true
+        else { throw Failure.valueUnavailable }
         // Preserve Unicode bytes, whitespace and line endings. Validate the whole
         // replacement before any focus/delete/input operation can run.
         let result = source + text
-        guard result.utf8.count <= 4096, result.unicodeScalars.allSatisfy({ scalar in
-            let v = scalar.value
-            return v == 10 || (v >= 32 && v != 127 && v != 133 && v != 0x2028 && v != 0x2029 && !(0xF700...0xF8FF).contains(v))
-        }) else { throw Failure.invalidResult }
+        guard result.utf8.count <= 4096,
+            result.unicodeScalars.allSatisfy({ scalar in
+                let scalarValue = scalar.value
+                return scalarValue == 10
+                    || (scalarValue >= 32 && scalarValue != 127 && scalarValue != 133 && scalarValue != 0x2028
+                        && scalarValue != 0x2029 && !(0xF700...0xF8FF).contains(scalarValue))
+            })
+        else { throw Failure.invalidResult }
         return result
     }
 }
@@ -52,6 +69,6 @@ enum RunnerTextInput {
 // Public command names shared by host validation and Runner execution. The
 // XCTest key constants themselves stay in the iPhone target.
 enum RunnerPressKey: String, CaseIterable {
-    case `return`, backspace, left, right, up, down, tab, shiftTab = "shift-tab"
+    case `return`, backspace, left, right, upArrow = "up", down, tab, shiftTab = "shift-tab"
     var modifiers: [String] { self == .shiftTab ? ["shift"] : [] }
 }

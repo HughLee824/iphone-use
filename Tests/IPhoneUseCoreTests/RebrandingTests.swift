@@ -3,7 +3,8 @@ import XCTest
 
 final class RebrandingTests: XCTestCase {
     private func root() throws -> URL {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rebrand-\(UUID().uuidString)")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "rebrand-\(UUID().uuidString)")
         try SessionPaths.secureDirectory(root)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         return root
@@ -11,17 +12,23 @@ final class RebrandingTests: XCTestCase {
 
     func testStateDirectoryUsesNewDefaultAndOnlyCurrentOverride() {
         XCTAssertEqual(SessionPaths.stateRoot(environment: [:]).path, "/private/tmp/iphone-use-\(getuid())")
-        XCTAssertEqual(SessionPaths.stateRoot(environment: ["IPHONE_USE_STATE_DIR": "/private/tmp/fixture"]).path,
-                       "/private/tmp/fixture")
-        XCTAssertEqual(SessionPaths.stateRoot(environment: ["AGENTSOMA_STATE_DIR": "/private/tmp/old"]),
-                       SessionPaths.defaultRoot)
-        XCTAssertEqual(SessionPaths.stateRoot(environment: ["IPHONE_USE_STATE_DIR": "/private/tmp/new",
-                                                            "AGENTSOMA_STATE_DIR": "/private/tmp/old"]).path,
-                       "/private/tmp/new")
+        XCTAssertEqual(
+            SessionPaths.stateRoot(environment: ["IPHONE_USE_STATE_DIR": "/private/tmp/fixture"]).path,
+            "/private/tmp/fixture")
+        XCTAssertEqual(
+            SessionPaths.stateRoot(environment: ["AGENTSOMA_STATE_DIR": "/private/tmp/old"]),
+            SessionPaths.defaultRoot)
+        XCTAssertEqual(
+            SessionPaths.stateRoot(environment: [
+                "IPHONE_USE_STATE_DIR": "/private/tmp/new",
+                "AGENTSOMA_STATE_DIR": "/private/tmp/old"
+            ]).path,
+            "/private/tmp/new")
     }
 
     func testDefaultRootLockDoesNotAcquireSameLockTwice() throws {
-        let lock = try SessionDeviceLock(root: SessionPaths.defaultRoot, device: "fixture-\(UUID().uuidString)")
+        let lock = try SessionDeviceLock(
+            root: SessionPaths.defaultRoot, device: "fixture-\(UUID().uuidString)")
         withExtendedLifetime(lock) {}
     }
 

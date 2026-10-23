@@ -15,8 +15,13 @@ final class RecordingProbeTests: XCTestCase {
         var completed = false
         IPhoneUseRecordingProbe.run { facts in
             DispatchQueue.main.async {
-                let data = try! JSONSerialization.data(withJSONObject: facts, options: [.sortedKeys])
-                print("IPHONE_USE_RECORDING_PROBE " + String(decoding: data, as: UTF8.self))
+                guard let data = try? JSONSerialization.data(withJSONObject: facts, options: [.sortedKeys])
+                else {
+                    XCTFail("Recording probe returned non-JSON facts")
+                    done.fulfill()
+                    return
+                }
+                print("IPHONE_USE_RECORDING_PROBE " + String(data: data, encoding: .utf8)!)
                 completed = facts["stopAcknowledged"] as? Bool == true && facts["error"] == nil
                 done.fulfill()
             }

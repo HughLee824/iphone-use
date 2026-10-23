@@ -10,60 +10,81 @@ struct TransportError: Error, CustomStringConvertible {
 enum JSONTransport {
     static let limit = 16 * 1024 * 1024
 
-    static func exchange(endpoint: NWEndpoint, request: [String: Any], timeout: TimeInterval) throws -> [String: Any] {
+    static func exchange(endpoint: NWEndpoint, request: [String: Any], timeout: TimeInterval) throws
+        -> [String: Any] {
+        try Exchange(endpoint: endpoint, request: request).run(timeout: timeout)
+    }
+
+}
+
+private final class Exchange {
+    let request: [String: Any]
+    let wire: Data
+    let connection: NWConnection
+    let queue = DispatchQueue(label: "iphone-use.exchange")
+    let done = DispatchSemaphore(value: 0)
+    var outcome: Result<Data, Error>?
+    var buffer = Data()
+    var possiblySent = false
+    let timer: DispatchSourceTimer
+
+    init(endpoint: NWEndpoint, request: [String: Any]) throws {
+        self.request = request
         var wire = try jsonData(request)
         wire.append(10)
-        let connection = NWConnection(to: endpoint, using: .tcp)
-        let queue = DispatchQueue(label: "iphone-use.exchange")
-        let done = DispatchSemaphore(value: 0)
-        var outcome: Result<Data, Error>?
-        var buffer = Data()
-        var possiblySent = false
-        let timer = DispatchSource.makeTimerSource(queue: queue)
-
-        func finish(_ result: Result<Data, Error>) {
+        self.wire = wire
+        connection = NWConnection(to: endpoint, using: .tcp)
+        timer = DispatchSource.makeTimerSource(queue: queue)
+    }
+    func finish(_ result: Result<Data, Error>) {
+        guard outcome == nil else { return }
+        outcome = result
+        timer.cancel()
+        connection.stateUpdateHandler = nil
+        connection.cancel()
+        done.signal()
+    }
+    func fail(_ message: String) {
+        finish(.failure(TransportError(description: message, possiblySent: possiblySent)))
+    }
+    func receive() {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, complete, error in
+            guard let self else { return }
             guard outcome == nil else { return }
-            outcome = result
-            timer.cancel()
-            connection.stateUpdateHandler = nil
-            connection.cancel()
-            done.signal()
-        }
-        func fail(_ message: String) {
-            finish(.failure(TransportError(description: message, possiblySent: possiblySent)))
-        }
-        func receive() {
-            connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, complete, error in
-                guard outcome == nil else { return }
-                buffer.append(data ?? Data())
-                if buffer.count > limit {
-                    fail("Response exceeds size limit")
-                } else if let end = buffer.firstIndex(of: 10) {
-                    finish(.success(Data(buffer[..<end])))
-                } else if let error {
-                    fail(String(describing: error))
-                } else if complete {
-                    fail("Connection closed before response")
-                } else {
-                    receive()
-                }
+            buffer.append(data ?? Data())
+            if buffer.count > JSONTransport.limit {
+                fail("Response exceeds size limit")
+            } else if let end = buffer.firstIndex(of: 10) {
+                finish(.success(Data(buffer[..<end])))
+            } else if let error {
+                fail(String(describing: error))
+            } else if complete {
+                fail("Connection closed before response")
+            } else {
+                receive()
             }
         }
-        connection.stateUpdateHandler = { state in
+    }
+
+    func run(timeout: TimeInterval) throws -> [String: Any] {
+        connection.stateUpdateHandler = { [weak self] state in
+            guard let self else { return }
             guard outcome == nil else { return }
             switch state {
             case .ready:
                 guard !possiblySent else { return }
                 possiblySent = true
-                connection.send(content: wire, completion: .contentProcessed { error in
-                    if let error { fail(String(describing: error)) } else { receive() }
-                })
+                connection.send(
+                    content: wire,
+                    completion: .contentProcessed { [self] error in
+                        if let error { self.fail(String(describing: error)) } else { self.receive() }
+                    })
             case .failed(let error), .waiting(let error): fail(String(describing: error))
             case .cancelled: fail("Connection cancelled")
             default: break
             }
         }
-        timer.setEventHandler { fail("Response timeout; no automatic replay") }
+        timer.setEventHandler { [weak self] in self?.fail("Response timeout; no automatic replay") }
         timer.schedule(deadline: .now() + timeout)
         timer.resume()
         connection.start(queue: queue)
@@ -165,11 +186,12 @@ final class JSONServer {
         deadline.setEventHandler { finish() }
         deadline.schedule(deadline: .now() + 5)
         deadline.resume()
-        connection.send(content: wire, contentContext: .finalMessage, isComplete: true,
-                        completion: .contentProcessed { error in
-            guard !finished else { return }
-            if error != nil { finish() } else { awaitPeerClose() }
-        })
+        connection.send(
+            content: wire, contentContext: .finalMessage, isComplete: true,
+            completion: .contentProcessed { error in
+                guard !finished else { return }
+                if error != nil { finish() } else { awaitPeerClose() }
+            })
     }
 
     func stopAccepting() { listener.cancel() }

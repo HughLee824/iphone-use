@@ -8,10 +8,14 @@ struct NativeTextObservationOptions: Codable {
     init(field: ScreenRect, ignoring: ScreenRect?) { self.field = field; self.ignoring = ignoring }
     init(request: [String: Any]) throws {
         func rect(_ value: Any?, code: String) throws -> ScreenRect {
-            guard let value = value as? String else { throw IPhoneUseError(code, "Use x,y,width,height in screen points") }
+            guard let value = value as? String else {
+                throw IPhoneUseError(code, "Use x,y,width,height in screen points")
+            }
             let parts = value.split(separator: ",", omittingEmptySubsequences: false)
             let values = parts.compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
-            guard parts.count == 4, values.count == 4, values.allSatisfy(\.isFinite), values[2] > 0, values[3] > 0 else {
+            guard parts.count == 4, values.count == 4, values.allSatisfy(\.isFinite), values[2] > 0,
+                values[3] > 0
+            else {
                 throw IPhoneUseError(code, "Use a finite positive rectangle x,y,width,height")
             }
             let result = ScreenRect(CGRect(x: values[0], y: values[1], width: values[2], height: values[3]))

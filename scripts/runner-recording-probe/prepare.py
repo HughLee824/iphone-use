@@ -12,7 +12,10 @@ def prepare(output: Path) -> None:
     shutil.copytree(source / "Runner", output / "Runner")
     shared = output / "Sources/IPhoneUseCore"
     shared.mkdir(parents=True)
-    for name in ("FrameStability", "ScreenGuard", "NativeCaretGuard", "RunnerTextInput", "XCTestDiagnostics"):
+    for name in (
+        "FrameStability", "ScreenGuard", "ScreenGuard+Comparison", "ScreenGeometry",
+        "CoordinateGesture", "ScreenImage", "NativeCaretGuard", "RunnerTextInput", "XCTestDiagnostics",
+    ):
         shutil.copy2(source / f"Sources/IPhoneUseCore/{name}.swift", shared)
     runner = output / "Runner"
     # Append only in the fresh experimental copy. No production target/test or

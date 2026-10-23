@@ -7,19 +7,38 @@ public enum ControlMode: String, Codable {
 
     /// Implemented command forms, independent of transient device/service readiness.
     var support: [String: Any] {
-        let common = ["status", "apps", "open", "home", "terminate", "relaunch", "observe", "inspect", "tap", "double-tap", "long-press", "pinch", "swipe", "type", "press", "disconnect", "record-start", "record-stop", "preview"]
+        let common = [
+            "status", "apps", "open", "home", "terminate", "relaunch", "observe", "inspect", "tap",
+            "double-tap",
+            "long-press", "pinch", "swipe", "type", "press", "disconnect", "record-start", "record-stop",
+            "preview"
+        ]
         if self == .standard {
-            return ["operations": common + ["text-prepare", "text-finish"],
-                    "observationSources": ["screenshot"],
-                    "actionTargets": ["tap": ["screen_point"], "swipe": ["screen_path"],
-                                      "type": ["visually_focused_input", "touch_paste_staging"], "press": ["visually_focused_input"]],
-                    "textModes": ["insert", "replace", "append"], "textMethods": ["auto", "keys", "paste", "touch-paste"], "touchPasteModes": ["insert"],
-                    "pressKeys": NativePressKey.allCases.map(\.rawValue)]
+            return [
+                "operations": common + ["text-prepare", "text-finish"],
+                "observationSources": ["screenshot"],
+                "actionTargets": [
+                    "tap": ["screen_point"], "swipe": ["screen_path"],
+                    "type": ["visually_focused_input", "touch_paste_staging"],
+                    "press": ["visually_focused_input"]
+                ],
+                "textModes": ["insert", "replace", "append"],
+                "textMethods": ["auto", "keys", "paste", "touch-paste"],
+                "touchPasteModes": ["insert"],
+                "pressKeys": NativePressKey.allCases.map(\.rawValue)
+            ]
         }
-        return ["operations": common + ["text-finish"], "observationSources": ["screenshot", "available_elements"],
-                "actionTargets": ["tap": ["screen_point", "element"], "swipe": ["screen_path", "element"],
-                                  "type": ["element", "touch_paste_staging"], "press": ["element"]],
-                "textModes": ["insert", "replace", "append"], "textMethods": ["touch-paste"], "touchPasteModes": ["insert"], "pressKeys": RunnerPressKey.allCases.map(\.rawValue)]
+        return [
+            "operations": common + ["text-finish"],
+            "observationSources": ["screenshot", "available_elements"],
+            "actionTargets": [
+                "tap": ["screen_point", "element"], "swipe": ["screen_path", "element"],
+                "type": ["element", "touch_paste_staging"], "press": ["element"]
+            ],
+            "textModes": ["insert", "replace", "append"], "textMethods": ["touch-paste"],
+            "touchPasteModes": ["insert"],
+            "pressKeys": RunnerPressKey.allCases.map(\.rawValue)
+        ]
     }
 
     static func parse(_ value: String) throws -> ControlMode {
@@ -52,7 +71,9 @@ public struct ModeConfiguration {
     public init(environment: [String: String] = ProcessInfo.processInfo.environment) throws {
         if let path = environment["IPHONE_USE_CONFIG_DIR"] {
             guard path.hasPrefix("/"), !path.utf8.contains(0) else {
-                throw IPhoneUseError("invalid_configuration_directory", "IPHONE_USE_CONFIG_DIR must be an absolute directory path")
+                throw IPhoneUseError(
+                    "invalid_configuration_directory",
+                    "IPHONE_USE_CONFIG_DIR must be an absolute directory path")
             }
             // An explicitly isolated preference store must not infer its mode
             // from the real user's prepared Runners.
@@ -60,8 +81,9 @@ public struct ModeConfiguration {
             return
         }
         let home = FileManager.default.homeDirectoryForCurrentUser
-        self.init(directory: home.appendingPathComponent(".iphone-use"),
-                  legacyRunner: { try RunnerSetup.hasValidLegacyConfiguration() })
+        self.init(
+            directory: home.appendingPathComponent(".iphone-use"),
+            legacyRunner: { try RunnerSetup.hasValidLegacyConfiguration() })
     }
 
     init(directory: URL, legacyRunner: @escaping () throws -> Bool) {
@@ -70,20 +92,29 @@ public struct ModeConfiguration {
     }
 
     /// Explicit options neither read nor modify defaults, including during migration.
-    public func select(mode: String?, backend: String?, xctestrun: String?, nativeEndpointInventory: String?) throws -> ModeSelection {
+    public func select(mode: String?, backend: String?, xctestrun: String?, nativeEndpointInventory: String?)
+        throws
+        -> ModeSelection {
         var choices: [(ControlMode, String)] = []
         if let mode { choices.append((try ControlMode.parse(mode), "command_line_mode")) }
         if let backend {
             guard ["apple-native", "xctest"].contains(backend) else {
-                throw IPhoneUseError("unsupported_backend", "Use --backend apple-native or xctest, or --mode standard or runner")
+                throw IPhoneUseError(
+                    "unsupported_backend",
+                    "Use --backend apple-native or xctest, or --mode standard or runner")
             }
             choices.append((backend == "apple-native" ? .standard : .runner, "command_line_backend"))
         }
         if xctestrun != nil { choices.append((.runner, "command_line_xctestrun")) }
-        if nativeEndpointInventory != nil { choices.append((.standard, "command_line_native_endpoint_inventory")) }
+        if nativeEndpointInventory != nil {
+            choices.append((.standard, "command_line_native_endpoint_inventory"))
+        }
         if let first = choices.first {
             guard choices.allSatisfy({ $0.0 == first.0 }) else {
-                throw IPhoneUseError("mode_conflict", "Conflicting mode/backend options: standard uses apple-native; runner uses xctest and --xctestrun")
+                throw IPhoneUseError(
+                    "mode_conflict",
+                    "Conflicting mode/backend options: standard uses apple-native; runner uses xctest and --xctestrun"
+                )
             }
             return ModeSelection(mode: first.0, source: first.1)
         }
@@ -104,8 +135,10 @@ public struct ModeConfiguration {
         defer { withExtendedLifetime(lock) {} }
         _ = try read() // Do not overwrite malformed or newer configuration formats.
         try write(mode)
-        return ["mode": mode.rawValue, "backend": mode.backend, "configPath": file.path,
-                "saved": true, "appliesTo": "new_sessions"]
+        return [
+            "mode": mode.rawValue, "backend": mode.backend, "configPath": file.path,
+            "saved": true, "appliesTo": "new_sessions"
+        ]
     }
 
     private func defaults(persist: Bool) throws -> ModeSelection {
@@ -124,31 +157,42 @@ public struct ModeConfiguration {
 
     private func initialSelection() throws -> ModeSelection {
         let legacy = try legacyRunner()
-        return ModeSelection(mode: legacy ? .runner : .standard,
-                             source: legacy ? "legacy_runner_migration" : "default")
+        return ModeSelection(
+            mode: legacy ? .runner : .standard,
+            source: legacy ? "legacy_runner_migration" : "default")
     }
 
     private func read() throws -> ControlMode? {
         let files = FileManager.default
         // attributesOfItem also detects dangling symlinks; missing is distinct from unreadable.
         let attributes: [FileAttributeKey: Any]
-        do { attributes = try files.attributesOfItem(atPath: file.path) }
-        catch let error as NSError where error.domain == NSCocoaErrorDomain && [NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(error.code) { return nil }
+        do { attributes = try files.attributesOfItem(atPath: file.path) } catch let error as NSError
+            where error.domain == NSCocoaErrorDomain
+            && [NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(error.code) { return nil }
         guard attributes[.type] as? FileAttributeType == .typeRegular,
-              ((attributes[.size] as? NSNumber)?.intValue ?? Int.max) <= 65536 else {
-            throw IPhoneUseError("invalid_configuration", "Configuration must be a regular JSON file of at most 64 KiB: \(file.path)")
+            ((attributes[.size] as? NSNumber)?.intValue ?? Int.max) <= 65536
+        else {
+            throw IPhoneUseError(
+                "invalid_configuration",
+                "Configuration must be a regular JSON file of at most 64 KiB: \(file.path)")
         }
         do {
             let data = try Data(contentsOf: file)
             let object = try jsonObject(data)
             guard Set(object.keys) == Set(["version", "mode"]) else {
-                throw IPhoneUseError("invalid_configuration", "Expected configuration version 1 with only version and mode fields")
+                throw IPhoneUseError(
+                    "invalid_configuration",
+                    "Expected configuration version 1 with only version and mode fields")
             }
             let document = try JSONDecoder().decode(Document.self, from: data)
-            guard document.version == 1 else { throw IPhoneUseError("invalid_configuration", "Unsupported configuration version") }
+            guard document.version == 1 else {
+                throw IPhoneUseError("invalid_configuration", "Unsupported configuration version")
+            }
             return document.mode
         } catch {
-            throw IPhoneUseError("invalid_configuration", "Cannot read \(file.path): \(error). Repair the file; no backend was selected")
+            throw IPhoneUseError(
+                "invalid_configuration",
+                "Cannot read \(file.path): \(error). Repair the file; no backend was selected")
         }
     }
 
@@ -160,7 +204,10 @@ public struct ModeConfiguration {
     }
 
     private func configurationLock() throws -> DeviceLock {
-        do { return try DeviceLock(root: directory, device: "configuration") }
-        catch { throw IPhoneUseError("configuration_busy", "Cannot lock mode configuration; another configuration operation may be active: \(error)") }
+        do { return try DeviceLock(root: directory, device: "configuration") } catch {
+            throw IPhoneUseError(
+                "configuration_busy",
+                "Cannot lock mode configuration; another configuration operation may be active: \(error)")
+        }
     }
 }

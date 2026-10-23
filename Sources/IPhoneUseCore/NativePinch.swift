@@ -10,14 +10,24 @@ struct NativePinchPlan {
         guard let motion = gesture.pinch else { throw ScreenGuard.Failure.invalidGuard }
         self.motion = motion
         let screen = gesture.screenGuard.context.screen
-        start = try motion.points(center: gesture.start, ending: false).map { try NativeCoordinateMapper.map($0, screen: screen, rotation: rotation) }
-        end = try motion.points(center: gesture.start, ending: true).map { try NativeCoordinateMapper.map($0, screen: screen, rotation: rotation) }
+        start = try motion.points(center: gesture.start, ending: false).map {
+            try NativeCoordinateMapper.map($0, screen: screen, rotation: rotation)
+        }
+        end = try motion.points(center: gesture.start, ending: true).map {
+            try NativeCoordinateMapper.map($0, screen: screen, rotation: rotation)
+        }
     }
     func points(at fraction: Double) -> [(UInt16, UInt16)] {
-        let t = min(1, max(0, fraction))
-        return zip(start, end).map { a, b in
-            (UInt16((Double(a.0) + (Double(b.0) - Double(a.0)) * t).rounded()),
-             UInt16((Double(a.1) + (Double(b.1) - Double(a.1)) * t).rounded()))
+        let progress = min(1, max(0, fraction))
+        return zip(start, end).map { firstSample, secondSample in
+            (
+                UInt16(
+                    (Double(firstSample.0) + (Double(secondSample.0) - Double(firstSample.0)) * progress)
+                        .rounded()),
+                UInt16(
+                    (Double(firstSample.1) + (Double(secondSample.1) - Double(firstSample.1)) * progress)
+                        .rounded())
+            )
         }
     }
 }

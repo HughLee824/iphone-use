@@ -20,8 +20,10 @@ final class NativeDisplayMediaSession {
     private var lastOrientationRefreshCleanup: [String: Any]?
     private var lastOrientationRefreshTimings: [String: Double]?
 
-    init(makeSession: @escaping () throws -> NativeMediaSession,
-         startSession: @escaping (NativeMediaSession, NativeDisplay) throws -> Void) {
+    init(
+        makeSession: @escaping () throws -> NativeMediaSession,
+        startSession: @escaping (NativeMediaSession, NativeDisplay) throws -> Void
+    ) {
         self.makeSession = makeSession; self.startSession = startSession
     }
 
@@ -38,12 +40,16 @@ final class NativeDisplayMediaSession {
     // orientation. Read again only AFTER a confirmed, UUID-scoped stop.
     // Returns whether any bound display geometry changed across the refresh.
     @discardableResult
-    func resynchronizeOrientation(mayReplace: Bool, check: () throws -> Void = {},
-                                  readDisplay: () throws -> NativeDisplay) throws -> Bool {
+    func resynchronizeOrientation(
+        mayReplace: Bool, check: () throws -> Void = {},
+        readDisplay: () throws -> NativeDisplay
+    ) throws -> Bool {
         guard !closed, failure == nil, mayReplace, let current = session,
-              current.health()["healthy"] as? Bool == true else {
+            current.health()["healthy"] as? Bool == true
+        else {
             throw IPhoneUseError(
-                "native_orientation_unverified", "Cannot resynchronize orientation while media or input is not ready"
+                "native_orientation_unverified",
+                "Cannot resynchronize orientation while media or input is not ready"
             )
         }
         try check()
@@ -61,7 +67,8 @@ final class NativeDisplayMediaSession {
             lastOrientationRefreshCleanup = cleanup
             guard cleanup["mediaStopAcknowledged"] as? Bool == true else {
                 throw IPhoneUseError(
-                    "native_orientation_unverified", "Owned media stop was not confirmed; no replacement was started"
+                    "native_orientation_unverified",
+                    "Owned media stop was not confirmed; no replacement was started"
                 )
             }
             session = nil; geometry = nil; boundDisplay = nil
@@ -94,14 +101,16 @@ final class NativeDisplayMediaSession {
     private func bind(_ display: NativeDisplay, mayReplace: Bool, forRecording: Bool) throws {
         guard !closed, failure == nil else {
             throw IPhoneUseError(
-                "native_media_display_refresh_failed", failure ?? "Media binding is closed; reconnect explicitly"
+                "native_media_display_refresh_failed",
+                failure ?? "Media binding is closed; reconnect explicitly"
             )
         }
         let next = display.geometry
         guard forRecording || geometry != next else { return }
         let replacing = session != nil
         if let session, !mayReplace || session.health()["healthy"] as? Bool != true {
-            failure = "Media replacement requested while input or media was not ready; close and reconnect explicitly"
+            failure =
+                "Media replacement requested while input or media was not ready; close and reconnect explicitly"
             throw IPhoneUseError("native_media_display_refresh_failed", failure!)
         }
         do {
@@ -124,7 +133,8 @@ final class NativeDisplayMediaSession {
             session = fresh // Retain ownership even when start/negotiation fails.
             try startSession(fresh, display)
             guard fresh.health()["healthy"] as? Bool == true else {
-                throw IPhoneUseError("native_media_unhealthy", "Replacement media has no healthy RTP/RTCP flow")
+                throw IPhoneUseError(
+                    "native_media_unhealthy", "Replacement media has no healthy RTP/RTCP flow")
             }
             geometry = next; boundDisplay = display
             if replacing {
@@ -153,8 +163,12 @@ final class NativeDisplayMediaSession {
         if let lastOrientationRefreshTimings {
             result["lastOrientationRefreshTimingsMs"] = lastOrientationRefreshTimings
         }
-        if let lastOrientationRefreshCleanup { result["lastOrientationRefreshCleanup"] = lastOrientationRefreshCleanup }
-        if let lastRecordingRefreshCleanup { result["lastRecordingRefreshCleanup"] = lastRecordingRefreshCleanup }
+        if let lastOrientationRefreshCleanup {
+            result["lastOrientationRefreshCleanup"] = lastOrientationRefreshCleanup
+        }
+        if let lastRecordingRefreshCleanup {
+            result["lastRecordingRefreshCleanup"] = lastRecordingRefreshCleanup
+        }
         if let lastRefreshCleanup { result["lastDisplayRefreshCleanup"] = lastRefreshCleanup }
         if let failure {
             result["healthy"] = false; result["error"] = failure
@@ -163,15 +177,22 @@ final class NativeDisplayMediaSession {
         return result
     }
 
+    var sessionID: UUID? { session?.sessionID }
+
     func close() -> [String: Any] {
         closed = true
-        var result = session?.close() ?? lastOrientationRefreshCleanup ?? lastRefreshCleanup
+        var result =
+            session?.close() ?? lastOrientationRefreshCleanup ?? lastRefreshCleanup
             ?? ["mediaStopAcknowledged": true]
         result["displayRefreshCount"] = refreshCount
         result["recordingRefreshCount"] = recordingRefreshCount
         result["orientationRefreshCount"] = orientationRefreshCount
-        if let lastOrientationRefreshCleanup { result["lastOrientationRefreshCleanup"] = lastOrientationRefreshCleanup }
-        if let lastRecordingRefreshCleanup { result["lastRecordingRefreshCleanup"] = lastRecordingRefreshCleanup }
+        if let lastOrientationRefreshCleanup {
+            result["lastOrientationRefreshCleanup"] = lastOrientationRefreshCleanup
+        }
+        if let lastRecordingRefreshCleanup {
+            result["lastRecordingRefreshCleanup"] = lastRecordingRefreshCleanup
+        }
         if let lastRefreshCleanup { result["lastDisplayRefreshCleanup"] = lastRefreshCleanup }
         return result
     }

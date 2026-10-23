@@ -14,14 +14,17 @@ struct FrameFingerprint {
 
     init(png: Data) throws {
         guard let source = CGImageSourceCreateWithData(png as CFData, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let sourceWidth = properties[kCGImagePropertyPixelWidth] as? Int,
-              let sourceHeight = properties[kCGImagePropertyPixelHeight] as? Int,
-              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: max(sourceWidth, sourceHeight)
-              ] as CFDictionary), let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+            let sourceWidth = properties[kCGImagePropertyPixelWidth] as? Int,
+            let sourceHeight = properties[kCGImagePropertyPixelHeight] as? Int,
+            let image = CGImageSourceCreateThumbnailAtIndex(
+                source, 0,
+                [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: max(sourceWidth, sourceHeight)
+                ] as CFDictionary), let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)
+        else {
             throw Failure.invalidImage
         }
         let width = image.width
@@ -30,9 +33,13 @@ struct FrameFingerprint {
         self.height = height
         var pixels = Data(count: width * height * 4)
         try pixels.withUnsafeMutableBytes { buffer in
-            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height,
-                bitsPerComponent: 8, bytesPerRow: width * 4, space: colorSpace,
-                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            guard
+                let context = CGContext(
+                    data: buffer.baseAddress, width: width, height: height,
+                    bitsPerComponent: 8, bytesPerRow: width * 4, space: colorSpace,
+                    bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                        | CGImageAlphaInfo.premultipliedLast.rawValue)
+            else {
                 throw Failure.invalidImage
             }
             context.setBlendMode(.copy)
@@ -52,22 +59,29 @@ struct FrameFingerprint {
         guard width == reference.width, height == reference.height else { throw Failure.invalidImage }
         var mask = Data(repeating: 0, count: width * height * 4)
         mask.withUnsafeMutableBytes { (out: UnsafeMutableRawBufferPointer) in
-            pixels.withUnsafeBytes { (a: UnsafeRawBufferPointer) in
-                reference.pixels.withUnsafeBytes { (b: UnsafeRawBufferPointer) in
-                    for i in stride(from: 0, to: out.count, by: 4) {
-                        let changed = (0..<4).contains { a[i+$0] != b[i+$0] }
-                        out[i] = changed ? 255 : 0; out[i+1] = out[i]; out[i+2] = out[i]; out[i+3] = 255
+            pixels.withUnsafeBytes { (firstSample: UnsafeRawBufferPointer) in
+                reference.pixels.withUnsafeBytes { (secondSample: UnsafeRawBufferPointer) in
+                    for index in stride(from: 0, to: out.count, by: 4) {
+                        let changed = (0..<4).contains { firstSample[index + $0] != secondSample[index + $0] }
+                        out[index] = changed ? 255 : 0; out[index + 1] = out[index]
+                        out[index + 2] = out[index]
+                        out[index + 3] = 255
                     }
                 }
             }
         }
         guard let provider = CGDataProvider(data: mask as CFData),
-              let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+            let image = CGImage(
+                width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
                 bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                 bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-                provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent) else { throw Failure.invalidImage }
+                provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+        else { throw Failure.invalidImage }
         let encoded = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(encoded, "public.png" as CFString, 1, nil) else { throw Failure.invalidImage }
+        guard let destination = CGImageDestinationCreateWithData(encoded, "public.png" as CFString, 1, nil)
+        else {
+            throw Failure.invalidImage
+        }
         CGImageDestinationAddImage(destination, image, nil)
         guard CGImageDestinationFinalize(destination) else { throw Failure.invalidImage }
         return encoded as Data
@@ -87,8 +101,10 @@ struct FrameComparison {
     let dimensionsMatch: Bool
     var equivalent: Bool { dimensionsMatch && changedPixels == 0 }
 
-    init(reference: FrameFingerprint, current: FrameFingerprint, ignoredCaret: ScreenRect? = nil,
-         screen: ScreenRect? = nil) {
+    init(
+        reference: FrameFingerprint, current: FrameFingerprint, ignoredCaret: ScreenRect? = nil,
+        screen: ScreenRect? = nil
+    ) {
         dimensionsMatch = reference.width == current.width && reference.height == current.height
         guard dimensionsMatch else {
             changedPixels = max(reference.width * reference.height, current.width * current.height)
@@ -97,44 +113,84 @@ struct FrameComparison {
         let mask: CGRect?
         if let ignoredCaret, let screen {
             let scale = Double(reference.width) / screen.width
-            mask = CGRect(x: (ignoredCaret.x - screen.x) * scale, y: (ignoredCaret.y - screen.y) * scale,
-                          width: ignoredCaret.width * scale, height: ignoredCaret.height * scale)
-        } else { mask = nil }
+            mask = CGRect(
+                x: (ignoredCaret.originX - screen.originX) * scale,
+                y: (ignoredCaret.originY - screen.originY) * scale,
+                width: ignoredCaret.width * scale, height: ignoredCaret.height * scale)
+        } else {
+            mask = nil
+        }
         var count = 0, left = reference.width, top = reference.height, right = -1, bottom = -1
-        reference.pixels.withUnsafeBytes { (a: UnsafeRawBufferPointer) in
-            current.pixels.withUnsafeBytes { (b: UnsafeRawBufferPointer) in
-                for y in 0..<reference.height {
-                    let offset = y * reference.width * 4
+        reference.pixels.withUnsafeBytes { (firstSample: UnsafeRawBufferPointer) in
+            current.pixels.withUnsafeBytes { (secondSample: UnsafeRawBufferPointer) in
+                for row in 0..<reference.height {
+                    let offset = row * reference.width * 4
                     // Compare every byte, but enter the Swift pixel loop only for
                     // changed rows. This matters for the unoptimized device Runner.
-                    if memcmp(a.baseAddress!.advanced(by: offset), b.baseAddress!.advanced(by: offset), reference.width * 4) == 0 { continue }
-                    for x in 0..<reference.width {
-                        let i = (y * reference.width + x) * 4
-                        if a[i] == b[i] && a[i+1] == b[i+1] && a[i+2] == b[i+2] && a[i+3] == b[i+3] { continue }
-                        let r = Double(Int(a[i]) - Int(b[i])), g = Double(Int(a[i+1]) - Int(b[i+1]))
-                        let blue = Double(Int(a[i+2]) - Int(b[i+2]))
-                        // Standard YIQ components in 8-bit channel units, with a hard RGB cap.
-                        // This bounds perceptual tolerance and keeps a single changed glyph significant.
-                        let small = max(abs(r), abs(g), abs(blue)) <= 4 &&
-                            max(abs(0.299*r + 0.587*g + 0.114*blue),
-                                abs(0.596*r - 0.274*g - 0.322*blue),
-                                abs(0.211*r - 0.523*g + 0.312*blue)) <= Self.colorTolerance
-                        if a[i+3] == b[i+3] && (small || mask?.contains(CGPoint(x: x, y: y)) == true) { continue }
-                        count += 1; left = min(left, x); right = max(right, x); top = min(top, y); bottom = max(bottom, y)
+                    if memcmp(
+                        firstSample.baseAddress!.advanced(by: offset),
+                        secondSample.baseAddress!.advanced(by: offset),
+                        reference.width * 4)
+                        == 0 {
+                        continue
+                    }
+                    for column in 0..<reference.width {
+                        let index = (row * reference.width + column) * 4
+                        if firstSample[index] == secondSample[index]
+                            && firstSample[index + 1] == secondSample[index + 1]
+                            && firstSample[index + 2] == secondSample[index + 2]
+                            && firstSample[index + 3] == secondSample[index + 3] {
+                            continue
+                        }
+                        let small = Self.isSmallColorChange(firstSample, secondSample, index: index)
+                        if firstSample[index + 3] == secondSample[index + 3]
+                            && (small || mask?.contains(CGPoint(x: column, y: row)) == true) {
+                            continue
+                        }
+                        count += 1; left = min(left, column); right = max(right, column); top = min(top, row)
+                        bottom = max(bottom, row)
                     }
                 }
             }
         }
         changedPixels = count
-        changedBounds = count == 0 ? nil : CGRect(x: left, y: top, width: right-left+1, height: bottom-top+1)
+        changedBounds =
+            count == 0 ? nil : CGRect(x: left, y: top, width: right - left + 1, height: bottom - top + 1)
         self.ignoredCaret = ignoredCaret
     }
 
+    private static func isSmallColorChange(
+        _ firstSample: UnsafeRawBufferPointer,
+        _ secondSample: UnsafeRawBufferPointer, index: Int
+    ) -> Bool {
+        let red = Double(Int(firstSample[index]) - Int(secondSample[index])),
+            green = Double(Int(firstSample[index + 1]) - Int(secondSample[index + 1]))
+        let blue = Double(Int(firstSample[index + 2]) - Int(secondSample[index + 2]))
+        // Standard YIQ components in 8-bit channel units, with a hard RGB cap.
+        // This bounds perceptual tolerance and keeps a single changed glyph significant.
+        return
+            max(abs(red), abs(green), abs(blue)) <= 4
+            && max(
+                abs(0.299 * red + 0.587 * green + 0.114 * blue),
+                abs(0.596 * red - 0.274 * green - 0.322 * blue),
+                abs(0.211 * red - 0.523 * green + 0.312 * blue)) <= Self.colorTolerance
+    }
+
     var result: [String: Any] {
-        var value: [String: Any] = ["equivalent": equivalent, "dimensionsMatch": dimensionsMatch,
-            "changedPixels": changedPixels, "colorTolerance": Self.colorTolerance, "maxChannelDelta": 4]
-        if let r = changedBounds { value["changedBoundsPixels"] = ["x": r.minX, "y": r.minY, "width": r.width, "height": r.height] }
-        if let r = ignoredCaret { value["ignoredCaret"] = ["x": r.x, "y": r.y, "width": r.width, "height": r.height] }
+        var value: [String: Any] = [
+            "equivalent": equivalent, "dimensionsMatch": dimensionsMatch,
+            "changedPixels": changedPixels, "colorTolerance": Self.colorTolerance, "maxChannelDelta": 4
+        ]
+        if let bounds = changedBounds {
+            value["changedBoundsPixels"] = [
+                "x": bounds.minX, "y": bounds.minY, "width": bounds.width, "height": bounds.height
+            ]
+        }
+        if let bounds = ignoredCaret {
+            value["ignoredCaret"] = [
+                "x": bounds.originX, "y": bounds.originY, "width": bounds.width, "height": bounds.height
+            ]
+        }
         return value
     }
 }
@@ -164,39 +220,52 @@ struct FrameStability {
     private(set) var stable = false
 
     init(startedAt: TimeInterval, context: ScreenContext? = nil, textFields: [ScreenRect] = []) {
-        self.startedAt = startedAt; self.context = context; self.textFields = textFields.count <= 8 ? textFields : []
+        self.startedAt = startedAt; self.context = context
+        self.textFields = textFields.count <= 8 ? textFields : []
         unchangedSince = startedAt; lastSampleAt = startedAt; processedAt = startedAt
     }
 
     func remaining(at now: TimeInterval) -> TimeInterval { max(0, Self.timeout - (now - startedAt)) }
 
-    mutating func record(frame: FrameFingerprint, png: Data, capturedAt: TimeInterval, processedAt: @autoclosure () -> TimeInterval) {
+    mutating func record(
+        frame: FrameFingerprint, png: Data, capturedAt: TimeInterval,
+        processedAt: @autoclosure () -> TimeInterval
+    ) {
         comparisonReferencePNG = anchorPNG
         comparisonReferenceHash = anchor?.hash
         var ignored: ScreenRect?
         if anchor?.hash != frame.hash, let caret, let context,
-           (try? caret.acceptsBlink(png: png, context: context)) == true { ignored = caret.caret }
-        comparison = anchor.map { FrameComparison(reference: $0, current: frame, ignoredCaret: ignored, screen: context?.screen) }
+            (try? caret.acceptsBlink(png: png, context: context)) == true {
+            ignored = caret.caret
+        }
+        comparison = anchor.map {
+            FrameComparison(reference: $0, current: frame, ignoredCaret: ignored, screen: context?.screen)
+        }
         let equivalent = comparison?.equivalent == true
         if !equivalent {
             anchor = frame; anchorPNG = png; caret = nil
             if let context {
                 let candidates = textFields.compactMap { field in
-                    try? NativeCaretGuard(png: png, context: context, field: field, allowsAdjacentText: true, allowsColoredCarets: false)
+                    try? NativeCaretGuard(
+                        png: png, context: context, field: field, allowsAdjacentText: true,
+                        allowsColoredCarets: false)
                 }
                 // At most one recognized stroke across all bounded fields. The
                 // full frame is still compared, including all other field pixels.
                 if candidates.count == 1 { caret = candidates[0] }
             }
         }
-        recordSample(hash: frame.hash, equivalent: equivalent, capturedAt: capturedAt, processedAt: processedAt())
+        recordSample(
+            hash: frame.hash, equivalent: equivalent, capturedAt: capturedAt, processedAt: processedAt())
     }
 
-    private mutating func recordSample(hash: String, equivalent: Bool, capturedAt: TimeInterval, processedAt: TimeInterval) {
+    private mutating func recordSample(
+        hash: String, equivalent: Bool, capturedAt: TimeInterval, processedAt: TimeInterval
+    ) {
         samples += 1; lastSampleAt = capturedAt; self.processedAt = processedAt; self.hash = hash
-        if !equivalent { unchangedSince = capturedAt; consecutiveFrames = 1 }
-        else { consecutiveFrames += 1 }
-        stable = remaining(at: processedAt) > 0 && consecutiveFrames >= 3
+        if !equivalent { unchangedSince = capturedAt; consecutiveFrames = 1 } else { consecutiveFrames += 1 }
+        stable =
+            remaining(at: processedAt) > 0 && consecutiveFrames >= 3
             && capturedAt - unchangedSince >= Self.stableDuration
             && capturedAt - startedAt >= Self.minimumObservationDuration
     }
@@ -208,14 +277,18 @@ struct FrameStability {
     }
 
     var result: [String: Any] {
-        var value: [String: Any] = ["stable": stable,
-            "reason": stable ? "stable" : (observationReady ? "dynamic_or_transitioning" : "insufficient_samples"),
+        var value: [String: Any] = [
+            "stable": stable,
+            "reason": stable
+                ? "stable" : (observationReady ? "dynamic_or_transitioning" : "insufficient_samples"),
             "automaticReplayAllowed": false, "samples": samples, "consecutiveFrames": consecutiveFrames,
             "elapsedMs": (processedAt - startedAt) * 1000, "observedForMs": (lastSampleAt - startedAt) * 1000,
             "stableForMs": (lastSampleAt - unchangedSince) * 1000,
             "hash": hash as Any? ?? NSNull(), "algorithm": FrameComparison.algorithm,
-            "sampleIntervalMs": Self.sampleInterval * 1000, "minimumObservationMs": Self.minimumObservationDuration * 1000,
-            "requiredStableMs": Self.stableDuration * 1000, "timeoutMs": Self.timeout * 1000]
+            "sampleIntervalMs": Self.sampleInterval * 1000,
+            "minimumObservationMs": Self.minimumObservationDuration * 1000,
+            "requiredStableMs": Self.stableDuration * 1000, "timeoutMs": Self.timeout * 1000
+        ]
         value["comparison"] = comparison?.result
         value["referenceHash"] = comparisonReferenceHash
         return value

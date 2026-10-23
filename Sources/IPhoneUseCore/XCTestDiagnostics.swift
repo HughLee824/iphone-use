@@ -3,8 +3,10 @@ import Foundation
 // Shared with the device Runner. This is an internal XCTest key, not a public API.
 @MainActor
 enum XCTestDiagnostics {
-    static func withoutAutomaticSpindump<T>(defaults: UserDefaults = .standard,
-                                            _ operation: () throws -> T) rethrows -> T {
+    static func withoutAutomaticSpindump<T>(
+        defaults: UserDefaults = .standard,
+        _ operation: () throws -> T
+    ) rethrows -> T {
         let name = UserDefaults.argumentDomain
         let key = "XCTDisableSpindump"
         var arguments = defaults.volatileDomain(forName: name)

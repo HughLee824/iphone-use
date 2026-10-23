@@ -5,16 +5,21 @@ import ImageIO
 
 final class NativeTextMediaFixtureTests: XCTestCase {
     private let rect = ScreenRect(CGRect(x: 0, y: 0, width: 356, height: 161))
-    private var context: ScreenContext { ScreenContext(screen: rect, scope: rect, orientation: 1, keyboardCount: 0) }
+    private var context: ScreenContext {
+        ScreenContext(screen: rect, scope: rect, orientation: 1, keyboardCount: 0)
+    }
 
     private func fixture(_ name: String) throws -> Data {
-        let url = try XCTUnwrap(Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "Fixtures/NativeText"))
+        let url = try XCTUnwrap(
+            Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "Fixtures/NativeText"))
         return try Data(contentsOf: url)
     }
 
     private func matches(_ name: String, frames: [Data]) throws -> [NativeTextFieldGuard.Match] {
         let guardValue = try NativeTextFieldGuard(png: fixture(name), context: context, field: rect)
-        return try frames.map { guardValue.compare(try guardValue.pixels(png: $0, context: context), caret: nil) }
+        return try frames.map {
+            guardValue.compare(try guardValue.pixels(png: $0, context: context), caret: nil)
+        }
     }
 
     func testRecordedNoiseRetainsAppearanceRulesWithoutImplicitCaretMask() throws {
@@ -35,17 +40,20 @@ final class NativeTextMediaFixtureTests: XCTestCase {
         let image = try ScreenImage(png: png)
         let width = image.image.width, height = image.image.height
         var rgb = try image.rgb(rect: rect, screen: rect, columns: width, rows: height)
-        for y in Int(patch.minY)..<Int(patch.maxY) {
-            for x in Int(patch.minX)..<Int(patch.maxX) {
-                for channel in 0..<3 { rgb[(y * width + x) * 3 + channel] = color }
+        for row in Int(patch.minY)..<Int(patch.maxY) {
+            for column in Int(patch.minX)..<Int(patch.maxX) {
+                for channel in 0..<3 { rgb[(row * width + column) * 3 + channel] = color }
             }
         }
         let provider = try XCTUnwrap(CGDataProvider(data: rgb as CFData))
-        let edited = try XCTUnwrap(CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 24,
-            bytesPerRow: width * 3, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: [],
-            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        let edited = try XCTUnwrap(
+            CGImage(
+                width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 24,
+                bytesPerRow: width * 3, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: [],
+                provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
         let result = NSMutableData()
-        let destination = try XCTUnwrap(CGImageDestinationCreateWithData(result, "public.png" as CFString, 1, nil))
+        let destination = try XCTUnwrap(
+            CGImageDestinationCreateWithData(result, "public.png" as CFString, 1, nil))
         CGImageDestinationAddImage(destination, edited, nil)
         XCTAssertTrue(CGImageDestinationFinalize(destination))
         return result as Data
@@ -61,7 +69,8 @@ final class NativeTextMediaFixtureTests: XCTestCase {
                 (CGRect(x: 450, y: 35, width: 3, height: 45), 0),
                 (CGRect(x: 450, y: 35, width: 1, height: 30), 230),
                 (CGRect(x: 12, y: 20, width: 90, height: 60), 245),
-                (CGRect(x: 450, y: 35, width: 120, height: 45), 150)]
+                (CGRect(x: 450, y: 35, width: 120, height: 45), 150)
+            ]
             for (patch, color) in patches {
                 let changed = try frames.map { try changing($0, patch: patch, color: color) }
                 XCTAssertTrue(try matches("\(prefix)-source", frames: changed).allSatisfy { $0 == .none })

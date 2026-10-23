@@ -14,7 +14,8 @@ struct NativeBoundCaretGuard {
     init(field: NativeTextFieldGuard, caret: ScreenRect, observationID: String) throws {
         let rect = try field.nativeRect(caret)
         guard rect.minX >= 0, rect.maxX <= Double(field.width),
-              rect.minY >= 0, rect.maxY <= Double(field.height) else {
+            rect.minY >= 0, rect.maxY <= Double(field.height)
+        else {
             throw IPhoneUseError("invalid_caret_region", "Caret must be inside the complete input field")
         }
         self.observationID = observationID

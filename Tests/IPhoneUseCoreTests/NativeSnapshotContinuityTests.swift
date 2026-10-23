@@ -11,9 +11,11 @@ final class NativeSnapshotContinuityTests: XCTestCase {
         XCTAssertTrue(recovery.needsRecovery(lost, now: 13))
         // Initial startup, closed/missing sources and quiet healthy frames are
         // not continuity loss and reset the grace period for another stream.
-        for status: [String: Any] in [[:], ["closed": true, "decodedFrames": 10, "waitingForKeyframe": true],
-                                     ["closed": false, "decodedFrames": 0, "waitingForKeyframe": true],
-                                     ["closed": false, "decodedFrames": 10, "waitingForKeyframe": false]] {
+        for status: [String: Any] in [
+            [:], ["closed": true, "decodedFrames": 10, "waitingForKeyframe": true],
+            ["closed": false, "decodedFrames": 0, "waitingForKeyframe": true],
+            ["closed": false, "decodedFrames": 10, "waitingForKeyframe": false]
+        ] {
             XCTAssertFalse(recovery.needsRecovery(status, now: 100))
             XCTAssertFalse(recovery.needsRecovery(lost, now: 101))
             XCTAssertTrue(recovery.needsRecovery(lost, now: 104))
@@ -28,14 +30,17 @@ final class NativeSnapshotContinuityTests: XCTestCase {
         data.append(contentsOf: [type << 1, 1, 1]); return data
     }
     private func idle(_ stream: NativeVideoSnapshot) {
-        let done = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            stream.status()["pendingBytes"] as? Int == 0
-        }, object: nil)
+        let done = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                stream.status()["pendingBytes"] as? Int == 0
+            }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [done], timeout: 2), .completed)
     }
     private func pixels() throws -> NativeDecodedVideoFrame {
         var buffer: CVPixelBuffer?
-        XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 12, 18, kCVPixelFormatType_32BGRA, nil, &buffer), kCVReturnSuccess)
+        XCTAssertEqual(
+            CVPixelBufferCreate(kCFAllocatorDefault, 12, 18, kCVPixelFormatType_32BGRA, nil, &buffer),
+            kCVReturnSuccess)
         return NativeDecodedVideoFrame(pixels: try XCTUnwrap(buffer), nativeWidth: 12, nativeHeight: 18)
     }
     func testCompleteFrameOrientationRejectsStaleHalfTurnWithoutChangingPixels() throws {
@@ -49,9 +54,16 @@ final class NativeSnapshotContinuityTests: XCTestCase {
             return data
         }
         func display(_ rotation: String) throws -> NativeDisplay {
-            try NativeDisplay(["backlightState": "activeOn", "displays": [["primary": true,
-                "displayId": 1, "bounds": [[0, 0], [12, 18]], "pointScale": 1,
-                "currentOrientation": rotation, "nativeOrientation": "rot0"]]])
+            try NativeDisplay([
+                "backlightState": "activeOn",
+                "displays": [
+                    [
+                        "primary": true,
+                        "displayId": 1, "bounds": [[0, 0], [12, 18]], "pointScale": 1,
+                        "currentOrientation": rotation, "nativeOrientation": "rot0"
+                    ]
+                ]
+            ])
         }
         stream.receive(oriented(1, profile: 0x93), at: ProcessInfo.processInfo.systemUptime)
         idle(stream)
@@ -65,13 +77,17 @@ final class NativeSnapshotContinuityTests: XCTestCase {
         XCTAssertThrowsError(try stream.rejectConflictingGeometry(left)) {
             XCTAssertEqual(($0 as? IPhoneUseError)?.code, "native_snapshot_geometry_unavailable")
         }
-        XCTAssertThrowsError(try NativePreview.encode(frame, display: left), "Do not publish an inverted preview frame")
+        XCTAssertThrowsError(
+            try NativePreview.encode(frame, display: left), "Do not publish an inverted preview frame")
         XCTAssertNoThrow(try stream.rejectConflictingGeometry(right))
         // Quiet retained frames are only conflict evidence, never fresh input.
-        XCTAssertFalse(NativeVideoSnapshot.isFresh(frame, after: frame.completedAt + 1, now: frame.completedAt + 2))
-        let cli = AppleDeviceCLI(device: "test", cancellation: NativeCancellation(), reader: { _ in
-            XCTFail("Recognized frame geometry must not take periodic Apple PNGs"); return [:]
-        })
+        XCTAssertFalse(
+            NativeVideoSnapshot.isFresh(frame, after: frame.completedAt + 1, now: frame.completedAt + 2))
+        let cli = AppleDeviceCLI(
+            device: "test", cancellation: NativeCancellation(),
+            reader: { _ in
+                XCTFail("Recognized frame geometry must not take periodic Apple PNGs"); return [:]
+            })
         let orientation = NativePreviewOrientation()
         XCTAssertTrue(try orientation.needsRefresh(cli: cli, snapshots: stream, display: left))
         XCTAssertFalse(try orientation.needsRefresh(cli: cli, snapshots: stream, display: right))
@@ -83,10 +99,11 @@ final class NativeSnapshotContinuityTests: XCTestCase {
     func testTimingDistinguishesQueuedPacketsFromSlowDecode() throws {
         let pixel = try pixels(), entered = expectation(description: "decoder entered")
         let release = DispatchSemaphore(value: 0)
-        let stream = NativeVideoSnapshot(decode: { unit in
-            if unit.timestamp == 1 { entered.fulfill(); _ = release.wait(timeout: .now() + 3) }
-            return pixel
-        }, resetDecoder: {})
+        let stream = NativeVideoSnapshot(
+            decode: { unit in
+                if unit.timestamp == 1 { entered.fulfill(); _ = release.wait(timeout: .now() + 3) }
+                return pixel
+            }, resetDecoder: {})
         defer { release.signal(); stream.close() }
         stream.receive(packet(1, timestamp: 1), at: ProcessInfo.processInfo.systemUptime)
         wait(for: [entered], timeout: 2)
@@ -106,7 +123,10 @@ final class NativeSnapshotContinuityTests: XCTestCase {
     func testTimestampRejectionInvalidatesLatestAndRequiresKeyframeBeforeDecodingAgain() throws {
         let pixel = try pixels()
         var timestamps: [UInt32] = [], resets = 0
-        let stream = NativeVideoSnapshot(decode: { timestamps.append($0.timestamp); return pixel }, resetDecoder: { resets += 1 })
+        let stream = NativeVideoSnapshot(
+            decode: {
+                timestamps.append($0.timestamp); return pixel
+            }, resetDecoder: { resets += 1 })
         defer { stream.close() }
         let start = ProcessInfo.processInfo.systemUptime
         stream.receive(packet(1, timestamp: 10), at: start)
@@ -128,13 +148,17 @@ final class NativeSnapshotContinuityTests: XCTestCase {
     func testCrossUnitPacketLossClearsLatestAndDoesNotDecodeDamagedIDR() throws {
         let pixel = try pixels()
         var timestamps: [UInt32] = []
-        let stream = NativeVideoSnapshot(decode: { timestamps.append($0.timestamp); return pixel }, resetDecoder: {})
+        let stream = NativeVideoSnapshot(
+            decode: {
+                timestamps.append($0.timestamp); return pixel
+            }, resetDecoder: {})
         defer { stream.close() }
         let start = ProcessInfo.processInfo.systemUptime
         stream.receive(packet(1, timestamp: 1), at: start)
         XCTAssertNotNil(try stream.frame(after: start, timeout: 0.4, cancellation: NativeCancellation()))
         idle(stream)
-        stream.receive(packet(2, timestamp: 2, type: 1, marker: false), at: ProcessInfo.processInfo.systemUptime)
+        stream.receive(
+            packet(2, timestamp: 2, type: 1, marker: false), at: ProcessInfo.processInfo.systemUptime)
         idle(stream)
         stream.receive(packet(4, timestamp: 3), at: ProcessInfo.processInfo.systemUptime)
         idle(stream)
@@ -150,13 +174,28 @@ final class NativeSnapshotContinuityTests: XCTestCase {
     func testTimestampWrapAndParameterOnlyUnitsDoNotBreakHealthyChain() throws {
         let pixel = try pixels()
         var video: [UInt32] = [], resets = 0
-        let stream = NativeVideoSnapshot(decode: { unit in
-            guard unit.nals.contains(where: { ($0[0] >> 1) & 63 <= 31 }) else { return nil }
-            video.append(unit.timestamp); return pixel
-        }, resetDecoder: { resets += 1 })
+        let stream = NativeVideoSnapshot(
+            decode: { unit in
+                guard unit.nals.contains(where: { ($0[0] >> 1) & 63 <= 31 }) else { return nil }
+                video.append(unit.timestamp); return pixel
+            }, resetDecoder: { resets += 1 })
         defer { stream.close() }
-        for (sequence, timestamp, type): (UInt16, UInt32, UInt8) in [(1, .max - 1, 20), (2, .max - 1, 32), (3, 2, 1)] {
-            stream.receive(packet(sequence, timestamp: timestamp, type: type), at: ProcessInfo.processInfo.systemUptime)
+        struct VideoPacket {
+            let sequence: UInt16
+            let timestamp: UInt32
+            let type: UInt8
+        }
+        for sample in [
+            .init(sequence: 1, timestamp: .max - 1, type: 20),
+            .init(sequence: 2, timestamp: .max - 1, type: 32),
+            .init(sequence: 3, timestamp: 2, type: 1)
+        ] as [VideoPacket] {
+            let sequence = sample.sequence
+            let timestamp = sample.timestamp
+            let type = sample.type
+
+            stream.receive(
+                packet(sequence, timestamp: timestamp, type: type), at: ProcessInfo.processInfo.systemUptime)
             idle(stream)
         }
         XCTAssertEqual(video, [.max - 1, 2])
@@ -166,10 +205,11 @@ final class NativeSnapshotContinuityTests: XCTestCase {
     func testWithheldPictureClearsOldPixelsAndStillAdvancesTimestamp() throws {
         let pixel = try pixels()
         var video: [UInt32] = []
-        let stream = NativeVideoSnapshot(decode: { unit in
-            video.append(unit.timestamp)
-            return unit.timestamp == 2 ? nil : pixel
-        }, resetDecoder: {})
+        let stream = NativeVideoSnapshot(
+            decode: { unit in
+                video.append(unit.timestamp)
+                return unit.timestamp == 2 ? nil : pixel
+            }, resetDecoder: {})
         defer { stream.close() }
         let start = ProcessInfo.processInfo.systemUptime
         stream.receive(packet(1, timestamp: 1), at: start)

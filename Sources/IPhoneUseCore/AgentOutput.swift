@@ -11,13 +11,17 @@ public enum AgentOutput {
             // A unique private directory avoids sharing receipts across users or
             // following an existing path. Receipts outlive session disconnect.
             let folder = directory.appendingPathComponent("iphone-use-receipt-" + UUID().uuidString)
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false,
-                                                    attributes: [.posixPermissions: 0o700])
+            try FileManager.default.createDirectory(
+                at: folder, withIntermediateDirectories: false,
+                attributes: [.posixPermissions: 0o700])
             let path = folder.appendingPathComponent("response.json")
             do {
                 let data = try jsonData(response)
-                guard FileManager.default.createFile(atPath: path.path, contents: data,
-                                                      attributes: [.posixPermissions: 0o600]) else {
+                guard
+                    FileManager.default.createFile(
+                        atPath: path.path, contents: data,
+                        attributes: [.posixPermissions: 0o600])
+                else {
                     throw IPhoneUseError("receipt_write_failed", "Could not save the complete response")
                 }
             } catch {
@@ -39,20 +43,7 @@ public enum AgentOutput {
         var result = response
         var action = response["action"] as? [String: Any] ?? response
         var details = action["result"] as? [String: Any] ?? [:]
-        let checks = details["preInputChecks"] as? [[String: Any]] ?? []
-        // Keep one final result per stage, rather than repeating media samples
-        // and transport timings. Full diagnostics remain in the receipt.
-        var stages: [[String: Any]] = []
-        for check in checks {
-            let stage = check["stage"] as? String ?? "unspecified"
-            stages.removeAll { $0["stage"] as? String == stage }
-            var entry = check.filter { ["stage", "attempt", "inTime", "elapsedMs", "preparationMs", "validationAndCheckMs", "captureError", "captureDiagnostics", "phase"].contains($0.key) }
-            if let guardValue = check["screenGuard"] as? [String: Any] {
-                entry["comparison"] = comparison(guardValue)
-            }
-            entry["recoveryTrigger"] = (check["orientationRecovery"] as? [String: Any])?["trigger"]
-            stages.append(entry)
-        }
+        let stages = preflightStages(details)
         details.removeValue(forKey: "preInputChecks")
         action["result"] = details
         let observation = response["observation"] as? [String: Any] ?? action["observation"] as? [String: Any]
@@ -70,34 +61,114 @@ public enum AgentOutput {
         if let guardValue = details["screenGuard"] as? [String: Any] {
             summary["comparison"] = comparison(guardValue)
         }
+        addRecoveryHint(to: &summary, action: action, details: details)
+        summary["preInputDeadlineExceeded"] = details["preInputDeadlineExceeded"]
+        summary["pasteboard"] = details["pasteboard"]
+        summary["pasteboardRestoreAcknowledged"] = details["pasteboardRestoreAcknowledged"]
+        addNextStep(to: &summary, action: action, details: details, observation: observation)
+        result["agentSummary"] = summary
+        return result
+    }
+
+    private static func preflightStages(_ details: [String: Any]) -> [[String: Any]] {
+        let checks = details["preInputChecks"] as? [[String: Any]] ?? []
+        // Keep one final result per stage, rather than repeating media samples
+        // and transport timings. Full diagnostics remain in the receipt.
+        var stages: [[String: Any]] = []
+        for check in checks {
+            let stage = check["stage"] as? String ?? "unspecified"
+            stages.removeAll { $0["stage"] as? String == stage }
+            var entry = check.filter {
+                [
+                    "stage", "attempt", "inTime", "elapsedMs", "preparationMs", "validationAndCheckMs",
+                    "captureError",
+                    "captureDiagnostics", "phase"
+                ].contains($0.key)
+            }
+            if let guardValue = check["screenGuard"] as? [String: Any] {
+                entry["comparison"] = comparison(guardValue)
+            }
+            entry["recoveryTrigger"] = (check["orientationRecovery"] as? [String: Any])?["trigger"]
+            stages.append(entry)
+        }
+        return stages
+    }
+
+    private static func addRecoveryHint(
+        to summary: inout [String: Any], action: [String: Any], details: [String: Any]
+    ) {
         let errorCode = (action["error"] as? [String: Any])?["code"] as? String
         let mismatches = (summary["comparison"] as? [String: Any])?["mismatches"] as? [String] ?? []
         if action["outcome"] as? String == "not_dispatched" {
             if ["dynamic_target_unusable", "dynamic_anchor_unusable"].contains(errorCode ?? "") {
-                summary["recoveryHint"] = "Input was not sent: dynamic baseline preparation failed, before live screen comparison. Inspect screenGuardPreparation (component, rectangle in screen_points) and the current image. Check the dimensions of the image actually viewed, map its coordinates to screen points, and tightly bound the complete visible target or a separate recognizable page landmark. A local crop may help, but account for its origin and scale. Do not merely refresh the observation and reuse unchanged rectangles, run input probes, or loosen thresholds. Make at most one corrected attempt only with new visual evidence; otherwise report the blocker."
-            } else if details["preInputDeadlineExceeded"] as? Bool == true || errorCode == "input_preflight_timeout" {
-                summary["recoveryHint"] = "Input was not sent because execution-time validation exceeded its budget, not because the Agent took too long to think. Inspect the current observation and timing diagnostics; do not loop on an unchanged timeout."
+                summary["recoveryHint"] =
+                    """
+                    Input was not sent: dynamic baseline preparation failed, before live screen comparison.\
+                     Inspect screenGuardPreparation (component, rectangle in screen_points) and the current\
+                     image. Check the dimensions of the image actually viewed, map its coordinates to screen\
+                     points, and tightly bound the complete visible target or a separate recognizable page\
+                     landmark. A local crop may help, but account for its origin and scale. Do not merely\
+                     refresh the observation and reuse unchanged rectangles, run input probes, or loosen\
+                     thresholds. Make at most one corrected attempt only with new visual evidence; otherwise\
+                     report the blocker.
+                    """
+            } else if details["preInputDeadlineExceeded"] as? Bool == true
+                || errorCode == "input_preflight_timeout" {
+                summary["recoveryHint"] =
+                    """
+                    Input was not sent because execution-time validation exceeded its budget, not because the\
+                     Agent took too long to think. Inspect the current observation and timing diagnostics; do\
+                     not loop on an unchanged timeout.
+                    """
             } else if ["stale_observation", "screen_changed"].contains(errorCode ?? ""), !mismatches.isEmpty {
-                if (summary["comparison"] as? [String: Any])?["validationScope"] as? String == "explicit_target_and_anchor" {
-                    summary["recoveryHint"] = "Input was not sent because the dynamic target or page anchor did not match. Inspect the attached current image and dynamicMatches (target, anchor). Re-select tight bounds only if the same safe control and recognizable page landmark are visibly intact; otherwise re-plan or report the blocker. Do not loosen thresholds or repeat unchanged rectangles."
+                if (summary["comparison"] as? [String: Any])?["validationScope"] as? String
+                    == "explicit_target_and_anchor" {
+                    summary["recoveryHint"] =
+                        """
+                        Input was not sent because the dynamic target or page anchor did not match. Inspect\
+                         the attached current image and dynamicMatches (target, anchor). Re-select tight\
+                         bounds only if the same safe control and recognizable page landmark are visibly\
+                         intact; otherwise re-plan or report the blocker. Do not loosen thresholds or repeat\
+                         unchanged rectangles.
+                        """
                 } else {
-                    summary["recoveryHint"] = "Input was not sent because the screen comparison failed. Inspect the attached current image; a new observation ID alone does not fix continuous motion. Only for a visually identified video, consider a coordinate tap with --dynamic-target and --dynamic-anchor for a visible safe control and a separate recognizable page landmark (target <=96x96 points, anchor <=256x96, non-overlapping, default thresholds, no ignore/protect options; not submissions, purchases or destructive actions). Alternatively, --ignore-rect may cover at most 25% of screen outside the gesture path and protected neighborhoods. If neither scoped method applies, re-plan or report the blocker; do not repeat the same failing strategy."
+                    summary["recoveryHint"] =
+                        """
+                        Input was not sent because the screen comparison failed. Inspect the attached current\
+                         image; a new observation ID alone does not fix continuous motion. Only for a visually\
+                         identified video, consider a coordinate tap with --dynamic-target and\
+                         --dynamic-anchor for a visible safe control and a separate recognizable page landmark\
+                         (target <=96x96 points, anchor <=256x96, non-overlapping, default thresholds, no\
+                         ignore/protect options; not submissions, purchases or destructive actions).\
+                         Alternatively, --ignore-rect may cover at most 25% of screen outside the gesture path\
+                         and protected neighborhoods. If neither scoped method applies, re-plan or report the\
+                         blocker; do not repeat the same failing strategy.
+                        """
                 }
             }
         }
-        summary["preInputDeadlineExceeded"] = details["preInputDeadlineExceeded"]
-        summary["pasteboard"] = details["pasteboard"]
-        summary["pasteboardRestoreAcknowledged"] = details["pasteboardRestoreAcknowledged"]
+    }
+
+    private static func addNextStep(
+        to summary: inout [String: Any], action: [String: Any],
+        details: [String: Any], observation: [String: Any]?
+    ) {
         let stability = observation?["stability"] as? [String: Any]
         summary["postActionStability"] = stability
         if stability?["stable"] as? Bool == false {
             summary["nextStep"] = "inspect_unstable_observation_do_not_replay"
             if summary["recoveryHint"] == nil {
-                summary["recoveryHint"] = "The returned image did not settle; this does not mean input failed. Inspect it for the actual result, a dialog or continuous motion before choosing the next action. Do not resend input or keep capturing in the hope that a playing video becomes static."
+                summary["recoveryHint"] =
+                    """
+                    The returned image did not settle; this does not mean input failed. Inspect it for the\
+                     actual result, a dialog or continuous motion before choosing the next action. Do not\
+                     resend input or keep capturing in the hope that a playing video becomes static.
+                    """
             }
         } else if observation?["ok"] as? Bool == true {
             summary["nextStep"] = "inspect_attached_observation"
-        } else if action["requiresObservation"] as? Bool == true || ["unknown", "completed"].contains(action["outcome"] as? String ?? "") {
+        } else if action["requiresObservation"] as? Bool == true
+            || ["unknown", "completed"].contains(action["outcome"] as? String ?? "") {
             summary["nextStep"] = "observe_before_next_input"
         } else {
             summary["nextStep"] = "follow_error_and_reference_validity"
@@ -106,13 +177,17 @@ public enum AgentOutput {
             summary["nextStep"] = "inspect_then_touch_paste_and_verify_before_text_finish"
             summary["textInserted"] = false
         }
-        result["agentSummary"] = summary
-        return result
     }
 
     private static func comparison(_ check: [String: Any]) -> [String: Any] {
-        var result = check.filter { ["accepted", "algorithm", "validationScope", "dynamicMatches", "screenChange", "maxScreenChange", "regionChanges",
-                                    "maxRegionChange", "ignoredRect", "caretRect", "caretExclusionRect", "caretObservationID"].contains($0.key) }
+        var result = check.filter {
+            [
+                "accepted", "algorithm", "validationScope", "dynamicMatches", "screenChange",
+                "maxScreenChange",
+                "regionChanges",
+                "maxRegionChange", "ignoredRect", "caretRect", "caretExclusionRect", "caretObservationID"
+            ].contains($0.key)
+        }
         // In explicit dynamic scope, whole-screen motion is diagnostic only.
         // Match the guard's target/anchor decision instead of applying global thresholds again.
         if check["validationScope"] as? String == "explicit_target_and_anchor" {
@@ -131,16 +206,23 @@ public enum AgentOutput {
         let temporal = check["fieldTemporalMatch"] as? Bool == true
         let appearance = check["fieldAppearanceMatch"] as? Bool == true
         if let pixels = check["fieldPixelsMatch"] as? Bool {
-            result["fieldMatch"] = caret ? "caret" : temporal ? "temporal" : (appearance ? "appearance" : (pixels ? "pixels" : "different"))
+            result["fieldMatch"] =
+                caret
+                ? "caret"
+                : temporal ? "temporal" : (appearance ? "appearance" : (pixels ? "pixels" : "different"))
         }
         var reasons: [String] = []
-        if let change = check["screenChange"] as? Double, let limit = check["maxScreenChange"] as? Double, change > limit {
+        if let change = check["screenChange"] as? Double, let limit = check["maxScreenChange"] as? Double,
+            change > limit {
             reasons.append("screen_changed")
         }
         if !caret && !temporal && !appearance {
             if check["fieldPixelsMatch"] as? Bool == false { reasons.append("field_changed") }
-            if let regions = check["regionChanges"] as? [Double], let limit = check["maxRegionChange"] as? Double,
-               regions.contains(where: { $0 > limit }) { reasons.append("protected_region_changed") }
+            if let regions = check["regionChanges"] as? [Double],
+                let limit = check["maxRegionChange"] as? Double,
+                regions.contains(where: { $0 > limit }) {
+                reasons.append("protected_region_changed")
+            }
         }
         result["mismatches"] = reasons
         return result

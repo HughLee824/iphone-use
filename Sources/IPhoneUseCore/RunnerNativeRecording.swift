@@ -8,14 +8,18 @@ struct RunnerPreviewGeometry {
 
     func conflicts(with display: NativeDisplay) -> Bool {
         let sideways = orientation == 6 || orientation == 8
-        if (sideways ? height : width) != Int(display.pixelWidth) ||
-            (sideways ? width : height) != Int(display.pixelHeight) { return true }
+        if (sideways ? height : width) != Int(display.pixelWidth)
+            || (sideways ? width : height) != Int(display.pixelHeight) {
+            return true
+        }
         let displaySideways = display.rotation == "rot90" || display.rotation == "rot270"
         let nativeWidth = Int(displaySideways ? display.pixelHeight : display.pixelWidth)
         let nativeHeight = Int(displaySideways ? display.pixelWidth : display.pixelHeight)
         // A provider may bake the rotation into its pixels. Do not interpret
         // an upright tag as portrait unless the raw pixels use native axes.
-        guard display.nativeRotation == "rot0", width == nativeWidth, height == nativeHeight else { return false }
+        guard display.nativeRotation == "rot0", width == nativeWidth, height == nativeHeight else {
+            return false
+        }
         return [1: "rot0", 3: "rot180", 6: "rot90", 8: "rot270"][orientation] != display.rotation
     }
 }
@@ -43,132 +47,6 @@ extension RunnerRecordingConnection {
     func refreshPreview() throws { try verifyDisplay() }
 }
 
-// A display-only connection inside the existing device-lock owner. No
-// AppleDeviceBackend, second control session, HID preparation or XCTest input.
-private final class RunnerMediaConnection: RunnerRecordingConnection {
-    private let previewOrientation = NativePreviewOrientation()
-    private let cli: AppleDeviceCLI
-    private let cancellation: NativeCancellation
-    private var tunnel: ASPairedTunnel?
-    private var transport: NativeTransport?
-    private var media: NativeDisplayMediaSession?
-    private var display: NativeDisplay?
-    private(set) var previewDevice = NativePreviewDevice.unknown
-    private var receiver: NativeRTPReceiver?
-    private var cleanup: [String: Any]?
-    private(set) var previewRefreshReason = "none"
-    var source: NativeRecordingSource { receiver! } // Only returned after prepare succeeds.
-    var sessionID: String { media!.health()["mediaSessionID"] as! String }
-    var rotation: String { display!.rotation }
-    var previewReceiver: NativeRTPReceiver? { media?.recordingReceiver }
-    var previewDisplay: NativeDisplay? { display }
-
-    private init(device: String, cancellation: NativeCancellation) {
-        self.cancellation = cancellation
-        cli = AppleDeviceCLI(device: device, cancellation: cancellation)
-    }
-
-    static func open(device: String, cancellation: NativeCancellation) throws -> RunnerRecordingConnection {
-        let connection = RunnerMediaConnection(device: device, cancellation: cancellation)
-        do { try connection.prepare(); return connection }
-        catch {
-            var cleanup = connection.close()
-            if (error as NSError).userInfo["tunnelReleaseAcknowledged"] as? Bool == false {
-                cleanup["tunnelReleaseAcknowledged"] = false
-            }
-            // A possibly-created stream is never restarted automatically. Retain
-            // cleanup evidence even when the recording writer was never started.
-            throw ActionFailure(code: (error as? IPhoneUseError)?.code ?? "native_recording_unavailable",
-                description: String(describing: error),
-                possiblyExecuted: cleanup["mediaStopAcknowledged"] as? Bool != true ||
-                    cleanup["tunnelReleaseAcknowledged"] as? Bool != true || (error as? TransportError)?.possiblySent == true,
-                requiresObservation: true, result: ["recordingCleanup": cleanup])
-        }
-    }
-
-    private func prepare() throws {
-        let details = try cli.read(["device", "info", "details"])
-        previewDevice = NativePreviewDevice(details: details)
-        guard let hardware = details["hardwareProperties"] as? [String: Any], hardware["reality"] as? String == "physical",
-              let udid = hardware["udid"] as? String, udid == cli.device,
-              let properties = details["deviceProperties"] as? [String: Any], properties["developerModeStatus"] as? String == "enabled",
-              ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 27,
-              (properties["osVersionNumber"] as? String)?.hasPrefix("27.") == true,
-              let connection = details["connectionProperties"] as? [String: Any], connection["pairingState"] as? String == "paired",
-              let address = connection["tunnelIPAddress"] as? String, let identifier = details["identifier"] as? String else {
-            throw IPhoneUseError("native_recording_unavailable", "Recording requires a paired physical iPhone with Developer Mode on macOS/iOS 27")
-        }
-        guard try cli.read(["device", "info", "lockState"])["passcodeRequired"] as? Bool == false else {
-            throw IPhoneUseError("device_locked", "Unlock the iPhone before recording")
-        }
-        let display = try cli.display()
-        guard display.nativeRotation == "rot0", NativeVideoOrientation(rawValue: display.rotation) != nil else {
-            throw IPhoneUseError("native_recording_orientation_unsupported", "Need a verified native portrait display axis")
-        }
-        self.display = display
-        let paired = try ASPairedTunnel(udid: udid, deviceIdentifier: identifier, endpointInventory: nil)
-        tunnel = paired
-        guard paired.deviceAddress == address else { throw IPhoneUseError("native_device_mismatch", "Paired tunnel changed; reconnect explicitly") }
-        let transport = try AppleServiceTransport(tunnel: paired, service: "com.apple.coredevice.displayservice")
-        self.transport = transport
-        let media = try NativeMediaFactory.make(transport: transport, identifier: identifier, address: address, cancellation: cancellation, captureSnapshots: true)
-        self.media = media
-        // This connection is created only for an explicit media request, so
-        // its first stream is already fresh; no initial replacement is necessary.
-        try media.ensureDisplay(display, mayReplace: true)
-        guard let receiver = media.recordingReceiver else { throw IPhoneUseError("native_recording_unavailable", "No owned receiver") }
-        self.receiver = receiver
-        let deadline = ProcessInfo.processInfo.systemUptime + 3
-        while receiver.recordingConfiguration()["RTPClockRate"] == nil, ProcessInfo.processInfo.systemUptime < deadline {
-            try cancellation.check(); Thread.sleep(forTimeInterval: 0.05)
-        }
-        let current = try NativeCaptureChecks.read(requireBacklight: false) { try self.cli.read($0) }.display
-        guard current.geometry == display.geometry else {
-            throw IPhoneUseError("display_changed", "Display geometry changed while preparing video")
-        }
-    }
-
-    func verifyDisplay() throws {
-        try cancellation.check()
-        guard try cli.read(["device", "info", "lockState"])["passcodeRequired"] as? Bool == false else {
-            throw IPhoneUseError("device_locked", "Device locked during recording")
-        }
-        let current = try cli.display()
-        guard current.backlightOn else { throw IPhoneUseError("capture_unavailable", "Wake the display before recording") }
-        guard current == display else { throw IPhoneUseError("display_changed", "Display changed during recording") }
-    }
-
-    func previewNeedsRefresh() throws -> Bool {
-        let current = try NativeCaptureChecks.read(requireBacklight: false) { try self.cli.read($0, timeout: 3) }.display
-        guard media?.health()["healthy"] as? Bool == true else {
-            throw IPhoneUseError("native_media_unhealthy", "Preview media connection lost")
-        }
-        if current.geometry != display?.geometry { previewRefreshReason = "display_metadata_changed"; return true }
-        do { try media?.recordingReceiver?.snapshots?.rejectConflictingGeometry(current) }
-        catch { previewRefreshReason = "frame_geometry_conflict: \(error)"; return true }
-        let changed = try previewOrientation.needsRefresh(cli: cli, snapshots: media?.recordingReceiver?.snapshots, display: current)
-        previewRefreshReason = changed ? "frame_rotation_conflict" : "none"
-        return changed
-    }
-    func refreshPreview() throws {
-        guard let media else { throw IPhoneUseError("preview_unavailable", "Media is unavailable") }
-        try media.resynchronizeOrientation(mayReplace: true, check: { try self.cancellation.check() }) {
-            try NativeCaptureChecks.read(requireBacklight: false) { try self.cli.read($0, timeout: 3) }.display
-        }
-        display = media.boundDisplay; receiver = media.recordingReceiver
-    }
-
-    func close() -> [String: Any] {
-        if let cleanup { return cleanup }
-        var result = media?.close() ?? ["mediaStopAcknowledged": true, "receiverClosed": true]
-        transport?.cancel(); transport = nil
-        result["tunnelReleaseAcknowledged"] = tunnel?.close() ?? true
-        tunnel = nil
-        cleanup = result
-        return result
-    }
-}
-
 // Calls are serialized on SessionHost's work queue. The shared recording sink
 // owns its timer/packet queue; signal cancellation only flips a thread-safe flag.
 final class RunnerNativeRecording {
@@ -189,32 +67,46 @@ final class RunnerNativeRecording {
     private let previewContinuity = NativePreviewContinuity()
     private let previewEventsURL: URL
     var previewStatus: [String: Any] {
-        var result = preview?.status() ?? ["state": failure == nil ? "stopped" : "failed", "error": failure as Any? ?? NSNull()]
+        var result =
+            preview?.status() ?? [
+                "state": failure == nil ? "stopped" : "failed", "error": failure as Any? ?? NSNull()
+            ]
         result["independentOrientationConflicts"] = independentOrientationConflicts
         return result
     }
 
-    init(root: URL, cancellation: NativeCancellation,
-         previewDevice: NativePreviewDevice = .unknown,
-         previewGeometry: (() throws -> RunnerPreviewGeometry)? = nil,
-         connect: @escaping () throws -> RunnerRecordingConnection) {
+    init(
+        root: URL, cancellation: NativeCancellation,
+        previewDevice: NativePreviewDevice = .unknown,
+        previewGeometry: (() throws -> RunnerPreviewGeometry)? = nil,
+        connect: @escaping () throws -> RunnerRecordingConnection
+    ) {
         previewEventsURL = root.deletingLastPathComponent().appendingPathComponent("preview-events.jsonl")
-        recording = NativeStreamRecording(root: root); self.cancellation = cancellation; self.connect = connect
+        recording = NativeStreamRecording(root: root); self.cancellation = cancellation
+        self.connect = connect
         self.previewGeometry = previewGeometry
         self.previewDevice = previewDevice
     }
-    convenience init(device: String, root: URL, cancellation: NativeCancellation,
-                     previewDevice: NativePreviewDevice,
-                     previewGeometry: @escaping () throws -> RunnerPreviewGeometry) {
-        self.init(root: root, cancellation: cancellation, previewDevice: previewDevice, previewGeometry: previewGeometry,
-                  connect: { try RunnerMediaConnection.open(device: device, cancellation: cancellation) })
+    convenience init(
+        device: String, root: URL, cancellation: NativeCancellation,
+        previewDevice: NativePreviewDevice,
+        previewGeometry: @escaping () throws -> RunnerPreviewGeometry
+    ) {
+        self.init(
+            root: root, cancellation: cancellation, previewDevice: previewDevice,
+            previewGeometry: previewGeometry,
+            connect: { try RunnerMediaConnection.open(device: device, cancellation: cancellation) })
     }
 
     func start(duration: Double) throws -> [String: Any] {
         _ = try NativeRecordingOptions.duration(["duration": duration])
         try cancellation.check()
-        guard !closed, failure == nil else { throw IPhoneUseError("recording_reconnect_required", failure ?? "Recorder closed") }
-        guard !recording.isActive else { throw IPhoneUseError("recording_busy", "A recording is already active") }
+        guard !closed, failure == nil else {
+            throw IPhoneUseError("recording_reconnect_required", failure ?? "Recorder closed")
+        }
+        guard !recording.isActive else {
+            throw IPhoneUseError("recording_busy", "A recording is already active")
+        }
         if preview == nil { releaseMedia() }
         guard failure == nil else { throw IPhoneUseError("recording_reconnect_required", failure!) }
         currentRecordingID = nil
@@ -222,7 +114,10 @@ final class RunnerNativeRecording {
             let media = try connection ?? connect(); connection = media
             try media.verifyDisplay()
             try cancellation.check()
-            let result = try recording.start(duration: duration, receiver: media.source, mediaID: media.sessionID, rotation: media.rotation, snapshots: preview == nil ? nil : media.previewReceiver?.snapshots)
+            let result = try recording.start(
+                duration: duration, receiver: media.source, mediaID: media.sessionID,
+                rotation: media.rotation,
+                snapshots: preview == nil ? nil : media.previewReceiver?.snapshots)
             currentRecordingID = result["recordingID"] as? String
             return result
         } catch {
@@ -230,14 +125,16 @@ final class RunnerNativeRecording {
             // recording clock. This pre-writer rejection must not tear down a
             // healthy shared preview or poison its next explicit recording.
             if (error as? IPhoneUseError)?.code == "native_recording_format_unavailable",
-               preview != nil, !recording.isActive,
-               connection?.source.health()["healthy"] as? Bool == true {
+                preview != nil, !recording.isActive,
+                connection?.source.health()["healthy"] as? Bool == true {
                 throw error
             }
             failure = String(describing: error)
             preview?.suspend(failure!); preview?.close(); preview = nil
             releaseMedia()
-            if let facts = (error as? ActionFailure)?.result?["recordingCleanup"] as? [String: Any] { cleanup = facts }
+            if let facts = (error as? ActionFailure)?.result?["recordingCleanup"] as? [String: Any] {
+                cleanup = facts
+            }
             throw error
         }
     }
@@ -250,9 +147,12 @@ final class RunnerNativeRecording {
         result["mediaCleanup"] = ownedCleanup
         result["mediaRetainedForPreview"] = preview != nil && connection != nil
         if !ownedCleanup.isEmpty,
-           ownedCleanup["mediaStopAcknowledged"] as? Bool != true || ownedCleanup["tunnelReleaseAcknowledged"] as? Bool != true {
-            throw ActionFailure(code: "recording_cleanup_unconfirmed", description: "File stopped, but owned media cleanup was not confirmed",
-                                possiblyExecuted: true, requiresObservation: true, result: result)
+            ownedCleanup["mediaStopAcknowledged"] as? Bool != true
+                || ownedCleanup["tunnelReleaseAcknowledged"] as? Bool != true {
+            throw ActionFailure(
+                code: "recording_cleanup_unconfirmed",
+                description: "File stopped, but owned media cleanup was not confirmed",
+                possiblyExecuted: true, requiresObservation: true, result: result)
         }
         return result
     }
@@ -260,8 +160,7 @@ final class RunnerNativeRecording {
     func checkDisplay() {
         if preview != nil { _ = previewTick(); return }
         if recording.isActive, let connection {
-            do { try connection.verifyDisplay() }
-            catch {
+            do { try connection.verifyDisplay() } catch {
                 let reason = (error as? IPhoneUseError)?.code ?? "display_unavailable"
                 recording.endSegment(reason: reason)
             }
@@ -282,7 +181,8 @@ final class RunnerNativeRecording {
         guard let connection else { return }
         cleanup = connection.close(); self.connection = nil
         if let currentRecordingID { cleanupByRecordingID[currentRecordingID] = cleanup }
-        if cleanup["mediaStopAcknowledged"] as? Bool != true || cleanup["tunnelReleaseAcknowledged"] as? Bool != true {
+        if cleanup["mediaStopAcknowledged"] as? Bool != true
+            || cleanup["tunnelReleaseAcknowledged"] as? Bool != true {
             failure = "Owned recording media cleanup was not confirmed; reconnect explicitly"
         }
     }
@@ -291,14 +191,19 @@ final class RunnerNativeRecording {
     var previewGestureRotation: String? { preview?.gestureRotation }
     func reservePreview(options: NativePreviewOptions) throws -> [String: Any] {
         if let preview { return try preview.status(for: options) }
-        let preview = try NativePreview(port: options.port, device: connection?.previewDevice ?? previewDevice,
-                                        connectionStatus: connectionStatus)
+        let preview = try NativePreview(
+            port: options.port, device: connection?.previewDevice ?? previewDevice,
+            connectionStatus: connectionStatus)
         self.preview = preview
         return preview.status()
     }
-    func startPreview(options: NativePreviewOptions = NativePreviewOptions(), duringStartup: Bool = false) throws -> [String: Any] {
+    func startPreview(options: NativePreviewOptions = NativePreviewOptions(), duringStartup: Bool = false)
+        throws
+        -> [String: Any] {
         try cancellation.check()
-        guard !closed, failure == nil else { throw IPhoneUseError("preview_unavailable", failure ?? "Connection closed") }
+        guard !closed, failure == nil else {
+            throw IPhoneUseError("preview_unavailable", failure ?? "Connection closed")
+        }
         if let preview, connection != nil { return try preview.status(for: options) }
         // Reserve the HTTP port before touching media. A collision must not
         // poison this owner or interrupt an existing recording.
@@ -310,8 +215,11 @@ final class RunnerNativeRecording {
         } catch {
             // Video readiness and Runner authorization are independent. Keep
             // the startup page and its diagnostics when media is unavailable.
-            if duringStartup { self.preview?.suspend(String(describing: error)) }
-            else { self.preview?.close(); self.preview = nil }
+            if duringStartup {
+                self.preview?.suspend(String(describing: error))
+            } else {
+                self.preview?.close(); self.preview = nil
+            }
             if !recording.isActive { releaseMedia() }
             failure = String(describing: error)
             if duringStartup {
@@ -337,7 +245,8 @@ final class RunnerNativeRecording {
         guard let preview, let connection, !closed, !cancellation.isCancelled else { return false }
         var checkingDisplay = true
         do {
-            let recovery = previewContinuity.needsRecovery(connection.previewReceiver?.snapshots?.status() ?? [:])
+            let recovery = previewContinuity.needsRecovery(
+                connection.previewReceiver?.snapshots?.status() ?? [:])
             var changed = recovery
             var reason = recovery ? "decoder_continuity_lost" : "none"
             if !changed {
@@ -357,18 +266,14 @@ final class RunnerNativeRecording {
                 preview.suspend(recovery ? "Recovering video continuity" : "Synchronizing rotation")
                 recording.endSegment(reason: recovery ? "media_discontinuity" : "display_changed")
                 try connection.refreshPreview()
-                if let previewGeometry, let display = connection.previewDisplay {
-                    guard try !previewGeometry().conflicts(with: display) else {
-                        throw IPhoneUseError("preview_geometry_unavailable", "Display still conflicts with XCTest after owned-media resynchronization")
-                    }
-                }
+                try validateRefreshedPreview(connection)
             }
             try attachPreview()
             if changed { previewEvent("refresh_completed", reason: reason, connection: connection) }
             return changed
         } catch {
             if checkingDisplay, !cancellation.isCancelled,
-               NativePreviewPoll.canDefer(error, health: connection.source.health()) {
+                NativePreviewPoll.canDefer(error, health: connection.source.health()) {
                 previewEvent("poll_deferred", reason: String(describing: error), connection: connection)
                 return false // A status timeout is not evidence that the independent video stopped.
             }
@@ -379,6 +284,16 @@ final class RunnerNativeRecording {
             return true
         }
     }
+    private func validateRefreshedPreview(_ connection: RunnerRecordingConnection) throws {
+        if let previewGeometry, let display = connection.previewDisplay {
+            guard try !previewGeometry().conflicts(with: display) else {
+                throw IPhoneUseError(
+                    "preview_geometry_unavailable",
+                    "Display still conflicts with XCTest after owned-media resynchronization")
+            }
+        }
+    }
+
     private func previewEvent(_ event: String, reason: String, connection: RunnerRecordingConnection) {
         var facts = connection.source.health()
         facts["mediaSessionID"] = connection.sessionID; facts["displayRotation"] = connection.rotation
@@ -391,8 +306,10 @@ final class RunnerNativeRecording {
         var result = recording.close()
         releaseMedia()
         result["mediaCleanup"] = cleanup
-        result["recordingCleanupAcknowledged"] = cleanup.isEmpty ||
-            (cleanup["mediaStopAcknowledged"] as? Bool == true && cleanup["tunnelReleaseAcknowledged"] as? Bool == true)
+        result["recordingCleanupAcknowledged"] =
+            cleanup.isEmpty
+            || (cleanup["mediaStopAcknowledged"] as? Bool == true
+                && cleanup["tunnelReleaseAcknowledged"] as? Bool == true)
         return result
     }
 }

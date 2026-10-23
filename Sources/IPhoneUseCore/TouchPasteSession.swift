@@ -5,7 +5,7 @@ import AppleNativeBridge
 // clipboard service: staging cannot register a keyboard or synthesize key events.
 final class TouchPasteSession {
     struct Connection {
-        let io: NativeTextPasteboard.IO
+        let pasteboardIO: NativeTextPasteboard.PasteboardAccess
         let close: () -> Bool
     }
     private let connect: () throws -> Connection
@@ -18,20 +18,30 @@ final class TouchPasteSession {
         self.init {
             let details = try CoreDevice.read(["device", "info", "details", "--device", config.device])
             guard let hardware = details["hardwareProperties"] as? [String: Any],
-                  hardware["reality"] as? String == "physical",
-                  let udid = hardware["udid"] as? String, udid == config.device,
-                  let identifier = details["identifier"] as? String else {
-                throw IPhoneUseError("touch_paste_unavailable", "A paired physical iPhone is required for clipboard staging")
+                hardware["reality"] as? String == "physical",
+                let udid = hardware["udid"] as? String, udid == config.device,
+                let identifier = details["identifier"] as? String
+            else {
+                throw IPhoneUseError(
+                    "touch_paste_unavailable", "A paired physical iPhone is required for clipboard staging")
             }
             let inventory = try NativeEndpointInventory.read(path: config.nativeEndpointInventory)
-            let tunnel = try ASPairedTunnel(udid: udid, deviceIdentifier: identifier, endpointInventory: inventory)
+            let tunnel = try ASPairedTunnel(
+                udid: udid, deviceIdentifier: identifier, endpointInventory: inventory)
             do {
-                let transport = try AppleServiceTransport(tunnel: tunnel, service: "com.apple.coredevice.pasteboardservice")
-                let io = AppleTextPasteboardIO(transport: transport, cancellation: NativeCancellation())
-                return Connection(io: io, close: { transport.cancel(); return tunnel.close() })
+                let transport = try AppleServiceTransport(
+                    tunnel: tunnel, service: "com.apple.coredevice.pasteboardservice")
+                let pasteboardIO = AppleTextPasteboardIO(
+                    transport: transport, cancellation: NativeCancellation())
+                return Connection(
+                    pasteboardIO: pasteboardIO,
+                    close: {
+                        transport.cancel(); return tunnel.close()
+                    })
             } catch {
                 let closed = tunnel.close()
-                throw ActionFailure(code: "touch_paste_unavailable", description: String(describing: error),
+                throw ActionFailure(
+                    code: "touch_paste_unavailable", description: String(describing: error),
                     possiblyExecuted: false, requiresObservation: false,
                     result: ["inputReportsSent": 0, "touchPasteTunnelClosed": closed])
             }
@@ -49,10 +59,12 @@ final class TouchPasteSession {
 
     func stage(_ text: String, observation: String) throws -> [String: Any] {
         guard !pending else {
-            throw IPhoneUseError("touch_paste_pending", "Finish the current clipboard transaction before staging more text; input was not replayed")
+            throw IPhoneUseError(
+                "touch_paste_pending",
+                "Finish the current clipboard transaction before staging more text; input was not replayed")
         }
         if connection == nil { connection = try connect() }
-        let next = NativeTextPasteboard(io: connection!.io)
+        let next = NativeTextPasteboard(pasteboardIO: connection!.pasteboardIO)
         board = next // Preserve backup/uncertainty even if staging fails after a write.
         do {
             try next.stage(text, sourceObservationID: observation)
@@ -69,19 +81,29 @@ final class TouchPasteSession {
             if let details = (error as? IPhoneUseError)?.diagnostics["applePasteboardError"] {
                 result["applePasteboardError"] = details
             }
-            throw ActionFailure(code: "touch_paste_stage_failed", description: "Clipboard staging failed; no input was sent: \(error)",
+            throw ActionFailure(
+                code: "touch_paste_stage_failed",
+                description: "Clipboard staging failed; no input was sent: \(error)",
                 possiblyExecuted: next.status["writeUncertain"] as? Bool == true, requiresObservation: true,
                 result: result)
         }
-        return ["textInputMethod": "touch-paste", "phase": "awaiting_touch_paste", "textInserted": false,
-                "inputReportsSent": 0, "automaticReplayAllowed": false, "pasteboard": status,
-                "nextStep": "Inspect the fresh screenshot, long-press the intended input, then observe and tap its visible Paste menu. Verify the text before text-finish; no keyboard shortcuts were sent."]
+        return [
+            "textInputMethod": "touch-paste", "phase": "awaiting_touch_paste", "textInserted": false,
+            "inputReportsSent": 0, "automaticReplayAllowed": false, "pasteboard": status,
+            "nextStep":
+                """
+            Inspect the fresh screenshot, long-press the intended input, then observe and tap its visible\
+             Paste menu. Verify the text before text-finish; no keyboard shortcuts were sent.
+            """
+        ]
     }
 
     func checkOwnership() throws { if pending { try board?.checkOwnership() } }
 
     func finish(transaction: String, observedAt: TimeInterval) throws -> [String: Any] {
-        guard let board else { throw IPhoneUseError("invalid_text_transaction", "No touch-paste transaction exists") }
+        guard let board else {
+            throw IPhoneUseError("invalid_text_transaction", "No touch-paste transaction exists")
+        }
         return try board.finish(transaction: transaction, observedAt: observedAt)
     }
 

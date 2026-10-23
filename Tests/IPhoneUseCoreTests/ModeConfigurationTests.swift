@@ -8,8 +8,10 @@ final class ModeConfigurationTests: XCTestCase {
         return root
     }
 
-    private func select(_ store: ModeConfiguration, mode: String? = nil, backend: String? = nil,
-                        runner: String? = nil, inventory: String? = nil) throws -> ModeSelection {
+    private func select(
+        _ store: ModeConfiguration, mode: String? = nil, backend: String? = nil,
+        runner: String? = nil, inventory: String? = nil
+    ) throws -> ModeSelection {
         try store.select(mode: mode, backend: backend, xctestrun: runner, nativeEndpointInventory: inventory)
     }
 
@@ -25,7 +27,8 @@ final class ModeConfigurationTests: XCTestCase {
         let object = try jsonObject(Data(contentsOf: root.appendingPathComponent("config.json")))
         XCTAssertEqual(object["mode"] as? String, "standard")
         XCTAssertEqual(object["version"] as? Int, 1)
-        let permissions = try FileManager.default.attributesOfItem(atPath: root.appendingPathComponent("config.json").path)
+        let permissions = try FileManager.default.attributesOfItem(
+            atPath: root.appendingPathComponent("config.json").path)
         XCTAssertEqual((permissions[.posixPermissions] as? NSNumber)?.intValue, 0o600)
     }
 
@@ -38,9 +41,14 @@ final class ModeConfigurationTests: XCTestCase {
         XCTAssertEqual(fresh["configPath"] as? String, first.appendingPathComponent("config.json").path)
         XCTAssertFalse(FileManager.default.fileExists(atPath: first.path))
         _ = try store.set(mode: "runner")
-        XCTAssertEqual(try ModeConfiguration(environment: ["IPHONE_USE_CONFIG_DIR": first.path]).get()["mode"] as? String, "runner")
-        XCTAssertEqual(try ModeConfiguration(environment: ["IPHONE_USE_CONFIG_DIR": second.path]).select(
-            mode: nil, backend: nil, xctestrun: nil, nativeEndpointInventory: nil).mode, .standard)
+        XCTAssertEqual(
+            try ModeConfiguration(environment: ["IPHONE_USE_CONFIG_DIR": first.path]).get()["mode"]
+                as? String, "runner"
+        )
+        XCTAssertEqual(
+            try ModeConfiguration(environment: ["IPHONE_USE_CONFIG_DIR": second.path]).select(
+                mode: nil, backend: nil, xctestrun: nil, nativeEndpointInventory: nil
+            ).mode, .standard)
         XCTAssertEqual(try store.get()["mode"] as? String, "runner")
     }
 
@@ -55,7 +63,11 @@ final class ModeConfigurationTests: XCTestCase {
     func testLegacyMigrationOnlyRunsOnceAndPersistsRunner() throws {
         var probes = 0
         let root = try directory()
-        let store = ModeConfiguration(directory: root, legacyRunner: { probes += 1; return true })
+        let store = ModeConfiguration(
+            directory: root,
+            legacyRunner: {
+                probes += 1; return true
+            })
         let selection = try select(store)
         XCTAssertEqual(selection.mode, .runner)
         XCTAssertEqual(selection.source, "legacy_runner_migration")
@@ -76,7 +88,11 @@ final class ModeConfigurationTests: XCTestCase {
 
     func testExplicitOptionsBypassMigrationAndNeverSavePreferences() throws {
         let root = try directory()
-        let store = ModeConfiguration(directory: root, legacyRunner: { XCTFail("Explicit selection must not inspect Runner"); return true })
+        let store = ModeConfiguration(
+            directory: root,
+            legacyRunner: {
+                XCTFail("Explicit selection must not inspect Runner"); return true
+            })
         XCTAssertEqual(try select(store, mode: "standard").source, "command_line_mode")
         XCTAssertEqual(try select(store, backend: "xctest").mode, .runner)
         XCTAssertEqual(try select(store, backend: "apple-native").mode, .standard)
@@ -87,13 +103,32 @@ final class ModeConfigurationTests: XCTestCase {
     }
 
     func testConflictsAndInvalidOptionsFailBeforeReadingAnyConfiguration() throws {
-        let store = ModeConfiguration(directory: try directory(), legacyRunner: { XCTFail("No default lookup"); return false })
-        for (mode, backend, runner, inventory): (String?, String?, String?, String?) in [
-            ("standard", "xctest", nil, nil), ("runner", "apple-native", nil, nil),
-            ("standard", nil, "/runner", nil), ("runner", nil, nil, "/inventory"),
-            (nil, nil, "/runner", "/inventory")
-        ] {
-            XCTAssertThrowsError(try select(store, mode: mode, backend: backend, runner: runner, inventory: inventory)) {
+        let store = ModeConfiguration(
+            directory: try directory(),
+            legacyRunner: {
+                XCTFail("No default lookup"); return false
+            })
+        struct ModeOptions {
+            let mode: String?
+            let backend: String?
+            let runner: String?
+            let inventory: String?
+        }
+        for sample in [
+            .init(mode: "standard", backend: "xctest", runner: nil, inventory: nil),
+            .init(mode: "runner", backend: "apple-native", runner: nil, inventory: nil),
+            .init(mode: "standard", backend: nil, runner: "/runner", inventory: nil),
+            .init(mode: "runner", backend: nil, runner: nil, inventory: "/inventory"),
+            .init(mode: nil, backend: nil, runner: "/runner", inventory: "/inventory")
+        ] as [ModeOptions] {
+            let mode = sample.mode
+            let backend = sample.backend
+            let runner = sample.runner
+            let inventory = sample.inventory
+
+            XCTAssertThrowsError(
+                try select(store, mode: mode, backend: backend, runner: runner, inventory: inventory)
+            ) {
                 XCTAssertEqual(($0 as? IPhoneUseError)?.code, "mode_conflict")
             }
         }
@@ -102,7 +137,11 @@ final class ModeConfigurationTests: XCTestCase {
     }
 
     func testConfigurationOverridesMigrationAndExplicitModeOverridesConfiguration() throws {
-        let store = ModeConfiguration(directory: try directory(), legacyRunner: { XCTFail("Saved default wins"); return false })
+        let store = ModeConfiguration(
+            directory: try directory(),
+            legacyRunner: {
+                XCTFail("Saved default wins"); return false
+            })
         _ = try store.set(mode: "runner")
         XCTAssertEqual(try select(store).mode, .runner)
         XCTAssertEqual(try select(store, mode: "standard").mode, .standard)
@@ -110,15 +149,21 @@ final class ModeConfigurationTests: XCTestCase {
     }
 
     func testInvalidConfigurationNeverFallsBackOrGetsOverwritten() throws {
-        for contents in ["{", "{}", "{\"version\":2,\"mode\":\"runner\"}",
-                         "{\"version\":true,\"mode\":\"runner\"}",
-                         "{\"version\":1,\"mode\":\"auto\"}",
-                         "{\"version\":1,\"mode\":\"runner\",\"extra\":true}"] {
+        for contents in [
+            "{", "{}", "{\"version\":2,\"mode\":\"runner\"}",
+            "{\"version\":true,\"mode\":\"runner\"}",
+            "{\"version\":1,\"mode\":\"auto\"}",
+            "{\"version\":1,\"mode\":\"runner\",\"extra\":true}"
+        ] {
             let root = try directory()
             try SessionPaths.secureDirectory(root)
             let file = root.appendingPathComponent("config.json")
             try Data(contents.utf8).write(to: file)
-            let store = ModeConfiguration(directory: root, legacyRunner: { XCTFail("No fallback"); return false })
+            let store = ModeConfiguration(
+                directory: root,
+                legacyRunner: {
+                    XCTFail("No fallback"); return false
+                })
             XCTAssertThrowsError(try select(store))
             XCTAssertThrowsError(try store.set(mode: "standard"))
             XCTAssertEqual(try String(contentsOf: file), contents)
@@ -128,22 +173,28 @@ final class ModeConfigurationTests: XCTestCase {
 
     func testInvalidLegacyStateRequiresExplicitChoiceAndDoesNotPersistDefault() throws {
         let root = try directory()
-        let store = ModeConfiguration(directory: root, legacyRunner: { throw IPhoneUseError("mode_selection_required", "Fixture stale setup") })
+        let store = ModeConfiguration(
+            directory: root,
+            legacyRunner: { throw IPhoneUseError("mode_selection_required", "Fixture stale setup") })
         XCTAssertThrowsError(try select(store))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("config.json").path))
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: root.appendingPathComponent("config.json").path))
         _ = try store.set(mode: "runner")
         XCTAssertEqual(try select(store).mode, .runner)
     }
 
     func testOldHostConfigurationRemainsRunnerAndSelectionIsImmutable() throws {
-        let data = Data("{\"session\":\"old\",\"device\":\"fixture\",\"xctestrun\":\"/unused\",\"idleTimeoutSeconds\":30}".utf8)
+        let data = Data(
+            "{\"session\":\"old\",\"device\":\"fixture\",\"xctestrun\":\"/unused\",\"idleTimeoutSeconds\":30}"
+                .utf8)
         let old = try JSONDecoder().decode(HostConfiguration.self, from: data)
         XCTAssertEqual(old.modeSelection.mode, .runner)
         XCTAssertEqual(old.modeSelection.source, "legacy_session")
         let store = ModeConfiguration(directory: try directory(), legacyRunner: { false })
         let selection = try select(store)
-        let host = HostConfiguration(session: "new", device: "fixture", xctestrun: "", idleTimeoutSeconds: 30,
-                                     backend: selection.mode.backend, modeSource: selection.source)
+        let host = HostConfiguration(
+            session: "new", device: "fixture", xctestrun: "", idleTimeoutSeconds: 30,
+            backend: selection.mode.backend, modeSource: selection.source)
         _ = try store.set(mode: "runner")
         let restored = try JSONDecoder().decode(HostConfiguration.self, from: JSONEncoder().encode(host))
         XCTAssertEqual(restored.modeSelection.mode, .standard)
@@ -154,8 +205,9 @@ final class ModeConfigurationTests: XCTestCase {
     func testConfigurationSymlinksAreRejected() throws {
         let root = try directory()
         try SessionPaths.secureDirectory(root)
-        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("config.json"),
-                                                   withDestinationURL: root.appendingPathComponent("missing"))
+        try FileManager.default.createSymbolicLink(
+            at: root.appendingPathComponent("config.json"),
+            withDestinationURL: root.appendingPathComponent("missing"))
         let store = ModeConfiguration(directory: root, legacyRunner: { false })
         XCTAssertThrowsError(try select(store))
     }

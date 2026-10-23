@@ -4,15 +4,19 @@ import XCTest
 final class ActionObservationTests: XCTestCase {
     private let session = "fixture-session"
     private func action(_ outcome: String) -> [String: Any] {
-        ["session": session, "id": "action-request", "ok": outcome == "completed", "outcome": outcome,
-         "result": ["frame": ["screenshot": "/action.png"]]]
+        [
+            "session": session, "id": "action-request", "ok": outcome == "completed", "outcome": outcome,
+            "result": ["frame": ["screenshot": "/action.png"]]
+        ]
     }
 
     func testCompletedAndUnknownPreserveBothResponsesAndObserveOnce() throws {
         for outcome in ["completed", "unknown"] {
             let input = action(outcome)
-            let observation: [String: Any] = ["session": session, "id": "capture-request", "ok": true,
-                                             "result": ["text": "observation=o2 refs=current"]]
+            let observation: [String: Any] = [
+                "session": session, "id": "capture-request", "ok": true,
+                "result": ["text": "observation=o2 refs=current"]
+            ]
             var captures = 0
             let response = SessionClient.observing(session: session, action: input) {
                 captures += 1
@@ -20,8 +24,11 @@ final class ActionObservationTests: XCTestCase {
             }
             XCTAssertEqual(captures, 1)
             XCTAssertEqual(response["ok"] as? Bool, outcome == "completed")
-            XCTAssertEqual(try jsonData(response["action"] as! [String: Any]), try jsonData(input))
-            XCTAssertEqual(try jsonData(response["observation"] as! [String: Any]), try jsonData(observation))
+            XCTAssertEqual(
+                try jsonData((try XCTUnwrap(response["action"] as? [String: Any]))), try jsonData(input))
+            XCTAssertEqual(
+                try jsonData((try XCTUnwrap(response["observation"] as? [String: Any]))),
+                try jsonData(observation))
         }
     }
 
@@ -40,7 +47,10 @@ final class ActionObservationTests: XCTestCase {
                 XCTAssertEqual((response["observation"] as? [String: String])?["skipped"], "not_dispatched")
             }
         }
-        for fields: [String: Any] in [["session": "wrong"], ["requiresObservation": "invalid"], ["outcome": "unrecognized"], ["ok": true]] {
+        for fields: [String: Any] in [
+            ["session": "wrong"], ["requiresObservation": "invalid"], ["outcome": "unrecognized"],
+            ["ok": true]
+        ] {
             let input = action("not_dispatched").merging(fields) { _, new in new }
             var captures = 0
             _ = SessionClient.observing(session: session, action: input) {
@@ -60,10 +70,13 @@ final class ActionObservationTests: XCTestCase {
                     return ["ok": false, "error": ["code": "session_unavailable"]]
                 }
                 XCTAssertEqual(response["ok"] as? Bool, false)
-                XCTAssertEqual(try jsonData(response["action"] as! [String: Any]), try jsonData(input))
-                let observation = response["observation"] as! [String: Any]
+                XCTAssertEqual(
+                    try jsonData((try XCTUnwrap(response["action"] as? [String: Any]))), try jsonData(input))
+                let observation = (try XCTUnwrap(response["observation"] as? [String: Any]))
                 XCTAssertEqual(observation["ok"] as? Bool, false)
-                XCTAssertEqual((observation["error"] as? [String: String])?["code"], shouldThrow ? "capture_failed" : "session_unavailable")
+                XCTAssertEqual(
+                    (observation["error"] as? [String: String])?["code"],
+                    shouldThrow ? "capture_failed" : "session_unavailable")
             }
         }
     }

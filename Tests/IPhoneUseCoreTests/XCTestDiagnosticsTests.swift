@@ -30,7 +30,9 @@ final class XCTestDiagnosticsTests: XCTestCase {
             return 42
         }
         XCTAssertEqual(value, 42)
-        XCTAssertEqual(defaults.volatileDomain(forName: UserDefaults.argumentDomain) as NSDictionary, original as NSDictionary)
+        XCTAssertEqual(
+            defaults.volatileDomain(forName: UserDefaults.argumentDomain) as NSDictionary,
+            original as NSDictionary)
         XCTAssertFalse(defaults.bool(forKey: "XCTDisableSpindump"))
     }
 
@@ -43,7 +45,9 @@ final class XCTestDiagnosticsTests: XCTestCase {
             XCTestDiagnostics.withoutAutomaticSpindump(defaults: defaults) {
                 XCTAssertTrue(defaults.bool(forKey: "XCTDisableSpindump"))
             }
-            XCTAssertEqual(defaults.volatileDomain(forName: UserDefaults.argumentDomain) as NSDictionary, original as NSDictionary)
+            XCTAssertEqual(
+                defaults.volatileDomain(forName: UserDefaults.argumentDomain) as NSDictionary,
+                original as NSDictionary)
         }
     }
 
@@ -51,13 +55,15 @@ final class XCTestDiagnosticsTests: XCTestCase {
     func testThrowingAndNestedScopesRestoreWithoutSwallowingErrors() {
         enum Failure: Error { case expected }
         let defaults = isolatedDefaults()
-        XCTAssertThrowsError(try XCTestDiagnostics.withoutAutomaticSpindump(defaults: defaults) {
-            XCTestDiagnostics.withoutAutomaticSpindump(defaults: defaults) {
+        XCTAssertThrowsError(
+            try XCTestDiagnostics.withoutAutomaticSpindump(defaults: defaults) {
+                XCTestDiagnostics.withoutAutomaticSpindump(defaults: defaults) {
+                    XCTAssertTrue(defaults.bool(forKey: "XCTDisableSpindump"))
+                }
                 XCTAssertTrue(defaults.bool(forKey: "XCTDisableSpindump"))
+                throw Failure.expected
             }
-            XCTAssertTrue(defaults.bool(forKey: "XCTDisableSpindump"))
-            throw Failure.expected
-        }) { XCTAssertTrue($0 is Failure) }
+        ) { XCTAssertTrue($0 is Failure) }
         XCTAssertNil(defaults.volatileDomain(forName: UserDefaults.argumentDomain)["XCTDisableSpindump"])
         XCTAssertFalse(defaults.bool(forKey: "XCTDisableSpindump"))
     }

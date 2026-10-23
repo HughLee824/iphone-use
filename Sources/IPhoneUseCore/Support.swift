@@ -1,6 +1,15 @@
 import Foundation
 import Darwin
 
+// Use only for internal values whose type was established by an earlier validation
+// step. A violation is a programming error, rather than a recoverable device error.
+func validatedValue<Value>(_ value: Any?, as type: Value.Type) -> Value {
+    guard let value = value as? Value else {
+        preconditionFailure("Previously validated value must have type \(type)")
+    }
+    return value
+}
+
 public struct IPhoneUseError: Error, CustomStringConvertible {
     public let code: String
     public let description: String
@@ -37,10 +46,12 @@ public struct IdleTimeout: Equatable {
         case "s": multiplier = 1
         case "m": multiplier = 60
         case "h": multiplier = 3600
-        default: throw IPhoneUseError("invalid_idle_timeout", "Use a positive duration such as 30m, 60m or 10s")
+        default:
+            throw IPhoneUseError("invalid_idle_timeout", "Use a positive duration such as 30m, 60m or 10s")
         }
         guard let number = Double(value.dropLast()), number.isFinite, number > 0,
-              (number * multiplier).isFinite else {
+            (number * multiplier).isFinite
+        else {
             throw IPhoneUseError("invalid_idle_timeout", "Idle timeout must be positive and finite")
         }
         seconds = number * multiplier
@@ -52,14 +63,15 @@ struct HostConfiguration: Codable {
     let device: String
     let xctestrun: String
     let idleTimeoutSeconds: TimeInterval
-    var backend: String? = nil
-    var nativeEndpointInventory: String? = nil
-    var modeSource: String? = nil
-    var startupPreviewPort: Int? = nil
+    var backend: String?
+    var nativeEndpointInventory: String?
+    var modeSource: String?
+    var startupPreviewPort: Int?
 
     var modeSelection: ModeSelection {
-        ModeSelection(mode: backend == "apple-native" ? .standard : .runner,
-                      source: modeSource ?? "legacy_session")
+        ModeSelection(
+            mode: backend == "apple-native" ? .standard : .runner,
+            source: modeSource ?? "legacy_session")
     }
 }
 
@@ -82,10 +94,13 @@ public struct SessionPaths {
         }
     }
 
-    static var defaultRoot: URL { URL(fileURLWithPath: "/private/tmp/iphone-use-\(getuid())", isDirectory: true) }
+    static var defaultRoot: URL {
+        URL(fileURLWithPath: "/private/tmp/iphone-use-\(getuid())", isDirectory: true)
+    }
 
     static func stateRoot(environment: [String: String]) -> URL {
-        environment["IPHONE_USE_STATE_DIR"].map { URL(fileURLWithPath: $0).standardizedFileURL } ?? defaultRoot
+        environment["IPHONE_USE_STATE_DIR"].map { URL(fileURLWithPath: $0).standardizedFileURL }
+            ?? defaultRoot
     }
 
     init(directory: URL) { self.directory = directory }
@@ -93,14 +108,18 @@ public struct SessionPaths {
     static func secureDirectory(_ url: URL) throws {
         let files = FileManager.default
         if !files.fileExists(atPath: url.path) {
-            try files.createDirectory(at: url, withIntermediateDirectories: true,
-                                      attributes: [.posixPermissions: 0o700])
+            try files.createDirectory(
+                at: url, withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700])
         }
         let attributes = try files.attributesOfItem(atPath: url.path)
         guard attributes[.type] as? FileAttributeType == .typeDirectory,
-              (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(),
-              (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700 else {
-            throw IPhoneUseError("unsafe_state_directory", "Session directory must be owned by this user with mode 0700: \(url.path)")
+            (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(),
+            (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700
+        else {
+            throw IPhoneUseError(
+                "unsafe_state_directory",
+                "Session directory must be owned by this user with mode 0700: \(url.path)")
         }
     }
 }

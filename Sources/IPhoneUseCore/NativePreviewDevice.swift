@@ -37,7 +37,9 @@ struct NativePreviewBezel {
         let cornerRadius: Double
 
         var valid: Bool {
-            let values = [canvasWidth, canvasHeight, screenX, screenY, screenWidth, screenHeight, cornerRadius]
+            let values = [
+                canvasWidth, canvasHeight, screenX, screenY, screenWidth, screenHeight, cornerRadius
+            ]
             return values.allSatisfy { $0.isFinite && $0 >= 0 && $0 <= 16384 }
                 && canvasWidth > 0 && canvasHeight > 0 && screenWidth > 0 && screenHeight > 0
                 && screenX + screenWidth <= canvasWidth && screenY + screenHeight <= canvasHeight
@@ -47,9 +49,11 @@ struct NativePreviewBezel {
         }
 
         var facts: [String: Any] {
-            ["name": name, "canvasWidth": canvasWidth, "canvasHeight": canvasHeight,
-             "screenX": screenX, "screenY": screenY, "screenWidth": screenWidth,
-             "screenHeight": screenHeight, "cornerRadius": cornerRadius]
+            [
+                "name": name, "canvasWidth": canvasWidth, "canvasHeight": canvasHeight,
+                "screenX": screenX, "screenY": screenY, "screenWidth": screenWidth,
+                "screenHeight": screenHeight, "cornerRadius": cornerRadius
+            ]
         }
     }
 
@@ -61,19 +65,23 @@ struct NativePreviewBezel {
     let profile: Profile
     let png: Data
 
-    static func load(device: NativePreviewDevice, directory: URL? = NativePreviewPage.assetDirectory()) -> NativePreviewBezel? {
+    static func load(device: NativePreviewDevice, directory: URL? = NativePreviewPage.assetDirectory())
+        -> NativePreviewBezel? {
         // Model identity is the only selector. Geometry below is validation,
         // never a fallback selector for a different phone with a similar screen.
         guard let productType = device.productType, let directory,
-              let bytes = try? Data(contentsOf: directory.appendingPathComponent("catalog.json")),
-              let catalog = try? JSONDecoder().decode(Catalog.self, from: bytes), catalog.version == 1,
-              let profile = catalog.models[productType], profile.valid,
-              let png = try? Data(contentsOf: directory.appendingPathComponent(profile.file)),
-              SHA256.hash(data: png).map({ String(format: "%02x", $0) }).joined() == profile.sha256,
-              let image = CGImageSourceCreateWithData(png as CFData, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(image, 0, nil) as? [String: Any],
-              (properties[kCGImagePropertyPixelWidth as String] as? NSNumber)?.doubleValue == profile.canvasWidth,
-              (properties[kCGImagePropertyPixelHeight as String] as? NSNumber)?.doubleValue == profile.canvasHeight else { return nil }
+            let bytes = try? Data(contentsOf: directory.appendingPathComponent("catalog.json")),
+            let catalog = try? JSONDecoder().decode(Catalog.self, from: bytes), catalog.version == 1,
+            let profile = catalog.models[productType], profile.valid,
+            let png = try? Data(contentsOf: directory.appendingPathComponent(profile.file)),
+            SHA256.hash(data: png).map({ String(format: "%02x", $0) }).joined() == profile.sha256,
+            let image = CGImageSourceCreateWithData(png as CFData, nil),
+            let properties = CGImageSourceCopyPropertiesAtIndex(image, 0, nil) as? [String: Any],
+            (properties[kCGImagePropertyPixelWidth as String] as? NSNumber)?.doubleValue
+                == profile.canvasWidth,
+            (properties[kCGImagePropertyPixelHeight as String] as? NSNumber)?.doubleValue
+                == profile.canvasHeight
+        else { return nil }
         return NativePreviewBezel(profile: profile, png: png)
     }
 }

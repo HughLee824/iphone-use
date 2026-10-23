@@ -14,19 +14,28 @@ enum RunnerAuthorizationEvent: Equatable {
 
     static func parse(_ line: String) -> RunnerAuthorizationEvent? {
         guard line.contains(" testmanagerd") else { return nil }
-        let pattern = #"^\w{3} +\d{1,2} \d{2}:\d{2}:\d{2}(?:\.\d+)? (?:[^\s\[\]]+ )?testmanagerd(?:\(AutomationMode\))?\[(\d+)\] <(?:Notice|Info|Debug)>: (.+)$"#
-        guard let match = line.range(of: pattern, options: .regularExpression), match == line.startIndex..<line.endIndex,
-              let start = line.range(of: "["), let end = line.range(of: "]", range: start.upperBound..<line.endIndex),
-              let manager = Int(line[start.upperBound..<end.lowerBound]),
-              let separator = line.range(of: ">: ") else { return nil }
+        let pattern =
+            #"^\w{3} +\d{1,2} \d{2}:\d{2}:\d{2}(?:\.\d+)? (?:[^\s\[\]]+ )?"#
+            + #"testmanagerd(?:\(AutomationMode\))?\[(\d+)\] <(?:Notice|Info|Debug)>: (.+)$"#
+        guard let match = line.range(of: pattern, options: .regularExpression),
+            match == line.startIndex..<line.endIndex,
+            let start = line.range(of: "["),
+            let end = line.range(of: "]", range: start.upperBound..<line.endIndex),
+            let manager = Int(line[start.upperBound..<end.lowerBound]),
+            let separator = line.range(of: ">: ")
+        else { return nil }
         let message = String(line[separator.upperBound...])
-        if message == "Writer daemon requires authentication to enable automation mode." { return .required(manager: manager) }
-        if message == "User authenticated, forwarding authorization to writer daemon." { return .authenticated(manager: manager) }
+        if message == "Writer daemon requires authentication to enable automation mode." {
+            return .required(manager: manager)
+        }
+        if message == "User authenticated, forwarding authorization to writer daemon." {
+            return .authenticated(manager: manager)
+        }
         if message == "Finished enabling Automation Mode" { return .enabled(manager: manager) }
         if message == "Finished disabling Automation Mode" { return .disabled(manager: manager) }
         if message.hasPrefix("Added Automation Mode client <XCTestSession: "),
-           let range = message.range(of: #"> pid (\d+)\. Total clients: \d+$"#, options: .regularExpression),
-           let runner = Int(message[range].dropFirst(6).split(separator: ".")[0]) {
+            let range = message.range(of: #"> pid (\d+)\. Total clients: \d+$"#, options: .regularExpression),
+            let runner = Int(message[range].dropFirst(6).split(separator: ".")[0]) {
             return .client(manager: manager, runner: message.hasSuffix("Total clients: 1") ? runner : -1)
         }
         return nil
@@ -49,10 +58,13 @@ public enum RunnerAuthorizationLog {
             if var data = try? jsonData(value) { data.append(10); FileHandle.standardOutput.write(data) }
         }
         var error: NSError?
-        _ = ASReadDeviceLog(device, { emit(["kind": "monitor_ready"]) }, { line in
-            if let event = RunnerAuthorizationEvent.parse(line) { emit(event.wire) }
-        }, &error)
-        throw error ?? IPhoneUseError("authorization_monitor_unavailable", "Live authorization evidence unavailable")
+        _ = ASReadDeviceLog(
+            device, { emit(["kind": "monitor_ready"]) },
+            { line in
+                if let event = RunnerAuthorizationEvent.parse(line) { emit(event.wire) }
+            }, &error)
+        throw error
+            ?? IPhoneUseError("authorization_monitor_unavailable", "Live authorization evidence unavailable")
     }
 }
 
@@ -80,7 +92,8 @@ final class RunnerAuthorization {
         let task = Process(), output = Pipe()
         task.executableURL = Bundle.main.executableURL
         task.arguments = ["_authorization-monitor", "--device", device]
-        task.standardInput = FileHandle.nullDevice; task.standardError = FileHandle.nullDevice; task.standardOutput = output
+        task.standardInput = FileHandle.nullDevice; task.standardError = FileHandle.nullDevice
+        task.standardOutput = output
         process = task; pipe = output
         output.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
@@ -139,6 +152,10 @@ final class RunnerAuthorization {
             if managerPID == nil { authorization = "unknown"; persist() }
             return
         }
+        consumeAuthorization(event, kind: kind)
+    }
+
+    private func consumeAuthorization(_ event: [String: Any], kind: String?) {
         guard let managerPID, event["manager"] as? Int == managerPID, monitoring else { return }
         switch kind {
         case "required": authorization = "required"
@@ -151,23 +168,44 @@ final class RunnerAuthorization {
     }
 
     func ready() { lock.lock(); phase = "ready"; authorization = "enabled"; persist(); lock.unlock() }
-    func failed(_ message: String) { lock.lock(); phase = "failed"; failure = message; persist(); lock.unlock() }
+    func failed(_ message: String) {
+        lock.lock(); phase = "failed"; failure = message; persist(); lock.unlock()
+    }
     func setPreviewURL(_ url: String) { lock.lock(); previewURL = url; persist(); lock.unlock() }
     func snapshot() -> [String: Any] { lock.lock(); defer { lock.unlock() }; return facts() }
 
     private func facts() -> [String: Any] {
         let required = authorization == "required" && phase != "failed"
         let completed = authorization == "authenticated" || authorization == "enabled"
-        return ["phase": phase, "authorization": authorization, "monitorAvailable": monitoring,
-                "requiresUserAction": required, "reason": required ? "ui_automation_authorization_required" : "runner_\(phase)",
-                "evidence": required ? "device_log_exact_runner_pid" : "none",
-                "message": required
-                    ? "Please complete Enable UI Automation authentication on the iPhone now. Do not send the passcode to the agent. Keep this connection attempt running."
-                    : (failure ?? (authorization == "unverified" ? "An authorization request was observed, but monitoring ended. Check the iPhone; completion has not been verified."
-                        : phase == "ready" ? "Runner connected." : completed
-                        ? "Automation authorization completed; waiting for Runner readiness. Keep the iPhone unlocked."
-                        : "Waiting for Runner. If Enable UI Automation appears on the iPhone, complete authentication there; waiting alone does not confirm a prompt.")),
-                "previewURL": previewURL as Any? ?? NSNull()]
+        return [
+            "phase": phase, "authorization": authorization, "monitorAvailable": monitoring,
+            "requiresUserAction": required,
+            "reason": required ? "ui_automation_authorization_required" : "runner_\(phase)",
+            "evidence": required ? "device_log_exact_runner_pid" : "none",
+            "message": required
+                ? """
+                Please complete Enable UI Automation authentication on the iPhone now. Do not send the\
+                 passcode to the agent. Keep this connection attempt running.
+                """
+                : (failure
+                    ?? (authorization == "unverified"
+                        ? """
+                        An authorization request was observed, but monitoring ended. Check the iPhone;\
+                         completion has not been verified.
+                        """
+                        : phase == "ready"
+                            ? "Runner connected."
+                            : completed
+                                ? """
+                        Automation authorization completed; waiting for Runner\
+                         readiness. Keep the iPhone unlocked.
+                        """
+                                : """
+                                Waiting for Runner. If Enable UI Automation appears on the iPhone, complete\
+                                 authentication there; waiting alone does not confirm a prompt.
+                                """)),
+            "previewURL": previewURL as Any? ?? NSNull()
+        ]
     }
     private func persist() { try? saveJSON(facts(), to: file) }
 
@@ -177,7 +215,9 @@ final class RunnerAuthorization {
         if let process, process.isRunning {
             process.terminate()
             let deadline = ProcessInfo.processInfo.systemUptime + 1
-            while process.isRunning && ProcessInfo.processInfo.systemUptime < deadline { Thread.sleep(forTimeInterval: 0.01) }
+            while process.isRunning && ProcessInfo.processInfo.systemUptime < deadline {
+                Thread.sleep(forTimeInterval: 0.01)
+            }
             if process.isRunning { kill(process.processIdentifier, SIGKILL) }
             process.waitUntilExit()
         }

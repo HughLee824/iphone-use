@@ -31,7 +31,7 @@ print(String(decoding: try JSONSerialization.data(withJSONObject: result), as: U
                     for path in [binary.parent, assets, keg / "bin", prefix / "bin"]:
                         path.mkdir(parents=True, exist_ok=True)
                     (assets / "catalog.json").write_text("{}")
-                    subprocess.run(["xcrun", "swiftc", *flags, str(source), str(main), "-o", str(binary)],
+                    subprocess.run(["xcrun", "swiftc", *flags, str(source), *map(str, sorted(source.parent.glob("NativePreviewPage+*.swift"))), str(main), "-o", str(binary)],
                                    check=True, capture_output=True, text=True, timeout=120)
                     (keg / "bin/iphone-use").symlink_to("../libexec/bin/iphone-use")
                     (prefix / "bin/iphone-use").symlink_to("../Cellar/iphone-use/0.3.1/bin/iphone-use")

@@ -20,4 +20,5 @@ guard let png = NSBitmapImageRep(cgImage: frame).representation(using: .png, pro
 }
 try png.write(to: URL(fileURLWithPath: CommandLine.arguments[2]))
 facts["fileValidated"] = true
-print(String(decoding: try JSONSerialization.data(withJSONObject: facts, options: [.sortedKeys]), as: UTF8.self))
+print(
+    String(data: try JSONSerialization.data(withJSONObject: facts, options: [.sortedKeys]), encoding: .utf8)!)

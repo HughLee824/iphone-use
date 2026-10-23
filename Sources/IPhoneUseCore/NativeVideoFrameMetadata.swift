@@ -21,10 +21,10 @@ struct NativeVideoFrameMetadata: Equatable {
         // search backwards for a plausible rectangle or accept another flags value.
         let encoded = Array(slice.suffix(32))
         var decoded: [UInt8] = [], zeros = 0
-        for i in encoded.indices {
-            let byte = encoded[i]
+        for index in encoded.indices {
+            let byte = encoded[index]
             if zeros == 2 && byte == 3 {
-                guard i + 1 < encoded.count, encoded[i + 1] <= 3 else {
+                guard index + 1 < encoded.count, encoded[index + 1] <= 3 else {
                     throw Self.invalid("Invalid HEVC emulation-prevention byte")
                 }
                 zeros = 0; continue
@@ -45,15 +45,17 @@ struct NativeVideoFrameMetadata: Equatable {
         nativeWidth = Int(tail[8]) << 8 | Int(tail[9])
         nativeHeight = Int(tail[10]) << 8 | Int(tail[11])
         guard [activeWidth, activeHeight, nativeWidth, nativeHeight].allSatisfy({ (1...4096).contains($0) }),
-              activeWidth % 16 == 0, activeHeight % 16 == 0 else {
+            activeWidth % 16 == 0, activeHeight % 16 == 0
+        else {
             throw Self.invalid("Invalid DisplayService frame dimensions")
         }
     }
 
     func validate(canvas: CMVideoDimensions) throws {
         guard activeWidth <= Int(canvas.width), activeHeight <= Int(canvas.height),
-              nativeWidth <= Int(canvas.width), nativeHeight <= Int(canvas.height),
-              Int(canvas.width) - nativeWidth < 64, Int(canvas.height) - nativeHeight < 64 else {
+            nativeWidth <= Int(canvas.width), nativeHeight <= Int(canvas.height),
+            Int(canvas.width) - nativeWidth < 64, Int(canvas.height) - nativeHeight < 64
+        else {
             throw Self.invalid("Frame metadata disagrees with the HEVC canvas")
         }
     }

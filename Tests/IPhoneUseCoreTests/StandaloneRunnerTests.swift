@@ -16,7 +16,12 @@ final class StandaloneRunnerTests: XCTestCase {
             case "device process launch":
                 XCTAssertEqual(args, ["device", "process", "launch", "--no-activate"])
                 XCTAssertEqual(tail, ["com.example.runner"])
-                XCTAssertEqual(env, ["IPHONE_USE_SESSION_TOKEN": "token", "IPHONE_USE_LISTEN_HOST": "127.0.0.1", "IPHONE_USE_HOST_MANAGED": "1"])
+                XCTAssertEqual(
+                    env,
+                    [
+                        "IPHONE_USE_SESSION_TOKEN": "token", "IPHONE_USE_LISTEN_HOST": "127.0.0.1",
+                        "IPHONE_USE_HOST_MANAGED": "1"
+                    ])
                 return ["process": self.row, "launchOptions": ["activatedWhenStarted": false]]
             default: XCTFail("Unexpected mutation: \(args)"); return [:]
             }
@@ -41,13 +46,18 @@ final class StandaloneRunnerTests: XCTestCase {
     }
 
     func testCleanupNeverTerminatesReplacementPIDOrUnrelatedPath() throws {
-        for replacement in [["processIdentifier": 124, "executable": app + "Runner"],
-                            ["processIdentifier": 123, "executable": "file:///other.app/Runner"]] as [[String: Any]] {
+        for replacement in [
+            ["processIdentifier": 124, "executable": app + "Runner"],
+            ["processIdentifier": 123, "executable": "file:///other.app/Runner"]
+        ] as [[String: Any]] {
             var started = false
             let runner = StandaloneRunner { args, _, _ in
                 if args.contains("apps") { return self.apps }
                 if args.contains("processes") { return ["runningProcesses": started ? [replacement] : []] }
-                if args.contains("launch") { started = true; return ["process": self.row, "launchOptions": ["activatedWhenStarted": false]] }
+                if args.contains("launch") {
+                    started = true
+                    return ["process": self.row, "launchOptions": ["activatedWhenStarted": false]]
+                }
                 XCTFail("Must not terminate replacement"); return [:]
             }
             _ = try runner.start(bundle: "com.example.runner", token: "token")
@@ -60,8 +70,13 @@ final class StandaloneRunnerTests: XCTestCase {
             var started = false, stopped = false
             let runner = StandaloneRunner { args, _, _ in
                 if args.contains("apps") { return self.apps }
-                if args.contains("processes") { return ["runningProcesses": started && !stopped ? [self.row] : []] }
-                if args.contains("launch") { started = true; return ["process": self.row, "launchOptions": ["activatedWhenStarted": false]] }
+                if args.contains("processes") {
+                    return ["runningProcesses": started && !stopped ? [self.row] : []]
+                }
+                if args.contains("launch") {
+                    started = true
+                    return ["process": self.row, "launchOptions": ["activatedWhenStarted": false]]
+                }
                 XCTAssertEqual(args, ["device", "process", "terminate", "--pid", "123"])
                 if fails { throw IPhoneUseError("test_failure", "Termination failed") }
                 stopped = true; return [:]
@@ -88,14 +103,23 @@ final class StandaloneRunnerTests: XCTestCase {
     func testManifestRequiresUnambiguousValidRunnerIdentity() throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: file) }
-        let target: [String: Any] = ["BlueprintName": "IPhoneUseTests", "IsUITestBundle": true, "TestHostBundleIdentifier": "com.example.runner"]
-        for layout: [String: Any] in [["IPhoneUseTests": target], ["TestConfigurations": [["TestTargets": [target]]]]] {
-            try PropertyListSerialization.data(fromPropertyList: layout, format: .xml, options: 0).write(to: file)
+        let target: [String: Any] = [
+            "BlueprintName": "IPhoneUseTests", "IsUITestBundle": true,
+            "TestHostBundleIdentifier": "com.example.runner"
+        ]
+        for layout: [String: Any] in [
+            ["IPhoneUseTests": target], ["TestConfigurations": [["TestTargets": [target]]]]
+        ] {
+            try PropertyListSerialization.data(fromPropertyList: layout, format: .xml, options: 0).write(
+                to: file)
             XCTAssertEqual(try StandaloneRunner.bundleID(manifest: file), "com.example.runner")
         }
-        for layout: [String: Any] in [[:], ["IPhoneUseTests": target, "TestConfigurations": [["TestTargets": [target]]]],
-                                      ["IPhoneUseTests": ["IsUITestBundle": true, "TestHostBundleIdentifier": "com.example.runner\n"]]] {
-            try PropertyListSerialization.data(fromPropertyList: layout, format: .xml, options: 0).write(to: file)
+        for layout: [String: Any] in [
+            [:], ["IPhoneUseTests": target, "TestConfigurations": [["TestTargets": [target]]]],
+            ["IPhoneUseTests": ["IsUITestBundle": true, "TestHostBundleIdentifier": "com.example.runner\n"]]
+        ] {
+            try PropertyListSerialization.data(fromPropertyList: layout, format: .xml, options: 0).write(
+                to: file)
             XCTAssertThrowsError(try StandaloneRunner.bundleID(manifest: file))
         }
     }

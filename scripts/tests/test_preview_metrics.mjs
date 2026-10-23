@@ -4,7 +4,13 @@ import test from 'node:test';
 import vm from 'node:vm';
 
 const source = readFileSync(new URL('../../Sources/IPhoneUseCore/NativePreviewPage.swift', import.meta.url), 'utf8');
-const script = source.match(/<script>([\s\S]*?)<\/script>/)[1];
+const fragments = source.match(/static let html = \[([\s\S]*?)\]/)[1].trim().split(/,\s*/);
+const html = fragments.map(name => {
+  const file = `NativePreviewPage+${name[0].toUpperCase()}${name.slice(1)}.swift`;
+  const fragment = readFileSync(new URL(`../../Sources/IPhoneUseCore/${file}`, import.meta.url), 'utf8');
+  return fragment.match(/"""\n([\s\S]*?)\n        """/)[1].replace(/^        /gm, '').replace(/\\\n/g, '');
+}).join('\n');
+const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 
 const catalog=JSON.parse(readFileSync(new URL('../../assets/preview/catalog.json',import.meta.url),'utf8'));
 
@@ -182,7 +188,7 @@ test('unchanged frames do not write decoration styles and plain controls are rem
     probe.elements[id].style=new Proxy(probe.elements[id].style,{set(){throw Error('redundant layout write: '+id);}});
   }
   for(let i=0;i<1800;i++)probe.layout(444,960);
-  assert.doesNotMatch(source,/id="(?:plain|framed)"|useBezel|class="segments"/);
+  assert.doesNotMatch(html,/id="(?:plain|framed)"|useBezel|class="segments"/);
 });
 
 
@@ -396,8 +402,8 @@ test('all gestures use neutral contacts with bounded distinct animation lifetime
     assert.equal((html.match(/<circle /g)||[]).length,paths.length);
     assert.doesNotMatch(html,/<path|gesture-ring|gesture-line/);
   }
-  assert.match(source,/fill:rgba\(142,142,147,\.48\)/);
-  assert.match(source,/@media\(prefers-reduced-motion:reduce\).*\.gesture-touch\{animation:none/);
+  assert.match(html,/fill:rgba\(142,142,147,\.48\)/);
+  assert.match(html,/@media\(prefers-reduced-motion:reduce\).*\.gesture-touch\{animation:none/);
 });
 
 
@@ -538,9 +544,9 @@ test('missing video and ordinary failures never imply an authorization request',
   await p.run('fetch=async()=>{throw Error()};health()');
   assert.equal(p.elements.state.textContent,'预览已停止或连接断开');
   assert.equal(p.elements.notice.hidden,false);
-  assert.match(source,/#notice\{[^}]*background:#10151e/);
-  assert.match(source,/<div id="notice" aria-hidden="true" hidden><\/div>/);
-  assert.doesNotMatch(source,/notice-title|notice-message|notice-art|notice-brand|authorization-art|Enable UI Automation/);
+  assert.match(html,/#notice\{[^}]*background:#10151e/);
+  assert.match(html,/<div id="notice" aria-hidden="true" hidden><\/div>/);
+  assert.doesNotMatch(html,/notice-title|notice-message|notice-art|notice-brand|authorization-art|Enable UI Automation/);
 });
 
 test('lost authorization evidence never silently claims recovery while video remains healthy', () => {

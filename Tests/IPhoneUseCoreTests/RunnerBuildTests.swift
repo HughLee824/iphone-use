@@ -25,16 +25,24 @@ final class RunnerBuildTests: XCTestCase {
         let directory = try temporaryProducts()
         defer { try? FileManager.default.removeItem(at: directory) }
         let host = directory.appendingPathComponent("Debug-iphoneos/IPhoneUseTests-Runner.app")
-        try FileManager.default.createDirectory(at: host.appendingPathComponent("PlugIns/IPhoneUseTests.xctest"), withIntermediateDirectories: true)
-        let target: [String: Any] = ["BlueprintName": "IPhoneUseTests", "IsUITestBundle": true,
+        try FileManager.default.createDirectory(
+            at: host.appendingPathComponent("PlugIns/IPhoneUseTests.xctest"),
+            withIntermediateDirectories: true)
+        let target: [String: Any] = [
+            "BlueprintName": "IPhoneUseTests", "IsUITestBundle": true,
             "TestHostPath": "__TESTROOT__/Debug-iphoneos/IPhoneUseTests-Runner.app",
-            "TestBundlePath": "__TESTHOST__/PlugIns/IPhoneUseTests.xctest"]
+            "TestBundlePath": "__TESTHOST__/PlugIns/IPhoneUseTests.xctest"
+        ]
         let manifest = directory.appendingPathComponent("IPhoneUseRunner_iphoneos99.0-arm64.xctestrun")
-        for plist: [String: Any] in [["IPhoneUseTests": target], ["TestConfigurations": [["TestTargets": [target]]]]] {
+        for plist: [String: Any] in [
+            ["IPhoneUseTests": target], ["TestConfigurations": [["TestTargets": [target]]]]
+        ] {
             try write(plist, to: manifest)
             let products = try RunnerBuild.products(in: directory)
-            XCTAssertEqual(products.xctestrun.resolvingSymlinksInPath().path, manifest.resolvingSymlinksInPath().path)
-            XCTAssertEqual(products.runnerApp.resolvingSymlinksInPath().path, host.resolvingSymlinksInPath().path)
+            XCTAssertEqual(
+                products.xctestrun.resolvingSymlinksInPath().path, manifest.resolvingSymlinksInPath().path)
+            XCTAssertEqual(
+                products.runnerApp.resolvingSymlinksInPath().path, host.resolvingSymlinksInPath().path)
         }
         try FileManager.default.removeItem(at: host)
         XCTAssertThrowsError(try RunnerBuild.products(in: directory))
@@ -51,7 +59,8 @@ final class RunnerBuildTests: XCTestCase {
     }
 
     private func temporaryProducts() throws -> URL {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("runner-products-\(UUID().uuidString)")
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "runner-products-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
     }

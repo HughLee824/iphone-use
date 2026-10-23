@@ -6,11 +6,15 @@ final class NativeCaptureDiagnostics {
     private let lock = NSLock()
     private var records: [[String: Any]] = []
 
-    func read(_ arguments: [String], phase: String,
-              operation: () throws -> [String: Any]) throws -> [String: Any] {
+    func read(
+        _ arguments: [String], phase: String,
+        operation: () throws -> [String: Any]
+    ) throws -> [String: Any] {
         let started = ProcessInfo.processInfo.systemUptime
-        var record: [String: Any] = ["phase": phase,
-            "command": arguments.prefix { !$0.hasPrefix("--") }.joined(separator: " ")]
+        var record: [String: Any] = [
+            "phase": phase,
+            "command": arguments.prefix { !$0.hasPrefix("--") }.joined(separator: " ")
+        ]
         defer {
             record["elapsedMs"] = (ProcessInfo.processInfo.systemUptime - started) * 1000
             lock.lock(); records.append(record); lock.unlock()

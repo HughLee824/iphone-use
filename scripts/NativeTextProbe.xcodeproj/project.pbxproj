@@ -4,8 +4,24 @@
  classes = {};
  objectVersion = 56;
  objects = {
+		3B2D1F3D23F4F1FFD43EC328 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TextProbeController.swift"; sourceTree = "<group>"; };
+		41A2EA6E5A3567093B23AD94 = { isa = PBXBuildFile; fileRef = 3B2D1F3D23F4F1FFD43EC328; };
+		04FEF7431C8FC8CA37B5C63A = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SearchProbeController.swift"; sourceTree = "<group>"; };
+		E3F0BDCEC8DB51492AE027F4 = { isa = PBXBuildFile; fileRef = 04FEF7431C8FC8CA37B5C63A; };
+		B77675DA6F9DB06BF86DD58F = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GestureProbeController.swift"; sourceTree = "<group>"; };
+		FD90C13692E1B1736AE2DFFF = { isa = PBXBuildFile; fileRef = B77675DA6F9DB06BF86DD58F; };
+		0ECEB17DEB637F0F22971467 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RotationProbeController.swift"; sourceTree = "<group>"; };
+		36FE83ED1805DCBD86FCF6F7 = { isa = PBXBuildFile; fileRef = 0ECEB17DEB637F0F22971467; };
+		B80D4F3196C2391860A15609 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "KeyboardProbeController.swift"; sourceTree = "<group>"; };
+		0BF7B0BC5391CC2C5091E349 = { isa = PBXBuildFile; fileRef = B80D4F3196C2391860A15609; };
+		3482B33AED828C8A7124A1CC = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DoubleTapProbeController.swift"; sourceTree = "<group>"; };
+		5AEADCC2918ABF9C8EFAAFF5 = { isa = PBXBuildFile; fileRef = 3482B33AED828C8A7124A1CC; };
+		C16722F4A3D021731B4D9857 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PinchProbeController.swift"; sourceTree = "<group>"; };
+		5780B29D1356824D0FC57376 = { isa = PBXBuildFile; fileRef = C16722F4A3D021731B4D9857; };
+		7F7BF8A4C3475F1C5EB3AF1D = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ScreenGuardProbeController.swift"; sourceTree = "<group>"; };
+		F1FE5CE0DF1B1A317291F920 = { isa = PBXBuildFile; fileRef = 7F7BF8A4C3475F1C5EB3AF1D; };
   100000000000000000000001 = {isa = PBXProject; buildConfigurationList = 100000000000000000000010; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; knownRegions = (en, Base); mainGroup = 100000000000000000000002; productRefGroup = 100000000000000000000003; projectDirPath = ""; projectRoot = ""; targets = (100000000000000000000004); };
-  100000000000000000000002 = {isa = PBXGroup; children = (100000000000000000000005, 100000000000000000000014, 100000000000000000000003); sourceTree = "<group>"; };
+  100000000000000000000002 = {isa = PBXGroup; children = (3B2D1F3D23F4F1FFD43EC328, 04FEF7431C8FC8CA37B5C63A, B77675DA6F9DB06BF86DD58F, 0ECEB17DEB637F0F22971467, B80D4F3196C2391860A15609, 3482B33AED828C8A7124A1CC, C16722F4A3D021731B4D9857, 7F7BF8A4C3475F1C5EB3AF1D, 100000000000000000000005, 100000000000000000000014, 100000000000000000000003); sourceTree = "<group>"; };
   100000000000000000000003 = {isa = PBXGroup; children = (100000000000000000000006); name = Products; sourceTree = "<group>"; };
   100000000000000000000004 = {isa = PBXNativeTarget; buildConfigurationList = 100000000000000000000011; buildPhases = (100000000000000000000008, 100000000000000000000009); buildRules = (); dependencies = (); name = NativeTextProbe; productName = NativeTextProbe; productReference = 100000000000000000000006; productType = "com.apple.product-type.application"; };
   100000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "native-text-probe.swift"; sourceTree = "<group>"; };
@@ -13,7 +29,7 @@
   100000000000000000000007 = {isa = PBXBuildFile; fileRef = 100000000000000000000005; };
   100000000000000000000014 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "preview-motion-probe.swift"; sourceTree = "<group>"; };
   100000000000000000000015 = {isa = PBXBuildFile; fileRef = 100000000000000000000014; };
-  100000000000000000000008 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000007, 100000000000000000000015); runOnlyForDeploymentPostprocessing = 0; };
+  100000000000000000000008 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (41A2EA6E5A3567093B23AD94, E3F0BDCEC8DB51492AE027F4, FD90C13692E1B1736AE2DFFF, 36FE83ED1805DCBD86FCF6F7, 0BF7B0BC5391CC2C5091E349, 5AEADCC2918ABF9C8EFAAFF5, 5780B29D1356824D0FC57376, F1FE5CE0DF1B1A317291F920, 100000000000000000000007, 100000000000000000000015); runOnlyForDeploymentPostprocessing = 0; };
   100000000000000000000009 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
   100000000000000000000010 = {isa = XCConfigurationList; buildConfigurations = (100000000000000000000012); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
   100000000000000000000011 = {isa = XCConfigurationList; buildConfigurations = (100000000000000000000013); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };

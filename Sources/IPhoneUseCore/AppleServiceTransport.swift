@@ -19,7 +19,9 @@ final class AppleRemoteChannel: NativeChannel {
     func request(_ message: [String: Any], completion: @escaping ([String: Any]?, Error?) -> Void) {
         channel.request(message) { reply, error in completion(reply as? [String: Any], error) }
     }
-    func send(_ message: [String: Any], completion: @escaping (Error?) -> Void) { channel.send(message, completion: completion) }
+    func send(_ message: [String: Any], completion: @escaping (Error?) -> Void) {
+        channel.send(message, completion: completion)
+    }
     func cancel() { channel.cancel() }
 }
 
@@ -59,9 +61,13 @@ final class AppleServiceTransport: NativeTransport {
     func request(_ message: [String: Any], timeout: TimeInterval = 8) throws -> [String: Any] {
         try exchange(timeout: timeout) { complete in
             channel.request(message) { reply, error in
-                if let error { complete(.failure(error)) }
-                else if let reply { complete(.success(reply)) }
-                else { complete(.failure(IPhoneUseError("native_invalid_reply", "Missing native reply"))) }
+                if let error {
+                    complete(.failure(error))
+                } else if let reply {
+                    complete(.success(reply))
+                } else {
+                    complete(.failure(IPhoneUseError("native_invalid_reply", "Missing native reply")))
+                }
             }
         }
     }
@@ -70,19 +76,33 @@ final class AppleServiceTransport: NativeTransport {
             channel.send(message) { error in complete(error.map { .failure($0) } ?? .success([:])) }
         }
     }
-    private func exchange(timeout: TimeInterval, begin: (@escaping (Result<[String: Any], Error>) -> Void) -> Void) throws -> [String: Any] {
-        guard timeout.isFinite, timeout > 0, timeout <= 60 else { throw IPhoneUseError("native_invalid_timeout", "Invalid native request timeout") }
+    private func exchange(
+        timeout: TimeInterval, begin: (@escaping (Result<[String: Any], Error>) -> Void) -> Void
+    )
+        throws -> [String: Any] {
+        guard timeout.isFinite, timeout > 0, timeout <= 60 else {
+            throw IPhoneUseError("native_invalid_timeout", "Invalid native request timeout")
+        }
         let deadline = DispatchTime.now() + timeout
         let id = UUID(), item = Pending()
         lock.lock()
-        guard !closed else { lock.unlock(); throw TransportError(description: "Native connection is closed; reconnect explicitly", possiblySent: false) }
+        guard !closed else {
+            lock.unlock()
+            throw TransportError(
+                description: "Native connection is closed; reconnect explicitly", possiblySent: false)
+        }
         pending[id] = item
         begin { [weak self] result in
             guard let self else { return }
             self.lock.lock()
             if let waiting = self.pending.removeValue(forKey: id) {
-                waiting.result = DispatchTime.now() < deadline ? result : .failure(
-                    TransportError(description: "Native reply arrived after the deadline; no replay", possiblySent: true))
+                waiting.result =
+                    DispatchTime.now() < deadline
+                    ? result
+                    : .failure(
+                        TransportError(
+                            description: "Native reply arrived after the deadline; no replay",
+                            possiblySent: true))
                 waiting.ready.signal()
             }
             self.lock.unlock()
@@ -92,7 +112,8 @@ final class AppleServiceTransport: NativeTransport {
             // A callback may win the lock immediately after the wait expires. Its
             // result must not turn an already expired operation into success.
             cancel()
-            throw TransportError(description: "Native request timed out; result is unknown, no replay", possiblySent: true)
+            throw TransportError(
+                description: "Native request timed out; result is unknown, no replay", possiblySent: true)
         }
         lock.lock()
         let result = item.result
@@ -101,9 +122,11 @@ final class AppleServiceTransport: NativeTransport {
         case .success(let reply): return reply
         case .failure(let error):
             cancel()
-            throw TransportError(description: "Native request failed after admission: \(error)", possiblySent: true)
+            throw TransportError(
+                description: "Native request failed after admission: \(error)", possiblySent: true)
         case nil:
-            throw TransportError(description: "Native request timed out; result is unknown, no replay", possiblySent: true)
+            throw TransportError(
+                description: "Native request timed out; result is unknown, no replay", possiblySent: true)
         }
     }
     func cancel() {
@@ -113,7 +136,9 @@ final class AppleServiceTransport: NativeTransport {
         let waiting = pending.values
         pending.removeAll()
         for item in waiting {
-            item.result = .failure(TransportError(description: "Native request cancelled or timed out; no replay", possiblySent: true))
+            item.result = .failure(
+                TransportError(
+                    description: "Native request cancelled or timed out; no replay", possiblySent: true))
             item.ready.signal()
         }
         if !wasClosed { channel.cancel() }
@@ -128,28 +153,35 @@ struct NativeFeatureClient {
     let deviceIdentifier: String
     let version: String
 
-    func invoke(_ feature: String, action: String, input: [String: Any] = [:], timeout: TimeInterval = 10) throws -> [String: Any] {
+    func invoke(_ feature: String, action: String, input: [String: Any] = [:], timeout: TimeInterval = 10)
+        throws
+        -> [String: Any] {
         let invocation = UUID().uuidString
         let components = version.split(separator: ".").compactMap { UInt64($0) }
         guard !components.isEmpty, components.count == version.split(separator: ".").count else {
-            throw IPhoneUseError("native_version_unsupported", "Cannot determine the installed CoreDevice version")
+            throw IPhoneUseError(
+                "native_version_unsupported", "Cannot determine the installed CoreDevice version")
         }
-        let reply = try transport.request([
-            "CoreDevice.CoreDeviceDDIProtocolVersion": Int64(2),
-            "CoreDevice.coreDeviceVersion": ["components": components.map(nativeUInt),
-                "originalComponentsCount": Int64(components.count), "stringValue": version],
-            "CoreDevice.deviceIdentifier": deviceIdentifier,
-            "CoreDevice.invocationIdentifier": invocation,
-            "CoreDevice.featureIdentifier": "com.apple.coredevice.feature.\(feature)",
-            "CoreDevice.actionIdentifier": "com.apple.coredevice.action.\(action)",
-            "CoreDevice.action": [:], "CoreDevice.input": input
-        ], timeout: timeout)
+        let reply = try transport.request(
+            [
+                "CoreDevice.CoreDeviceDDIProtocolVersion": Int64(2),
+                "CoreDevice.coreDeviceVersion": [
+                    "components": components.map(nativeUInt),
+                    "originalComponentsCount": Int64(components.count), "stringValue": version
+                ],
+                "CoreDevice.deviceIdentifier": deviceIdentifier,
+                "CoreDevice.invocationIdentifier": invocation,
+                "CoreDevice.featureIdentifier": "com.apple.coredevice.feature.\(feature)",
+                "CoreDevice.actionIdentifier": "com.apple.coredevice.action.\(action)",
+                "CoreDevice.action": [:], "CoreDevice.input": input
+            ], timeout: timeout)
         if let echoed = reply["CoreDevice.invocationIdentifier"] as? String, echoed != invocation {
             transport.cancel()
             throw TransportError(description: "CoreDevice invocation mismatch", possiblySent: true)
         }
         guard let output = reply["CoreDevice.output"] as? [String: Any] else {
-            throw IPhoneUseError("native_feature_failed", "CoreDevice returned no output for \(feature): \(reply)")
+            throw IPhoneUseError(
+                "native_feature_failed", "CoreDevice returned no output for \(feature): \(reply)")
         }
         return output
     }

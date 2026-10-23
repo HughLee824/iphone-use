@@ -13,37 +13,57 @@ final class NativeAppleTextPhaseTests: XCTestCase {
         var displayChecks = 0
     }
 
-    private func capture(source: Data, frames: [Data], state: CaptureState,
-                         changed: String? = nil, preferred: String = "coredevice_screenshot",
-                         deadline: TimeInterval? = nil, confirmCaret: Bool = false, ignored: ScreenRect? = nil) throws -> (ScreenGuard.Check, Int) {
+    private func capture(
+        source: Data, frames: [Data], state: CaptureState,
+        changed: String? = nil, preferred: String = "coredevice_screenshot",
+        deadline: TimeInterval? = nil, confirmCaret: Bool = false, ignored: ScreenRect? = nil
+    ) throws -> (ScreenGuard.Check, Int) {
         let cancellation = NativeCancellation()
-        let cli = AppleDeviceCLI(device: "fixture", cancellation: cancellation, reader: { args in
-            state.lock.lock(); defer { state.lock.unlock() }
-            if args.last == "lockState" {
-                state.lockChecks += 1
-                return ["passcodeRequired": changed == "locked" && state.screenshots > 0]
-            }
-            if args.last == "displays" {
-                state.displayChecks += 1
-                return ["backlightState": changed == "off" && state.screenshots > 0 ? "off" : "activeOn",
-                    "displays": [["primary": true, "displayId": 1, "bounds": [[0, 0], [390, 844]], "pointScale": 1,
-                        "currentOrientation": changed == "rotated" && state.screenshots > 0 ? "rot90" : "rot0",
-                        "nativeOrientation": "rot0"]]]
-            }
-            let png = frames[min(state.screenshots, frames.count - 1)]
-            state.screenshots += 1
-            try png.write(to: URL(fileURLWithPath: try XCTUnwrap(args.last)))
-            if changed == "cancelled" { cancellation.cancel() }
-            return [:]
-        })
-        let guardValue = try ScreenGuard(png: source, context: context, rects: [field], policy: .init(), ignoring: ignored)
+        let cli = AppleDeviceCLI(
+            device: "fixture", cancellation: cancellation,
+            reader: { args in
+                state.lock.lock(); defer { state.lock.unlock() }
+                if args.last == "lockState" {
+                    state.lockChecks += 1
+                    return ["passcodeRequired": changed == "locked" && state.screenshots > 0]
+                }
+                if args.last == "displays" {
+                    state.displayChecks += 1
+                    return [
+                        "backlightState": changed == "off" && state.screenshots > 0 ? "off" : "activeOn",
+                        "displays": [
+                            [
+                                "primary": true, "displayId": 1, "bounds": [[0, 0], [390, 844]],
+                                "pointScale": 1,
+                                "currentOrientation": changed == "rotated" && state.screenshots > 0
+                                    ? "rot90" : "rot0",
+                                "nativeOrientation": "rot0"
+                            ]
+                        ]
+                    ]
+                }
+                let png = frames[min(state.screenshots, frames.count - 1)]
+                state.screenshots += 1
+                try png.write(to: URL(fileURLWithPath: try XCTUnwrap(args.last)))
+                if changed == "cancelled" { cancellation.cancel() }
+                return [:]
+            })
+        let guardValue = try ScreenGuard(
+            png: source, context: context, rects: [field], policy: .init(), ignoring: ignored)
         let fieldGuard = try NativeTextFieldGuard(png: source, context: context, field: field)
-        let caret = confirmCaret ? try NativeBoundCaretGuard(field: fieldGuard, caret: ScreenRect(stroke.insetBy(dx: -1, dy: -1)), observationID: "o1") : nil
+        let caret =
+            confirmCaret
+            ? try NativeBoundCaretGuard(
+                field: fieldGuard, caret: ScreenRect(stroke.insetBy(dx: -1, dy: -1)), observationID: "o1")
+            : nil
         let end = deadline ?? ProcessInfo.processInfo.systemUptime + 8
-        return try NativeInputPreflight.check(guard: guardValue, displayID: 1, captureSource: preferred,
-            deadline: end, maximumCaptures: 6, fieldGuard: fieldGuard, caretGuard: caret) {
-                try cli.capture(generation: "fixture", validateDisplay: { _, _ in ["geometryValidated": true] })
-            }
+        return try NativeInputPreflight.check(
+            guard: guardValue, displayID: 1, captureSource: preferred,
+            deadline: end, maximumCaptures: 6, fieldGuard: fieldGuard, caretGuard: caret,
+            capture: {
+                try cli.capture(
+                    generation: "fixture", validateDisplay: { _, _ in ["geometryValidated": true] })
+            })
     }
 
     func testConfirmedCaretUsesOneFrameAndRetainsContextChecks() throws {
@@ -65,11 +85,15 @@ final class NativeAppleTextPhaseTests: XCTestCase {
         XCTAssertEqual(result.0.screenChange, 0)
         XCTAssertEqual(result.0.result["fieldAlgorithm"] as? String, "field-bound-caret-exclusion-v3")
         let pageChange = try screenPNG(patches: [(CGRect(x: 0, y: 400, width: 390, height: 200), [0, 0, 0])])
-        XCTAssertThrowsError(try capture(source: source, frames: [pageChange], state: CaptureState(), confirmCaret: true)) {
+        XCTAssertThrowsError(
+            try capture(source: source, frames: [pageChange], state: CaptureState(), confirmCaret: true)
+        ) {
             XCTAssertEqual(($0 as? ActionFailure)?.code, "screen_changed")
         }
         let textChange = try screenPNG(patches: [(CGRect(x: 100, y: 150, width: 2, height: 20), [0, 0, 0])])
-        XCTAssertThrowsError(try capture(source: source, frames: [textChange], state: CaptureState(), confirmCaret: true)) {
+        XCTAssertThrowsError(
+            try capture(source: source, frames: [textChange], state: CaptureState(), confirmCaret: true)
+        ) {
             XCTAssertEqual(($0 as? ActionFailure)?.code, "text_field_changed")
         }
     }
@@ -78,13 +102,19 @@ final class NativeAppleTextPhaseTests: XCTestCase {
         let video = ScreenRect(CGRect(x: 30, y: 400, width: 200, height: 200))
         let source = try screenPNG(patches: [(stroke, [7, 193, 96])])
         let frame = try screenPNG(patches: [(video.cgRect, [0, 0, 0])])
-        let result = try capture(source: source, frames: [frame], state: CaptureState(), confirmCaret: true, ignored: video)
+        let result = try capture(
+            source: source, frames: [frame], state: CaptureState(), confirmCaret: true, ignored: video)
         XCTAssertTrue(result.0.accepted)
         XCTAssertEqual(result.0.screenChange, 0)
         XCTAssertEqual(result.0.ignoredRect, video)
-        let changed = try screenPNG(patches: [(video.cgRect, [0, 0, 0]),
-            (CGRect(x: 0, y: 650, width: 390, height: 150), [0, 0, 0])])
-        XCTAssertThrowsError(try capture(source: source, frames: [changed], state: CaptureState(), confirmCaret: true, ignored: video)) {
+        let changed = try screenPNG(patches: [
+            (video.cgRect, [0, 0, 0]),
+            (CGRect(x: 0, y: 650, width: 390, height: 150), [0, 0, 0])
+        ])
+        XCTAssertThrowsError(
+            try capture(
+                source: source, frames: [changed], state: CaptureState(), confirmCaret: true, ignored: video)
+        ) {
             XCTAssertEqual(($0 as? ActionFailure)?.code, "screen_changed")
         }
     }
@@ -106,18 +136,23 @@ final class NativeAppleTextPhaseTests: XCTestCase {
         let png = try screenPNG()
         for changed in ["locked", "off", "rotated", "cancelled"] {
             let state = CaptureState()
-            XCTAssertThrowsError(try capture(source: png, frames: [png], state: state, changed: changed), changed)
+            XCTAssertThrowsError(
+                try capture(source: png, frames: [png], state: state, changed: changed), changed)
             XCTAssertEqual(state.screenshots, 1)
         }
     }
 
     func testExpiredBudgetCannotCaptureAndForeignSourceCannotPass() throws {
         let png = try screenPNG(), expired = CaptureState()
-        XCTAssertThrowsError(try capture(source: png, frames: [png], state: expired,
-            deadline: ProcessInfo.processInfo.systemUptime - 1))
+        XCTAssertThrowsError(
+            try capture(
+                source: png, frames: [png], state: expired,
+                deadline: ProcessInfo.processInfo.systemUptime - 1))
         XCTAssertEqual(expired.screenshots, 0)
         let fallback = CaptureState()
-        XCTAssertThrowsError(try capture(source: png, frames: [png], state: fallback, preferred: "native_media")) {
+        XCTAssertThrowsError(
+            try capture(source: png, frames: [png], state: fallback, preferred: "native_media")
+        ) {
             XCTAssertEqual(($0 as? ActionFailure)?.result?["captureSourceChanged"] as? Bool, true)
         }
         XCTAssertEqual(fallback.screenshots, 1)

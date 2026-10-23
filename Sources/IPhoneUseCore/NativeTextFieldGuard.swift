@@ -14,13 +14,20 @@ struct NativeTextFieldGuard {
     private let crop: CGRect
 
     init(png: Data, context: ScreenContext, field: ScreenRect) throws {
-        guard context.valid, field.valid, context.screen.cgRect.contains(field.cgRect) else { throw ScreenGuard.Failure.invalidGuard }
+        guard context.valid, field.valid, context.screen.cgRect.contains(field.cgRect) else {
+            throw ScreenGuard.Failure.invalidGuard
+        }
         let image = try ScreenImage(png: png)
         try image.validateMapping(to: context.screen)
         let scale = Double(image.image.width) / context.screen.width
-        let crop = CGRect(x: field.x * scale, y: field.y * scale, width: field.width * scale, height: field.height * scale).integral
+        let crop = CGRect(
+            x: field.originX * scale, y: field.originY * scale, width: field.width * scale,
+            height: field.height * scale
+        ).integral
         width = Int(crop.width); height = Int(crop.height)
-        guard width > 0, height > 0, width * height <= 4_000_000 else { throw ScreenGuard.Failure.invalidGuard }
+        guard width > 0, height > 0, width * height <= 4_000_000 else {
+            throw ScreenGuard.Failure.invalidGuard
+        }
         source = try image.rgb(rect: field, screen: context.screen, columns: width, rows: height)
         self.context = context; self.field = field; self.scale = scale; self.crop = crop
     }
@@ -39,29 +46,36 @@ struct NativeTextFieldGuard {
     // Neutralize only the confirmed native pixels before the coarse screen/region
     // grids are reduced. Otherwise interpolation can count the excluded caret in
     // the global score. The captured PNG and full-field comparison remain untouched.
-    func screenComparisonImage(_ image: ScreenImage, caret: NativeBoundCaretGuard,
-                               context current: ScreenContext) throws -> ScreenImage {
+    func screenComparisonImage(
+        _ image: ScreenImage, caret: NativeBoundCaretGuard,
+        context current: ScreenContext
+    ) throws -> ScreenImage {
         try validateContext(current)
         try image.validateMapping(to: current.screen)
         let rect = caret.bounds
-        let x = Int(crop.minX + rect.minX), y = Int(crop.minY + rect.minY)
+        let column = Int(crop.minX + rect.minX), firstRow = Int(crop.minY + rect.minY)
         let columns = image.image.width, rows = image.image.height
-        guard x >= 0, y >= 0, x + Int(rect.width) <= columns, y + Int(rect.height) <= rows else {
+        guard column >= 0, firstRow >= 0, column + Int(rect.width) <= columns,
+            firstRow + Int(rect.height) <= rows
+        else {
             throw ScreenGuard.Failure.invalidGuard
         }
         var rgb = try image.rgb(rect: current.screen, screen: current.screen, columns: columns, rows: rows)
         for row in 0..<Int(rect.height) {
             let sourceOffset = ((Int(rect.minY) + row) * width + Int(rect.minX)) * 3
-            let targetOffset = ((y + row) * columns + x) * 3
+            let targetOffset = ((firstRow + row) * columns + column) * 3
             let count = Int(rect.width) * 3
-            rgb.replaceSubrange(targetOffset..<(targetOffset + count),
-                                with: source[sourceOffset..<(sourceOffset + count)])
+            rgb.replaceSubrange(
+                targetOffset..<(targetOffset + count),
+                with: source[sourceOffset..<(sourceOffset + count)])
         }
         guard let provider = CGDataProvider(data: rgb as CFData),
-              let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
-              let result = CGImage(width: columns, height: rows, bitsPerComponent: 8, bitsPerPixel: 24,
-                  bytesPerRow: columns * 3, space: colorSpace, bitmapInfo: [], provider: provider,
-                  decode: nil, shouldInterpolate: false, intent: .defaultIntent) else {
+            let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+            let result = CGImage(
+                width: columns, height: rows, bitsPerComponent: 8, bitsPerPixel: 24,
+                bytesPerRow: columns * 3, space: colorSpace, bitmapInfo: [], provider: provider,
+                decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+        else {
             throw ScreenGuard.Failure.invalidImage
         }
         return ScreenImage(image: result)
@@ -72,8 +86,10 @@ struct NativeTextFieldGuard {
     }
 
     func screenRect(_ rect: CGRect) -> ScreenRect {
-        ScreenRect(CGRect(x: (crop.minX + rect.minX) / scale, y: (crop.minY + rect.minY) / scale,
-                          width: rect.width / scale, height: rect.height / scale))
+        ScreenRect(
+            CGRect(
+                x: (crop.minX + rect.minX) / scale, y: (crop.minY + rect.minY) / scale,
+                width: rect.width / scale, height: rect.height / scale))
     }
 
     // Preserve original pixel coordinates. Low-amplitude encoding changes may
@@ -83,58 +99,83 @@ struct NativeTextFieldGuard {
         guard first.count == next.count else { return false }
         let limit = max(4, min(512, width * height / 1000))
         let noiseLimit = max(4, min(32, width * height / 16384))
-        return first.withUnsafeBytes { (a: UnsafeRawBufferPointer) in
-            next.withUnsafeBytes { (b: UnsafeRawBufferPointer) in
+        return first.withUnsafeBytes { (firstSample: UnsafeRawBufferPointer) in
+            next.withUnsafeBytes { (secondSample: UnsafeRawBufferPointer) in
                 var changed = 0, noise = Set<Int>()
                 for pixel in 0..<(width * height) {
-                    let x = pixel % width, y = pixel / width
-                    if let rect, rect.contains(CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)) { continue }
-                    let i = pixel * 3
-                    let delta = max(abs(Int(a[i]) - Int(b[i])), abs(Int(a[i + 1]) - Int(b[i + 1])),
-                                    abs(Int(a[i + 2]) - Int(b[i + 2])))
+                    let column = pixel % width, row = pixel / width
+                    if let rect, rect.contains(CGPoint(x: Double(column) + 0.5, y: Double(row) + 0.5)) {
+                        continue
+                    }
+                    let index = pixel * 3
+                    let delta = max(
+                        abs(Int(firstSample[index]) - Int(secondSample[index])),
+                        abs(Int(firstSample[index + 1]) - Int(secondSample[index + 1])),
+                        abs(Int(firstSample[index + 2]) - Int(secondSample[index + 2])))
                     if delta <= ScreenGuard.pixelTolerance { continue }
                     changed += 1
                     guard delta <= 32, changed <= limit else { return false }
                     // Both images must contain contrast in the same channel at
                     // this exact location. No translation or nearest-pixel match.
-                    var edge = false
-                    if x >= 2, y >= 2, x + 2 < width, y + 2 < height {
-                        for channel in 0..<3 {
-                            var loA = 255, hiA = 0, loB = 255, hiB = 0
-                            for dy in -2...2 { for dx in -2...2 {
-                                let q = ((y + dy) * width + x + dx) * 3 + channel
-                                loA = min(loA, Int(a[q])); hiA = max(hiA, Int(a[q]))
-                                loB = min(loB, Int(b[q])); hiB = max(hiB, Int(b[q]))
-                            } }
-                            if min(hiA - loA, hiB - loB) >= max(24, delta * 2) { edge = true; break }
-                        }
-                    }
+                    let edge = hasSharedEdge(firstSample, secondSample, pixel: pixel, delta: delta)
                     if !edge {
                         guard delta <= 16, noise.count < noiseLimit else { return false }
                         noise.insert(pixel)
                     }
                 }
-                // Residual low-contrast blocks may be at most 2x2 native
-                // pixels. A connected new line is not a collection of noise.
-                while let seed = noise.first {
-                    noise.remove(seed)
-                    var pending = [seed], minX = seed % width, maxX = minX
-                    var minY = seed / width, maxY = minY
-                    while let pixel = pending.popLast() {
-                        let x = pixel % width, y = pixel / width
-                        minX = min(minX, x); maxX = max(maxX, x)
-                        minY = min(minY, y); maxY = max(maxY, y)
-                        guard maxX - minX < 2, maxY - minY < 2 else { return false }
-                        for dy in -1...1 { for dx in -1...1 {
-                            guard (0..<width).contains(x + dx), (0..<height).contains(y + dy) else { continue }
-                            let next = (y + dy) * width + x + dx
-                            if noise.remove(next) != nil { pending.append(next) }
-                        } }
-                    }
-                }
-                return true
+                return hasBoundedNoise(noise)
             }
         }
+    }
+
+    private func hasSharedEdge(
+        _ firstSample: UnsafeRawBufferPointer, _ secondSample: UnsafeRawBufferPointer,
+        pixel: Int, delta: Int
+    ) -> Bool {
+        let column = pixel % width, row = pixel / width
+
+        if column >= 2, row >= 2, column + 2 < width, row + 2 < height {
+            for channel in 0..<3 {
+                var loA = 255, hiA = 0, loB = 255, hiB = 0
+                for offsetY in -2...2 {
+                    for offsetX in -2...2 {
+                        let neighborIndex = ((row + offsetY) * width + column + offsetX) * 3 + channel
+                        loA = min(loA, Int(firstSample[neighborIndex]))
+                        hiA = max(hiA, Int(firstSample[neighborIndex]))
+                        loB = min(loB, Int(secondSample[neighborIndex]))
+                        hiB = max(hiB, Int(secondSample[neighborIndex]))
+                    }
+                }
+                if min(hiA - loA, hiB - loB) >= max(24, delta * 2) { return true }
+            }
+        }
+        return false
+    }
+
+    private func hasBoundedNoise(_ pixels: Set<Int>) -> Bool {
+        var noise = pixels
+        // Residual low-contrast blocks may be at most 2x2 native
+        // pixels. A connected new line is not a collection of noise.
+        while let seed = noise.first {
+            noise.remove(seed)
+            var pending = [seed], minX = seed % width, maxX = minX
+            var minY = seed / width, maxY = minY
+            while let pixel = pending.popLast() {
+                let column = pixel % width, row = pixel / width
+                minX = min(minX, column); maxX = max(maxX, column)
+                minY = min(minY, row); maxY = max(maxY, row)
+                guard maxX - minX < 2, maxY - minY < 2 else { return false }
+                for offsetY in -1...1 {
+                    for offsetX in -1...1 {
+                        guard (0..<width).contains(column + offsetX), (0..<height).contains(row + offsetY)
+                        else { continue }
+                        let next = (row + offsetY) * width + column + offsetX
+                        if noise.remove(next) != nil { pending.append(next) }
+                    }
+                }
+            }
+        }
+        return true
     }
 
     enum Match { case none, pixels, appearance, caret }
@@ -149,44 +190,64 @@ struct NativeTextFieldGuard {
     func rejection(_ current: Data, caret: NativeBoundCaretGuard?) -> String {
         if caret != nil { return "text_field_changed" }
         var left = width, right = -1, top = height, bottom = -1, count = 0
-        source.withUnsafeBytes { (a: UnsafeRawBufferPointer) in
-            current.withUnsafeBytes { (b: UnsafeRawBufferPointer) in
-                for p in 0..<(width * height) {
-                    let i = p * 3
-                    if (0..<3).map({ abs(Int(a[i + $0]) - Int(b[i + $0])) }).max()! <= 16 { continue }
-                    left = min(left, p % width); right = max(right, p % width)
-                    top = min(top, p / width); bottom = max(bottom, p / width); count += 1
+        source.withUnsafeBytes { (firstSample: UnsafeRawBufferPointer) in
+            current.withUnsafeBytes { (secondSample: UnsafeRawBufferPointer) in
+                for pointer in 0..<(width * height) {
+                    let index = pointer * 3
+                    if (0..<3).map({ abs(Int(firstSample[index + $0]) - Int(secondSample[index + $0])) })
+                        .max()! <= 16 {
+                        continue
+                    }
+                    left = min(left, pointer % width); right = max(right, pointer % width)
+                    top = min(top, pointer / width); bottom = max(bottom, pointer / width); count += 1
                 }
             }
         }
-        let w = right - left + 1, h = bottom - top + 1
+        let pixelWidth = right - left + 1, pixelHeight = bottom - top + 1
         // A candidate is a reason to ask for visual confirmation, never a mask.
-        return count >= 12 && w > 0 && Double(w) <= 4 * scale && Double(h) >= 8 * scale
-            && Double(h) <= 80 * scale && h >= w * 3 ? "caret_confirmation_required" : "text_field_changed"
+        return count >= 12 && pixelWidth > 0 && Double(pixelWidth) <= 4 * scale
+            && Double(pixelHeight) >= 8 * scale
+            && Double(pixelHeight) <= 80 * scale && pixelHeight >= pixelWidth * 3
+            ? "caret_confirmation_required" : "text_field_changed"
     }
 
     func nativeRect(_ rect: ScreenRect) throws -> CGRect {
         guard rect.valid, field.cgRect.contains(rect.cgRect), rect.width <= 4,
-              (8...80).contains(rect.height), rect.height >= rect.width * 3 else {
-            throw IPhoneUseError("invalid_caret_region", "Confirm one narrow vertical caret inside the complete field (width <=4, height 8...80 screen points)")
+            (8...80).contains(rect.height), rect.height >= rect.width * 3
+        else {
+            throw IPhoneUseError(
+                "invalid_caret_region",
+                """
+                Confirm one narrow vertical caret inside the complete field (width <=4, height 8...80 screen\
+                 points)
+                """)
         }
-        return CGRect(x: rect.x * scale - crop.minX, y: rect.y * scale - crop.minY,
-                      width: rect.width * scale, height: rect.height * scale).integral
+        return CGRect(
+            x: rect.originX * scale - crop.minX, y: rect.originY * scale - crop.minY,
+            width: rect.width * scale, height: rect.height * scale
+        ).integral
     }
 
     func same(_ first: Data, _ next: Data) -> Bool {
         guard first.count == next.count else { return false }
-        return first.withUnsafeBytes { (a: UnsafeRawBufferPointer) in
-            next.withUnsafeBytes { (b: UnsafeRawBufferPointer) in
+        return first.withUnsafeBytes { (firstSample: UnsafeRawBufferPointer) in
+            next.withUnsafeBytes { (secondSample: UnsafeRawBufferPointer) in
                 var noise: [Int] = []
                 for pixel in 0..<(width * height) {
-                    let i = pixel * 3
-                    let delta = max(abs(Int(a[i]) - Int(b[i])), abs(Int(a[i + 1]) - Int(b[i + 1])),
-                                    abs(Int(a[i + 2]) - Int(b[i + 2])))
+                    let index = pixel * 3
+                    let delta = max(
+                        abs(Int(firstSample[index]) - Int(secondSample[index])),
+                        abs(Int(firstSample[index + 1]) - Int(secondSample[index + 1])),
+                        abs(Int(firstSample[index + 2]) - Int(secondSample[index + 2])))
                     if delta <= ScreenGuard.pixelTolerance { continue }
                     guard delta <= 16, noise.count < 4 else { return false }
-                    let x = pixel % width, y = pixel / width
-                    guard !noise.contains(where: { abs($0 % width - x) <= 1 && abs($0 / width - y) <= 1 }) else { return false }
+                    let column = pixel % width, row = pixel / width
+                    guard
+                        !noise.contains(where: { abs($0 % width - column) <= 1 && abs($0 / width - row) <= 1 }
+                        )
+                    else {
+                        return false
+                    }
                     noise.append(pixel)
                 }
                 return true
