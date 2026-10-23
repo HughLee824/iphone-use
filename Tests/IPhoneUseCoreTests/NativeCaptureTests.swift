@@ -324,6 +324,23 @@ final class NativeCaptureTests: XCTestCase {
             return ["passcodeRequired": false]
         })
     }
+    func testConfirmedLockOrBacklightOffTakesPrecedenceOverSiblingTimeout() {
+        for locked in [true, false] {
+            XCTAssertThrowsError(try NativeCaptureChecks.read { arguments in
+                if locked, arguments.last == "lockState" { return ["passcodeRequired": true] }
+                if !locked, arguments.last == "displays" { return self.display(backlight: "off") }
+                throw IPhoneUseError("coredevice_timeout", "Fixture timeout")
+            }) {
+                XCTAssertEqual(($0 as? IPhoneUseError)?.code, locked ? "device_locked" : "capture_unavailable")
+            }
+        }
+        XCTAssertThrowsError(try NativeCaptureChecks.read { arguments in
+            if arguments.last == "lockState" { throw IPhoneUseError("coredevice_timeout", "Fixture timeout") }
+            return self.display()
+        }) {
+            XCTAssertEqual(($0 as? IPhoneUseError)?.code, "coredevice_timeout", "Capture itself must remain strict")
+        }
+    }
     private final class State {
         let lock = NSLock()
         var screenshots = 0

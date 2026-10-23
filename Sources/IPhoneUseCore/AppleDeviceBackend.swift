@@ -876,6 +876,7 @@ final class AppleDeviceBackend: SessionBackend {
     }
     func previewTick() -> Bool {
         guard let preview, !stopped, !cancellation.isCancelled, let cli, controlError == nil else { return false }
+        var checkingDisplay = true
         do {
             let display = try NativeCaptureChecks.read { try cli.read($0, timeout: 3) }.display
             guard display.backlightOn else { throw IPhoneUseError("device_locked", "Display is not awake") }
@@ -889,6 +890,7 @@ final class AppleDeviceBackend: SessionBackend {
                 if changed { reason = "frame_rotation_conflict" }
             }
             if changed {
+                checkingDisplay = false
                 NativePreviewEvents.append(to: paths.directory.appendingPathComponent("preview-events.jsonl"),
                     event: "refresh_started", reason: reason, source: media?.health() ?? [:])
                 preview.suspend(recovery ? "Recovering video continuity" : "Synchronizing rotation")
@@ -904,6 +906,12 @@ final class AppleDeviceBackend: SessionBackend {
             } else { attachPreview() }
             return changed
         } catch {
+            let health = media?.health() ?? [:]
+            if checkingDisplay, !cancellation.isCancelled, NativePreviewPoll.canDefer(error, health: health) {
+                NativePreviewEvents.append(to: paths.directory.appendingPathComponent("preview-events.jsonl"),
+                    event: "poll_deferred", reason: String(describing: error), source: health)
+                return false // Keep the same media and URL; the next scheduled poll checks again.
+            }
             previewFailure = String(describing: error)
             preview.suspend(String(describing: error))
             recording?.endSegment(reason: "preview_display_unavailable")

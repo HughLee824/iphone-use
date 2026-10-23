@@ -92,6 +92,9 @@ enum CoreDevice {
             guidance = "This timeout does not establish that the device is disconnected or the service is broken. "
                 + "A restricted host execution context can also cause it. If running in a sandbox, compare read-only "
                 + "'iphone-use devices' once with approved host permissions before repeating failed commands or restarting services. "
+        } else if detail.range(of: #"command timeout of [0-9]+(?:\.[0-9]+)? seconds exceeded"#, options: .regularExpression) != nil {
+            code = "coredevice_timeout"
+            guidance = "The query deadline does not establish that the device or an existing media stream is disconnected. "
         } else {
             code = "coredevice_failed"
             guidance = ""

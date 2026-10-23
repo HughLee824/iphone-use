@@ -1,6 +1,18 @@
 import Foundation
 import CoreImage
 
+// Only read-only preview probes may defer a timeout. Never use this policy for
+// input validation, stream startup, or a refresh that has already stopped media.
+enum NativePreviewPoll {
+    static func canDefer(_ error: Error, health: [String: Any]) -> Bool {
+        guard let code = (error as? IPhoneUseError)?.code,
+              ["coredevice_timeout", "coredevice_initialization_timeout"].contains(code),
+              health["healthy"] as? Bool == true else { return false }
+        let snapshots = health["snapshots"] as? [String: Any] ?? [:]
+        return snapshots["closed"] as? Bool != true && snapshots["waitingForKeyframe"] as? Bool != true
+    }
+}
+
 // A quiet screen can legitimately retain its last frame. Only a decoder that
 // previously produced pictures and then lost its dependency chain needs recovery.
 final class NativePreviewContinuity {

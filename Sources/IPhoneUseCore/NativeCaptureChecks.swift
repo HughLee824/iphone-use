@@ -127,6 +127,13 @@ enum NativeCaptureChecks {
         // CoreDevice.read has cancellation and a process deadline. Always join
         // both children before returning, including when either read fails.
         group.wait()
+        // A timed-out sibling must not hide confirmed lock/backlight evidence.
+        if case .success(let lock) = results.replies["lock"]! {
+            guard lock["passcodeRequired"] as? Bool == false else { throw IPhoneUseError("device_locked", "Unlock the iPhone before observing") }
+        }
+        if case .success(let facts) = results.replies["display"]! {
+            guard try NativeDisplay(facts).backlightOn else { throw IPhoneUseError("capture_unavailable", "The display backlight is off; wake the iPhone before observing") }
+        }
         let lock = try results.replies["lock"]!.get()
         guard lock["passcodeRequired"] as? Bool == false else { throw IPhoneUseError("device_locked", "Unlock the iPhone before observing") }
         let display = try NativeDisplay(results.replies["display"]!.get())

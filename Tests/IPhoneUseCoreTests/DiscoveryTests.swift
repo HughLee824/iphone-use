@@ -2,6 +2,18 @@ import XCTest
 @testable import IPhoneUseCore
 
 final class DiscoveryTests: XCTestCase {
+    func testCommandDeadlineIsARecognizedTimeoutWithoutLosingOriginalEvidence() {
+        for seconds in ["5.0", "20"] {
+            let raw = "ERROR: Command timeout of \(seconds) seconds exceeded. Assuming command got stuck and aborting."
+            let error = CoreDevice.commandFailure(["device", "info", "lockState"], exitCode: 2, output: raw)
+            XCTAssertEqual(error.code, "coredevice_timeout")
+            XCTAssertTrue(error.description.contains(raw))
+            XCTAssertTrue(error.description.contains("device info lockState"))
+        }
+        XCTAssertEqual(CoreDevice.commandFailure(["device", "info", "lockState"], exitCode: 2,
+            output: "Unknown timeout while connecting").code, "coredevice_failed")
+    }
+
     func testToolchainFailuresProvideActionableGuidanceWithoutDiscardingAppleError() {
         let cases = [
             "xcrun: error: invalid active developer path (/Library/Developer/CommandLineTools)",
