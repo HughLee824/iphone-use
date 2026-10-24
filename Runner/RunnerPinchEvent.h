@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 #import <CoreGraphics/CoreGraphics.h>
 #import "RunnerStartupGuard.h"
+#import "RunnerAXBinding.h"
 
 NS_ASSUME_NONNULL_BEGIN
 // Runner-only Apple XCTest event synthesis; no host/device-control fallback.

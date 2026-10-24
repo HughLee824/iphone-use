@@ -52,8 +52,11 @@ jobs:
         run: |
           gh release download "v${VERSION}" --repo HughLee824/iphone-use --dir "$RUNNER_TEMP/release" --pattern "iphone-use-${VERSION}-macos-arm64.tar.gz" --pattern "iphone-use-${VERSION}-macos-arm64.tar.gz.sha256" --pattern iphone-use.rb
           archive="$RUNNER_TEMP/release/iphone-use-${VERSION}-macos-arm64.tar.gz"
-          python3 source/scripts/verify-release.py "$archive" --require-clean --no-execute
-          PYTHONPATH=source/scripts python3 - <<'PY'
+          # Published older tags retain the original source layout.
+          release_tools=source/scripts/release
+          if [ ! -f "$release_tools/verify-release.py" ]; then release_tools=source/scripts; fi
+          python3 "$release_tools/verify-release.py" "$archive" --require-clean --no-execute
+          PYTHONPATH="$release_tools" python3 - <<'PY'
           import os, subprocess
           from pathlib import Path
           from release_artifact import inspect_archive
@@ -63,7 +66,7 @@ jobs:
           if release['build']['sourceCommit'] != commit:
               raise SystemExit('The release tag and binary source commit differ.')
           PY
-          python3 source/scripts/generate-homebrew.py "$archive" --output "$RUNNER_TEMP/iphone-use.rb"
+          python3 "$release_tools/generate-homebrew.py" "$archive" --output "$RUNNER_TEMP/iphone-use.rb"
           cmp "$RUNNER_TEMP/iphone-use.rb" "$RUNNER_TEMP/release/iphone-use.rb"
           mkdir -p tap/Formula
           cp "$RUNNER_TEMP/iphone-use.rb" tap/Formula/iphone-use.rb

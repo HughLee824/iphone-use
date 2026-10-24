@@ -1,8 +1,6 @@
 # Public access release
 
-The public entry point is [the iPhone-use website](https://iphone-use.com). CLI / Homebrew 0.2.1, the Release’s unchanged plugin 0.1.6 ZIP, and Git marketplace plugin 0.1.7 are public. Plugin 0.1.7 adds approved display icons without changing the device workflow. Public Git upgrades to 0.1.7 passed in Codex and Claude Code; the user confirmed the Codex icons display correctly. New device-task execution remains separate from those checks. The 0.2.1 Runner includes the approved Logo. Existing 0.2.0 assets remain unchanged. See [channel status and remaining checks](rename-to-iphone-use.md#remaining-external-rollout). The website is static; the plugin packages a skill, not an MCP service.
-
-See the [8 September delivery and acceptance record](public-access-acceptance.md) for verified installation, upgrade and build evidence, plus the deferred device tests.
+The [website](https://iphone-use.com), CLI releases, Git marketplace and npm packages are separate distribution channels. Use release notes and package metadata for published versions; a source checkout or successful package install does not establish physical-device acceptance. The website is static; the plugin packages a skill, not an MCP service.
 
 ## Source ownership
 
@@ -18,24 +16,15 @@ See the [8 September delivery and acceptance record](public-access-acceptance.md
 ## Validate changes
 
 ```sh
-swift test
-python3 -m unittest discover -s scripts/tests -v
-node --test scripts/tests/test_agent_templates.mjs
-python3 scripts/sync-plugin.py --check
-python3 scripts/sync-plugin.py --archive .build/plugins
-xcodebuild build-for-testing \
-  -project Runner/IPhoneUseRunner.xcodeproj -scheme IPhoneUseRunner \
-  -configuration Debug -sdk iphoneos -destination 'generic/platform=iOS' \
-  -derivedDataPath .build/ci-runner \
-  CODE_SIGNING_ALLOWED=NO IPHONEOS_DEPLOYMENT_TARGET=17.0
+python3 scripts/check.py
 ```
 
-The CI workflow runs Swift/Python checks, the unsigned Runner build, Node templates and public installation/bundle checks on macOS. It uploads the plugin ZIP/checksum as `client-plugins` for review. Website build and link checks run independently on Ubuntu in the website repository. The release workflow applies the template and plugin checks to binary releases and attaches the plugin ZIP/checksum to its draft; downloaded plugin artifacts are compared with the exact source before creating the draft. Neither workflow has a physical iPhone or claims task acceptance.
+The shared check runs documentation links, strict SwiftLint, both Swift test suites, Objective-C runtime doubles, Python checks, the unsigned Runner build, Node templates and public installation/bundle checks on macOS. The CI workflow uploads the plugin ZIP/checksum as `client-plugins` for review. Website build and link checks run independently on Ubuntu in the website repository. The release workflow applies the template and plugin checks to binary releases and attaches the plugin ZIP/checksum to its draft; downloaded plugin artifacts are compared with the exact source before creating the draft. Neither workflow has a physical iPhone or claims task acceptance.
 
 ## Publish a plugin change
 
-1. Update the canonical skill, adapter or preflight. Bump the version in both plugin manifests and the SKILL.md workflow version whenever installed content changes.
-2. Run `python3 scripts/sync-plugin.py` and the checks above. Inspect the diff and relocated ZIP contents, including local reference targets and license.
+1. Update the canonical skill, adapter or preflight. Before release, use `python3 scripts/plugin/set-plugin-version.py X.Y.Z` to update the shared distribution version; follow [version policy](../CONTRIBUTING.md#versions-and-release-notes).
+2. Run `python3 scripts/plugin/sync-plugin.py` and the checks above. Inspect the diff and relocated ZIP contents, including local reference targets and license.
 3. Publish the reviewed commit to this public repository. Retain the source commit used for acceptance.
 4. From outside the checkout, add the **public repository** as the marketplace, install in each client, and confirm the cached version. Use [the documented client commands](plugins.md).
 5. Run the first task sequentially on the phone in each client. Verify a real image read, current references, a real navigation action, final screen state and cleanup. Exercise one safe rejection/refresh path. Record the actual task results, not only tool exit codes.

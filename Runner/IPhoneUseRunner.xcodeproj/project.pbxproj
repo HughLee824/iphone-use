@@ -4,24 +4,46 @@
 	classes = {};
 	objectVersion = 56;
 	objects = {
+		C1494624CDDA406095CE1001 = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../packages/runner-support";
+		};
+		C1494624CDDA406095CE1002 = {
+			isa = XCSwiftPackageProductDependency;
+			package = C1494624CDDA406095CE1001;
+			productName = IPhoneUseRunnerSupport;
+		};
+		C1494624CDDA406095CE1003 = {
+			isa = PBXBuildFile;
+			productRef = C1494624CDDA406095CE1002;
+		};
+		C1494624CDDA406095CE1004 = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (C1494624CDDA406095CE1003);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B1494624CDDA406095CE1003 = { isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RunnerAXBinding.m; sourceTree = "<group>"; };
+		B1494624CDDA406095CE1004 = { isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RunnerAXBinding.h; sourceTree = "<group>"; };
+		B1494624CDDA406095CE1005 = { isa = PBXBuildFile; fileRef = B1494624CDDA406095CE1003; };
+		F326E15101D0902D09F4E5B4 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CommandServer.swift"; sourceTree = "<group>"; };
+		446D3333D8E8C94D84B53DB1 = { isa = PBXBuildFile; fileRef = F326E15101D0902D09F4E5B4; };
+		54DED3607002025AD4396CA6 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "XCTestStateTimeout.swift"; sourceTree = "<group>"; };
+		AF267514A41C4EC79BE70029 = { isa = PBXBuildFile; fileRef = 54DED3607002025AD4396CA6; };
+		BE3DB226688532724E6CC7F2 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LiveSessionTests+Observation.swift"; sourceTree = "<group>"; };
+		7AE441227E0B18A6A47F1412 = { isa = PBXBuildFile; fileRef = BE3DB226688532724E6CC7F2; };
+		15E5FA160BBBA1ED3887F7CD = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LiveSessionTests+Input.swift"; sourceTree = "<group>"; };
+		202E6C0EBB9D2A7556DA7A39 = { isa = PBXBuildFile; fileRef = 15E5FA160BBBA1ED3887F7CD; };
+		A8421CBA324523D9D79928AB = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LiveSessionTests+Commands.swift"; sourceTree = "<group>"; };
+		C8DA1C47B1F6AA59C9F9D622 = { isa = PBXBuildFile; fileRef = A8421CBA324523D9D79928AB; };
+		664B6D8B15D706482E0FAB90 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LiveSessionTests+Gestures.swift"; sourceTree = "<group>"; };
+		F864B9B2C1811A839A892D7C = { isa = PBXBuildFile; fileRef = 664B6D8B15D706482E0FAB90; };
 		A0000000000000000000001D = { isa = PBXBuildFile; fileRef = A0000000000000000000001E; };
 		A0000000000000000000001E = { isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RunnerStartupGuard.m; sourceTree = "<group>"; };
 		A0000000000000000000001F = { isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RunnerStartupGuard.h; sourceTree = "<group>"; };
 		A0000000000000000000001A = { isa = PBXBuildFile; fileRef = A0000000000000000000001B; };
 		A0000000000000000000001B = { isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RunnerPinchEvent.m; sourceTree = "<group>"; };
 		A0000000000000000000001C = { isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RunnerPinchEvent.h; sourceTree = "<group>"; };
-		A00000000000000000000018 /* RunnerTextInput.swift in Sources */ = { isa = PBXBuildFile; fileRef = A00000000000000000000019; };
-		A00000000000000000000019 /* RunnerTextInput.swift */ = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/IPhoneUseCore/RunnerTextInput.swift; sourceTree = "<group>"; };
-		A00000000000000000000016 /* NativeCaretGuard.swift in Sources */ = {
-			isa = PBXBuildFile;
-			fileRef = A00000000000000000000017;
-		};
-		A00000000000000000000017 /* NativeCaretGuard.swift */ = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = ../Sources/IPhoneUseCore/NativeCaretGuard.swift;
-			sourceTree = "<group>";
-		};
 
 		A00000000000000000000013 /* Assets.xcassets in Resources */ = {
 			isa = PBXBuildFile;
@@ -38,36 +60,6 @@
 			buildActionMask = 2147483647;
 			files = (A00000000000000000000013);
 			runOnlyForDeploymentPostprocessing = 0;
-		};
-		A00000000000000000000011 /* XCTestDiagnostics.swift in Sources */ = {
-			isa = PBXBuildFile;
-			fileRef = A00000000000000000000012;
-		};
-		A00000000000000000000012 /* XCTestDiagnostics.swift */ = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = ../Sources/IPhoneUseCore/XCTestDiagnostics.swift;
-			sourceTree = "<group>";
-		};
-		A0000000000000000000000F /* ScreenGuard.swift in Sources */ = {
-			isa = PBXBuildFile;
-			fileRef = A00000000000000000000010;
-		};
-		A00000000000000000000010 /* ScreenGuard.swift */ = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = ../Sources/IPhoneUseCore/ScreenGuard.swift;
-			sourceTree = "<group>";
-		};
-		A0000000000000000000000D /* FrameStability.swift in Sources */ = {
-			isa = PBXBuildFile;
-			fileRef = A0000000000000000000000E;
-		};
-		A0000000000000000000000E /* FrameStability.swift */ = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = ../Sources/IPhoneUseCore/FrameStability.swift;
-			sourceTree = "<group>";
 		};
 		A00000000000000000000001 /* LiveSessionTests.swift in Sources */ = {
 			isa = PBXBuildFile;
@@ -88,7 +80,7 @@
 		};
 		A00000000000000000000004 = {
 			isa = PBXGroup;
-			children = (A0000000000000000000001E, A0000000000000000000001F, A0000000000000000000001B, A0000000000000000000001C, A00000000000000000000019, A00000000000000000000017, A00000000000000000000002, A0000000000000000000000E, A00000000000000000000010, A00000000000000000000012, A00000000000000000000014, A00000000000000000000005);
+			children = (B1494624CDDA406095CE1003, B1494624CDDA406095CE1004, F326E15101D0902D09F4E5B4, 54DED3607002025AD4396CA6, BE3DB226688532724E6CC7F2, 15E5FA160BBBA1ED3887F7CD, A8421CBA324523D9D79928AB, 664B6D8B15D706482E0FAB90, A0000000000000000000001E, A0000000000000000000001F, A0000000000000000000001B, A0000000000000000000001C, A00000000000000000000002, A00000000000000000000014, A00000000000000000000005);
 			sourceTree = "<group>";
 		};
 		A00000000000000000000005 /* Products */ = {
@@ -100,10 +92,11 @@
 		A00000000000000000000006 /* IPhoneUseTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = A0000000000000000000000B;
-			buildPhases = (A00000000000000000000008, A00000000000000000000015);
+			buildPhases = (A00000000000000000000008, C1494624CDDA406095CE1004, A00000000000000000000015);
 			buildRules = ();
 			dependencies = ();
 			name = IPhoneUseTests;
+			packageProductDependencies = (C1494624CDDA406095CE1002);
 			productName = IPhoneUseTests;
 			productReference = A00000000000000000000003;
 			productType = "com.apple.product-type.bundle.ui-testing";
@@ -120,6 +113,7 @@
 			knownRegions = (en, Base);
 			mainGroup = A00000000000000000000004;
 			productRefGroup = A00000000000000000000005;
+			packageReferences = (C1494624CDDA406095CE1001);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (A00000000000000000000006);
@@ -127,7 +121,7 @@
 		A00000000000000000000008 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
-			files = (A0000000000000000000001D, A0000000000000000000001A, A00000000000000000000018, A00000000000000000000016, A00000000000000000000001, A0000000000000000000000D, A0000000000000000000000F, A00000000000000000000011);
+			files = (B1494624CDDA406095CE1005, 446D3333D8E8C94D84B53DB1, AF267514A41C4EC79BE70029, 7AE441227E0B18A6A47F1412, 202E6C0EBB9D2A7556DA7A39, C8DA1C47B1F6AA59C9F9D622, F864B9B2C1811A839A892D7C, A0000000000000000000001D, A0000000000000000000001A, A00000000000000000000001, );
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A00000000000000000000009 /* Debug target */ = {

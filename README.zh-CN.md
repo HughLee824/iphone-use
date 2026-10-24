@@ -19,7 +19,7 @@ iPhone-use 是一个 macOS CLI，让外部 agent 能够发现 App、读取截图
 
 [网站](https://iphone-use.com) · [首个 iPhone 任务](docs/first-task.md) · [客户端插件](docs/plugins.md) · [命令概览](#命令概览) · [文档导航](#文档导航)
 
-AgentSoma 已更名为 **iPhone-use**。[CLI 0.2.1](https://github.com/HughLee824/iphone-use/releases/tag/v0.2.1)、Homebrew 和官网均已公开；Release 包含正式 Runner Logo 及独立插件 0.1.6 ZIP；Git marketplace 插件为 0.1.7，已接入正式插件和技能图标。CLI 与插件独立更新。公开插件安装与缓存升级已通过核验，不代表新增真机任务验收。详见[渠道状态与迁移说明](docs/rename-to-iphone-use.md)。
+CLI 与插件独立更新。文档描述当前源码；具体版本支持范围以[发布说明](https://github.com/HughLee824/iphone-use/releases)和已安装命令的帮助为准。
 
 ## 控制模式
 
@@ -39,7 +39,7 @@ AgentSoma 已更名为 **iPhone-use**。[CLI 0.2.1](https://github.com/HughLee82
 
 ## 快速开始
 
-通过 Homebrew 或 Release 归档安装正式 CLI，然后从标准模式开始；Runner 签名是独立的可选流程。完整步骤、旧 formula 迁移及 Homebrew 单公式信任提示见[首次任务](docs/first-task.md)和[安装说明](docs/install.md)。
+通过 Homebrew 或 Release 归档安装正式 CLI，然后从标准模式开始；Runner 签名是独立的可选流程。完整安装与升级步骤见[首次任务](docs/first-task.md)和[安装说明](docs/install.md)。
 
 ### 1. 准备并连接
 
@@ -88,9 +88,9 @@ iphone-use setup --device "$IOS_UDID"
 iphone-use connect --device "$IOS_UDID" --mode runner
 ```
 
-`setup` 不改默认模式；需要持久使用 Runner 时运行 `iphone-use config set mode runner`。源码开发者按[签名入口](docs/onboarding.md#源码开发入口)运行 `build-runner`，再使用返回的 `.xctestrun` 连接。Runner 观察可在支持的动作中使用 `oN:eN`；两种模式的操作及文字语义以支持字段和[动作契约](docs/actions.md)为准。
+`setup` 不改默认模式；需要持久使用 Runner 时运行 `iphone-use config set mode runner`。源码开发者按[签名入口](docs/onboarding.md#源码开发入口)运行 `build-runner`，显式安装返回的已签名 Runner App 后，再使用返回的 `.xctestrun` 连接。普通 connect 不会自动安装。Runner 观察可在支持的动作中使用 `oN:eN`；两种模式的操作及文字语义以支持字段和[动作契约](docs/actions.md)为准。
 
-外部 Agent 插件为可选，安装方法见[插件指南](docs/plugins.md)。旧 AgentSoma 发布包的 Runner 验收与当前标准模式验收分别记录，不将其兼容范围互相套用。
+外部 Agent 插件为可选，安装方法见[插件指南](docs/plugins.md)。源码检查与真机验收范围见[测试指南](docs/testing.md)。
 
 ## 命令概览
 
@@ -119,7 +119,7 @@ iphone-use connect --device "$IOS_UDID" --mode runner
 
 当前源码的 standard 和 runner 均支持共享原生视频流的只读浏览器预览，无需 Device Hub。请使用包含 `preview` 命令的源码构建，不代表已发布 CLI 包已经包含此能力。
 
-预览按 `productType` 精确匹配外观：保留 iPhone 11–16 系列 23 个机型的官方素材；已覆盖的 17 / Air、18 Pro / Pro Max 等机型使用独立绘制的参数化外框。缺失素材和未知机型使用自绘外框，已删除纯画面切换；保留横竖屏和全屏观看。有可用官方素材时，临时验收按钮可在官方外观与自绘外观间切换；页面跟随系统明暗模式，切换外观时保持视频尺寸与中心不变。已支持的 32 个精确标识均有自绘开孔参数，按对应官方 PNG 或公开尺寸图校准，详见[逐机型校准清单](docs/preview-hardware-calibration.md)。新版受限 Apple 素材不随包分发。素材来源与独立许可见 [Product Bezels](assets/preview/README.md)。
+预览按 `productType` 精确匹配外观：保留 iPhone 11–16 系列 23 个机型的官方素材；已覆盖的 17 / Air、18 Pro / Pro Max 等机型使用独立绘制的参数化外框。缺失素材和未知机型使用自绘外框，已删除纯画面切换；保留横竖屏，已删除全屏按钮。Debug 构建在有官方素材时提供外观对比按钮，Release 构建隐藏该按钮；页面跟随系统明暗模式，切换外观时保持视频尺寸与中心不变。已支持的 32 个精确标识均有自绘开孔参数，按对应官方 PNG 或公开尺寸图校准，详见[逐机型校准清单](docs/preview-hardware-calibration.md)。新版受限 Apple 素材不随包分发。素材来源与独立许可见 [Product Bezels](assets/preview/README.md)。
 
 ```sh
 iphone-use --session "$SESSION" preview            # 打开浏览器
@@ -133,11 +133,11 @@ iphone-use --session "$SESSION" preview --stop
 
 CLI 0.3.12 新增 `connect --progress`：连接过程中逐行输出 `connection_progress` JSON，最后仍返回连接结果。Agent 应立即转达明确的授权提示，继续等待同一次连接；密码只在手机上输入。只有与本次 Runner PID 匹配的设备日志才会确认“需要授权”，普通超时、断流或日志不可用不会被当作授权请求。
 
-Runner 可用 `connect --device "$IOS_UDID" --mode runner --progress --preview` 在认证前启动预览页，`--port 9876` 可覆盖端口；工具返回 URL，不自动打开浏览器。页面先显示等待指引，确认授权请求后显示醒目提示，完成认证并连接后在同一网址显示实时画面。默认不加 `--progress` 的单份 JSON 输出保持兼容。专属引导只用于明确的 UI Automation 认证；Face ID 等 App 弹窗保留在真实画面中。详情见 [连接进度与授权](skills/iphone-use/references/connection-progress.md) 和 [验收范围](docs/runner-authorization-preview.md)。
+Runner 可用 `connect --device "$IOS_UDID" --mode runner --progress --preview` 在认证前启动预览页，`--port 9876` 可覆盖端口；工具返回 URL，不自动打开浏览器。页面先显示等待指引，确认授权请求后显示醒目提示，完成认证并连接后在同一网址显示实时画面。默认不加 `--progress` 的单份 JSON 输出保持兼容。专属引导只用于明确的 UI Automation 认证；Face ID 等 App 弹窗保留在真实画面中。详情见 [连接进度与授权](skills/iphone-use/references/connection-progress.md) 和 [测试流程](docs/testing.md)。
 
 预览默认使用固定端口 **8765**。用 `iphone-use config get preview-port` 查看默认值，`iphone-use config set preview-port 9876` 保存下次启动使用的端口。单次指定 `iphone-use --session "$SESSION" preview --port 9877 --no-open` 优先级最高。端口占用会返回 `preview_port_in_use`，可在同一会话换端口重试；已运行的预览需先停止才能更换端口。
 
-目标上限为 30 fps、最长边 960 像素；稳定 30 fps 尚未通过验收，资源紧张时可能卡顿。旋转会结束录屏片段，方向恢复可能延迟；无音频和网页触控。关闭标签页不等于停止预览，浏览器请求也不续期会话。避免与 Device Hub 同时连接/预览同一手机。完整使用步骤、实现与限制见[本地浏览器预览](docs/local-preview-prototype.md)，成功和失败记录见[验收历史](docs/local-preview-validation.md)。
+目标上限为 30 fps、最长边 960 像素；稳定 30 fps 尚未通过验收，资源紧张时可能卡顿。旋转会结束录屏片段，方向恢复可能延迟；无音频和网页触控。关闭标签页不等于停止预览，浏览器请求也不续期会话。避免与 Device Hub 同时连接/预览同一手机。完整使用步骤、实现与限制见[本地浏览器预览](docs/local-preview.md)，验证方法见[测试指南](docs/testing.md)。
 
 ## Agent 接入约定
 
@@ -208,6 +208,7 @@ flowchart LR
 | --- | --- |
 | [`Sources/IPhoneUse`](Sources/IPhoneUse) | CLI 命令与参数解析。 |
 | [`Sources/IPhoneUseCore`](Sources/IPhoneUseCore) | 会话、通信、观察、动作、签名和设备发现。 |
+| [`packages/runner-support`](packages/runner-support) | 宿主与 Runner 共用的 macOS/iOS 静态模块：AX、输入事务和画面校验。 |
 | [`Runner`](Runner) | 薄 iOS XCTest Runner 与独立 Xcode 工程。 |
 | [`Tests`](Tests) | 宿主行为与设备契约的 Swift 测试，以及脱敏测试数据。 |
 | [`scripts`](scripts) / [`packaging`](packaging) | 发布打包、校验与 Homebrew 工具。 |
@@ -225,6 +226,8 @@ iPhone-use 处于早期开发阶段。真机验收覆盖上述实测环境，不
 
 ## 文档导航
 
+[文档首页](docs/README.md)按使用指南、行为契约和维护流程组织全部公开文档。
+
 完整首次任务和架构指南以英文提供；详细命令和签名指南以中文提供。中英文 README 覆盖相同的入门流程。
 
 | 文档 | 内容 |
@@ -235,26 +238,27 @@ iPhone-use 处于早期开发阶段。真机验收覆盖上述实测环境，不
 | [设备与 App 发现](docs/discovery.md) | 发现命令、分页与 CoreDevice 诊断。 |
 | [观察契约](docs/observations.md) · [输出样例](docs/examples/observe/README.md) | 截图、AX 文本、缓存查询、引用及示例。 |
 | [动作接口](docs/actions.md) · [画面校验](docs/screen-guard.md) | 输入语义、可控拖动、稳定检测与派发前检查。 |
-| [本地浏览器预览](docs/local-preview-prototype.md) · [验收历史](docs/local-preview-validation.md) | 两种模式的源码预览、录屏共存、性能与旋转限制。 |
+| [本地浏览器预览](docs/local-preview.md) · [测试指南](docs/testing.md) | 两种模式的源码预览、录屏共存、性能与旋转限制。 |
 | [架构与仓库布局](docs/architecture.md) | 模块职责、会话生命周期，以及公共文件与本地文件的边界。 |
 | [发布流程](docs/release-setup.md) | CLI 与 Runner 的构建、校验及分发。 |
 
 ## 参与贡献
+
+[贡献与 Git/PR 规范](CONTRIBUTING.md) · [安全问题报告](SECURITY.md)
 
 欢迎提交 issue、聚焦的 pull request 和可复现的设备问题报告。较大改动建议先通过 [issue](https://github.com/HughLee824/iphone-use/issues) 讨论范围。
 
 提交前运行与 [CI](.github/workflows/ci.yml) 一致的检查：
 
 ```sh
-swift test
-python3 -m unittest discover -s scripts/tests -v
-node --test scripts/tests/test_dsh_plugin.mjs scripts/tests/test_agent_templates.mjs
-python3 scripts/sync-plugin.py --check
+python3 scripts/tools/install-swiftlint.py
+python3 scripts/tools/install-actionlint.py
+python3 scripts/check.py
 ```
 
-Python 3.9+ 仅用于发布工具和开发测试，不是已安装 CLI 的运行依赖。按上述顺序执行：CLI 集成测试使用 Swift 构建生成的 `.build/debug/iphone-use`，缺失时会跳过。唯一 Swift 包依赖为 [Swift ArgumentParser](https://github.com/apple/swift-argument-parser/tree/1.5.0)，锁定版本 `1.5.0`。
+Python 3.9+ 仅用于发布工具和开发测试，不是已安装 CLI 的运行依赖。检查入口需要完整 Xcode，以及固定版本的 SwiftLint 和 Actionlint，先构建 CLI，再把可执行文件路径显式传给集成测试；缺少 CLI 会报错。默认构建并发为两个任务。唯一外部 Swift 包依赖为 [Swift ArgumentParser](https://github.com/apple/swift-argument-parser/tree/1.5.0)，锁定版本 `1.5.0`。
 
-CI 使用 Node.js 22+ 将文档中的调用模板用于受控工具响应；Node 仅为开发测试所需。修改 canonical skill 后运行 `python3 scripts/sync-plugin.py` 更新包内副本；发布变更时同步提升三份插件清单版本。CI 还会无签名编译 Runner，并打包插件供审阅。官网源码、测试和 Cloudflare 部署独立维护于 [iphone-use-website](https://github.com/HughLee824/iphone-use-website)。具体命令和真机验收要求见[公开接入发布检查](docs/public-access-release.md)。
+CI 使用 Node.js 22+ 将文档中的调用模板用于受控工具响应；Node 仅为开发测试所需。修改 canonical skill 后运行 `python3 scripts/plugin/sync-plugin.py` 更新包内副本；发布变更前使用 `python3 scripts/plugin/set-plugin-version.py X.Y.Z` 同步更新所有共享分发版本。CI 还会无签名编译 Runner，并打包插件供审阅。官网源码、测试和 Cloudflare 部署独立维护于 [iphone-use-website](https://github.com/HughLee824/iphone-use-website)。具体命令和真机验收要求见[公开接入发布检查](docs/public-access-release.md)。
 
 CI 没有真实 iPhone。涉及设备行为的改动还需重新构建 Runner，并在真机验证受影响流程。问题报告应包含 Mac/Xcode/iOS 版本、复现步骤、预期行为和相关错误。分享日志前移除私人画面内容、provisioning profile 和签名资料。修改公共使用说明时，请同步更新中英文 README。新增文件请遵循[目录约定](docs/architecture.md#repository-layout)，本地实验和设备记录不进入 Git。
 

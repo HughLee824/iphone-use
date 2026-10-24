@@ -3,14 +3,20 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-const source = readFileSync(new URL('../../Sources/IPhoneUseCore/NativePreviewPage.swift', import.meta.url), 'utf8');
-const script = source.match(/<script>([\s\S]*?)<\/script>/)[1];
+const source = readFileSync(new URL('../../Sources/IPhoneUseCore/Media/Preview/NativePreviewPage.swift', import.meta.url), 'utf8');
+const fragments = source.match(/static let html = \[([\s\S]*?)\]/)[1].trim().split(/,\s*/);
+const html = fragments.map(name => {
+  const file = `NativePreviewPage+${name[0].toUpperCase()}${name.slice(1)}.swift`;
+  const fragment = readFileSync(new URL(`../../Sources/IPhoneUseCore/Media/Preview/${file}`, import.meta.url), 'utf8');
+  return fragment.match(/"""\n([\s\S]*?)\n        """/)[1].replace(/^        /gm, '').replace(/\\\n/g, '');
+}).join('\n');
+const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 
 const catalog=JSON.parse(readFileSync(new URL('../../assets/preview/catalog.json',import.meta.url),'utf8'));
 
 function fixture(productType='iPhone13,3', navigator={language:'zh-CN'}, appearanceComparisonEnabled=true) {
   let clock = 0;
-  const elements = Object.fromEntries(['notice', 'placeholder', 'gestures', 'screen', 'state', 'diagnostics', 'metrics', 'device', 'stage', 'bezel', 'shell', 'hardware', 'cutout', 'speaker', 'device-name', 'connection', 'appearance-toggle', 'viewer', 'placeholder-label', 'diagnostics-label', 'identity'].map(id => [id, { dataset: {}, style: { setProperty(name,value) { this[name]=value; } }, clientWidth: 1000, clientHeight: id==='identity'?32:700, getBoundingClientRect() { return {left:0,right:0,top:0,bottom:0}; }, events: {}, addEventListener(name, fn) { this.events[name]=fn; }, setAttribute(name,value) { this[name]=value; } }]));
+  const elements = Object.fromEntries(['notice', 'placeholder', 'gestures', 'screen', 'state', 'diagnostics', 'metrics', 'device', 'stage', 'bezel', 'shell', 'hardware', 'cutout', 'speaker', 'device-name', 'connection', 'appearance-toggle', 'viewer', 'placeholder-label', 'diagnostics-label', 'identity'].map(id => [id, { dataset: {}, style: { setProperty(name,value) { this[name]=value; } }, clientWidth: 1000, clientHeight: id==='identity'?32:700, getBoundingClientRect() { return {left:0,right:0,top:0,bottom:0}; }, events: {}, addEventListener(name, fn) { this.events[name]=fn; }, setAttribute(name,value) { this[name]=value; }, removeAttribute(name) { delete this[name]; } }]));
   const document = { documentElement:{}, events:{}, visibilityState: 'visible', getElementById: id => elements[id], addEventListener: (name, fn) => { document.events[name]=fn;if(name==='visibilitychange'){const previous=document.visibilityChanged;document.visibilityChanged=()=>{previous?.();fn();};} } };
   let report;
   const context = vm.createContext({ document, navigator, URLSearchParams, location: { search: '?diagnostics=1' },
@@ -18,6 +24,7 @@ function fixture(productType='iPhone13,3', navigator={language:'zh-CN'}, appeara
     requestAnimationFrame: fn => fn(), setInterval: fn => { report = fn; }, setTimeout() {}, clearTimeout() {},
     AbortSignal: { timeout() {} }, fetch: () => new Promise(() => {}) });
   vm.runInContext(script.replace('\\(appearanceComparisonEnabled ? "true" : "false")', String(appearanceComparisonEnabled)), context);
+  vm.runInContext("streamGeneration='test-generation'",context);
   const profile=catalog.models[productType]||null;
   vm.runInContext(`setDevice(${JSON.stringify({device:{productType,name:profile?.name||'Unknown iPhone'},bezel:profile})})`,context);
   return {
@@ -182,7 +189,7 @@ test('unchanged frames do not write decoration styles and plain controls are rem
     probe.elements[id].style=new Proxy(probe.elements[id].style,{set(){throw Error('redundant layout write: '+id);}});
   }
   for(let i=0;i<1800;i++)probe.layout(444,960);
-  assert.doesNotMatch(source,/id="(?:plain|framed)"|useBezel|class="segments"/);
+  assert.doesNotMatch(html,/id="(?:plain|framed)"|useBezel|class="segments"/);
 });
 
 
@@ -332,7 +339,7 @@ test('preview labels follow the primary browser language with an English fallbac
     e['appearance-toggle'].events.click();
     assert.equal(e['appearance-toggle'].title,zh?'切换官方外观':'Use official frame');
     assert.equal(e['appearance-toggle']['aria-label'],e['appearance-toggle'].title);
-    await p.run("fetch=async()=>({ok:true,json:async()=>({mediaHealthy:false,error:'native_media_unhealthy'})});health()");
+    await p.run("fetch=async()=>({ok:true,json:async()=>({generation:'test-generation',mediaHealthy:false,error:'native_media_unhealthy'})});health()");
     assert.equal(e.connection.title,(zh?'连接不可用':'Connection unavailable')+': native_media_unhealthy');
     assert.equal(e.state.textContent,e.connection.title);
     await p.run("fetch=async()=>{throw Error()};health()");
@@ -396,8 +403,8 @@ test('all gestures use neutral contacts with bounded distinct animation lifetime
     assert.equal((html.match(/<circle /g)||[]).length,paths.length);
     assert.doesNotMatch(html,/<path|gesture-ring|gesture-line/);
   }
-  assert.match(source,/fill:rgba\(142,142,147,\.48\)/);
-  assert.match(source,/@media\(prefers-reduced-motion:reduce\).*\.gesture-touch\{animation:none/);
+  assert.match(html,/fill:rgba\(142,142,147,\.48\)/);
+  assert.match(html,/@media\(prefers-reduced-motion:reduce\).*\.gesture-touch\{animation:none/);
 });
 
 
@@ -409,16 +416,16 @@ test('in-flight gesture responses cannot restore history after a visibility chan
       fetch=()=>new Promise((resolve,reject)=>{pendingResolve=resolve;pendingReject=reject;});`);
     const pending=p.run('gestures()');
     p.visibility('hidden');p.visibility('visible');
-    p.run(failed?'pendingReject(Error())':`pendingResolve({ok:true,json:async()=>({sequence:11,events:[${JSON.stringify(event)}]})})`);
+    p.run(failed?'pendingReject(Error())':`pendingResolve({ok:true,headers:{get:()=>streamGeneration},json:async()=>({sequence:11,events:[${JSON.stringify(event)}]})})`);
     await pending;
     assert.equal(p.run('gestureCursor'),null);
     assert.equal(p.elements.gestures.innerHTML,'');
     // The first new response establishes a cursor and must not replay old events.
-    await p.run(`fetch=async()=>({ok:true,json:async()=>({sequence:12,events:[${JSON.stringify(event)}]})});gestures()`);
+    await p.run(`fetch=async()=>({ok:true,headers:{get:()=>streamGeneration},json:async()=>({sequence:12,events:[${JSON.stringify(event)}]})});gestures()`);
     assert.equal(p.run('gestureCursor'),12);
     assert.equal(p.elements.gestures.innerHTML,'');
     // Subsequent live events still render normally.
-    await p.run(`fetch=async()=>({ok:true,json:async()=>({sequence:13,events:[${JSON.stringify(event)}]})});gestures()`);
+    await p.run(`fetch=async()=>({ok:true,headers:{get:()=>streamGeneration},json:async()=>({sequence:13,events:[${JSON.stringify(event)}]})});gestures()`);
     assert.match(p.elements.gestures.innerHTML,/gesture-touch/);
   }
 });
@@ -427,7 +434,7 @@ test('in-flight gesture responses cannot restore history after a visibility chan
 test('gesture long polling renews immediately and backs off only on failure or hiding', async () => {
   const p=fixture();p.layout(444,960);p.elements.device.dataset.ready='true';
   p.run(`let delays=[];setTimeout=(fn,delay)=>{if(fn===gestures)delays.push(delay);};
-    fetch=async()=>({ok:true,json:async()=>({sequence:0,events:[]})});`);
+    fetch=async()=>({ok:true,headers:{get:()=>streamGeneration},json:async()=>({sequence:0,events:[]})});`);
   await p.run('gestures()');
   assert.equal(p.run('delays.at(-1)'),0);
   await p.run('fetch=async()=>{throw Error()};gestures()');
@@ -445,6 +452,7 @@ function decodingFixture() {
     screen.naturalWidth=444;screen.naturalHeight=960;screen.style.cssText='width:100px';
     function candidate(){
       const image={naturalWidth:444,naturalHeight:960,style:{},cloneNode:()=>candidate(),replaceWith(next){this.replacement=next;}};
+      image.removeAttribute=name=>{delete image[name];};
       image.decode=()=>new Promise((resolve,reject)=>{image.resolve=resolve;image.reject=reject;});
       candidates.push(image);return image;
     }
@@ -497,7 +505,7 @@ test('decoded dimension and half-turn changes still relayout and update gesture 
 test('frame polling waits for the bounded candidate and retries a decode error', async () => {
   const p=decodingFixture();
   p.run(`let requested=[],scheduled=[];
-    fetch=async url=>{requested.push(url);return {ok:true,headers:{get:key=>({'X-Preview-Sequence':'4','X-Preview-Rotation':'rot0'})[key]||'1'},blob:async()=>({})};};
+    fetch=async url=>{requested.push(url);return {ok:true,headers:{get:key=>({'X-Preview-Generation':'test-generation','X-Preview-Sequence':'4','X-Preview-Rotation':'rot0'})[key]||'1'},blob:async()=>({})};};
     setTimeout=(fn,delay)=>scheduled.push({fn,delay});
     let polling=frames();`);
   // Flush the fetch/body awaits, without resolving the image decode.
@@ -508,7 +516,7 @@ test('frame polling waits for the bounded candidate and retries a decode error',
   await p.run('polling');
   assert.equal(p.run('failures'),1);
   assert.equal(p.run('scheduled.length'),1);
-  assert.equal(p.run('scheduled[0].delay'),100);
+  assert.equal(p.run('scheduled[0].delay'),250);
   assert.equal(p.run('screen===originalScreen'),true);
 });
 
@@ -538,9 +546,9 @@ test('missing video and ordinary failures never imply an authorization request',
   await p.run('fetch=async()=>{throw Error()};health()');
   assert.equal(p.elements.state.textContent,'预览已停止或连接断开');
   assert.equal(p.elements.notice.hidden,false);
-  assert.match(source,/#notice\{[^}]*background:#10151e/);
-  assert.match(source,/<div id="notice" aria-hidden="true" hidden><\/div>/);
-  assert.doesNotMatch(source,/notice-title|notice-message|notice-art|notice-brand|authorization-art|Enable UI Automation/);
+  assert.match(html,/#notice\{[^}]*background:#10151e/);
+  assert.match(html,/<div id="notice" aria-hidden="true" hidden><\/div>/);
+  assert.doesNotMatch(html,/notice-title|notice-message|notice-art|notice-brand|authorization-art|Enable UI Automation/);
 });
 
 test('lost authorization evidence never silently claims recovery while video remains healthy', () => {
@@ -616,7 +624,7 @@ test('late initial health responses cannot restore the cover over a newer frame'
     const pendingHealth=p.run('health()');
     const pendingFrame=p.run("displayFrame({},'rot0')");
     p.run('candidates[0].resolve()');await pendingFrame;
-    p.run(`finishHealth({ok:${!failed},json:async()=>({connection:{phase:'starting',authorization:'unknown'},mediaHealthy:false,frameAgeSeconds:null})})`);
+    p.run(`finishHealth({ok:${!failed},json:async()=>({generation:'test-generation',connection:{phase:'starting',authorization:'unknown'},mediaHealthy:false,frameAgeSeconds:null})})`);
     await pendingHealth;
     assert.equal(p.elements.notice.hidden,true);
     // A later, genuinely failed check still covers the last frame.
@@ -645,4 +653,42 @@ test('other or unknown runtime permission requests never become UI Automation pr
     assert.equal(p.elements.device.dataset.notice,'false');
     assert.equal(p.elements.state.textContent,'实时画面');
   }
+});
+
+test('reconnect discards an old decode and accepts only the new generation', async () => {
+  const p=decodingFixture();p.frame(100,1);
+  const old=p.run("displayFrame({},'rot0')");
+  p.run("acceptState({generation:'new-connection',state:'waiting',mediaHealthy:false})");
+  assert.equal(p.elements.notice.hidden,false);
+  p.run('candidates[0].resolve()');
+  assert.equal(await old,null);
+  assert.equal(p.elements.notice.hidden,false);
+  assert.equal(p.run('lastFrameAt'),0);
+  const fresh=p.run("displayFrame({},'rot0')");
+  p.run('candidates[1].resolve()');await fresh;
+  assert.equal(p.elements.notice.hidden,true);
+  assert.equal(p.run('streamGeneration'),'new-connection');
+});
+
+test('disconnect and revoked URL clear pixels and reject pending decode', async () => {
+  for(const revoke of [false,true]) {
+    const p=decodingFixture();p.frame(100,1);
+    const first=p.run("displayFrame({},'rot0')");p.run('candidates[0].resolve()');await first;
+    const pending=p.run("displayFrame({},'rot0')");
+    if(revoke)await p.run('fetch=async()=>({ok:false,status:404});health()');
+    else p.run("acceptState({generation:'disconnected',state:'disconnected'})");
+    assert.equal(p.elements.notice.hidden,false);
+    assert.equal(p.run('screen.src'),undefined);
+    assert.equal(p.run('objectURL'),null);
+    p.run('candidates[1].resolve()');assert.equal(await pending,null);
+    assert.equal(p.elements.notice.hidden,false);
+  }
+});
+
+test('old generation HTTP frame response cannot be decoded', async () => {
+  const p=decodingFixture();
+  p.run(`fetch=async()=>({ok:true,headers:{get:()=> 'obsolete-generation'},blob:async()=>({})});`);
+  await p.run('frames()');
+  assert.equal(p.run('candidates.length'),0);
+  assert.equal(p.elements.notice.hidden,false);
 });

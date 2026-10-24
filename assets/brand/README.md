@@ -32,7 +32,7 @@ Runner host. Build/install a new Runner to update an existing device icon.
 The Codex plugin uses the light/dark mark SVGs for its listing and composer icons.
 Its skill uses the opaque app icon for legibility on either theme. Copies in
 `skills/iphone-use/assets/` must match these approved exports byte for byte; run
-`python3 scripts/sync-plugin.py` to update the self-contained plugin copies.
+`python3 scripts/plugin/sync-plugin.py` to update the self-contained plugin copies.
 The plugin archive test verifies that all icon paths survive relocation and
 their contents match the brand originals. Plugin 0.1.7 introduces these metadata
 fields; existing installations need the updated plugin to display them.
@@ -51,20 +51,10 @@ The approved assets are merged into this repository and deployed by the separate
 [iphone-use-website repository](https://github.com/HughLee824/iphone-use-website).
 Future asset edits still need to be copied and deployed there separately. Published
 0.2.0 release archives retain their original packaged icon.
-Previous AgentSoma assets remain available in [Git history](https://github.com/HughLee824/iphone-use/tree/8410e7d/assets/brand).
 Local design archives and generated preview images are not production inputs.
 
 ## Re-export
 
-From the repository root, with Node.js and `sharp` available:
+The isolated [brand toolchain](../../scripts/brand/README.md) pins Sharp and Pillow and keeps its dependencies separate from the published plugin. Follow that guide to install dependencies, regenerate the assets and validate the design kit.
 
-```sh
-node scripts/export-brand-assets.cjs
-```
-
-If `sharp` is installed outside the module search path, set
-`NODE_PATH=/path/to/node_modules`. This is a design-time dependency only.
-The exporter uses the approved SVG files, updates all production PNG/ICO assets,
-the Runner copy and [the SHA-256 manifest](manifest.json). It does not require a
-font download or modify approved geometry. To reconstruct the SVGs from their
-parameters, follow the [design kit instructions](iphone-use-final/README.md).
+The exporter uses the approved SVG files, updates production PNG/ICO assets, the Runner copy and [the SHA-256 manifest](manifest.json). It does not download fonts or alter approved geometry. Update the skill icon copies and the embedded preview favicon deliberately when changing the approved artwork; existing tests check their consistency.

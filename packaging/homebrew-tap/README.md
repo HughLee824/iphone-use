@@ -1,6 +1,6 @@
 # HughLee824 Homebrew Tap
 
-> iPhone-use 0.2.1 is published and the public Tap provides that version. The package includes the approved Runner Logo; the separate plugin ZIP is version 0.1.6. Repository, Release and plugin versions update independently. Existing 0.2.0 assets remain unchanged.
+> CLI and plugin versions update independently. See GitHub Releases and the Tap formula for the available stable package.
 
 
 Homebrew distribution for [iPhone-use](https://github.com/HughLee824/iphone-use).
@@ -22,20 +22,7 @@ brew upgrade iphone-use
 brew uninstall iphone-use
 ```
 
-Disconnect active sessions before upgrading. Current source generates a formula that installs only `iphone-use`, without an `agentsoma` alias or conflict declaration. Old AgentSoma preferences and Runner state are ignored and left untouched; select the desired mode explicitly and prepare the current Runner if needed. Standard mode does not require Runner setup. Uninstalling the formula leaves local signing state and installed iPhone apps intact.
-
-## Historical formula-scoped trust
-
-The following applies only to earlier published formulas that included the old-command conflict. Newly generated formulas do not require this step.
-
-On Homebrew versions enforcing Tap Trust, installation may fail while loading the legacy `agentsoma` formula for the compatibility-command conflict check, even after the old package is uninstalled. Review [that formula](https://github.com/HughLee824/homebrew-tap/blob/main/Formula/agentsoma.rb); if you trust it, explicitly grant trust to that formula only and retry:
-
-```sh
-brew trust --formula HughLee824/tap/agentsoma
-brew install HughLee824/tap/iphone-use
-```
-
-This persistently trusts the one formula; it does not install the old package or require whole-Tap trust. If you do not want to grant it, use the checksum-verified manual Release installation.
+Disconnect active sessions before upgrading. The formula installs `iphone-use`; select the desired mode explicitly and prepare the matching Runner when needed. Standard mode does not require Runner setup. Uninstalling the formula leaves local signing state and installed iPhone apps intact.
 
 ## Maintainers
 

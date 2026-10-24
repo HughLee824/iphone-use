@@ -12,23 +12,21 @@
 
 `text-prepare` 的 `keyboardPrepared` 和 `inputReportsSent=0` 描述服务准备事实，不证明焦点；截图失败时命令返回非零并保留准备结果，需要另行 observe。发现失败不会发送按键或创建服务。仅适用于 apple-native，旧宿主拒绝未知命令。
 
-原生 `press oN --key return --field-rect x,y,width,height --observe` 现支持向已确认焦点发送独立 Return。完整字段、当前 observationID、全屏保护、方向、请求受理后的验证预算及完整字段跨帧复核与 type 相同；省略字段矩形时保护整个屏幕。不聚焦、不访问剪贴板、不自动完成待恢复的粘贴事务。调用方先核对输入结果并 text-finish，再决定是否发送 Return。Return 由 App 解释，可能搜索、完成、换行或提交；`keyReportQueued` 仅是本地发送事实，`keyEffectConfirmed=false`，结果仍为 unknown，必须检查新图。原生 type 的 auto/paste 正文允许 LF/CR 换行，作为文本一次粘贴，不转换或隐式附加 Return；keys 及其他控制字符仍拒绝。XCTest 仍使用原有 `press oN:eN --key return`。
+原生 `press oN --key return --field-rect x,y,width,height --observe` 现支持向已确认焦点发送独立 Return。完整字段、当前 observationID、全屏保护、方向、请求受理后的验证预算及完整字段的新图校验与 type 相同；省略字段矩形时保护整个屏幕。不聚焦、不访问剪贴板、不自动完成待恢复的粘贴事务。调用方先核对输入结果并 text-finish，再决定是否发送 Return。Return 由 App 解释，可能搜索、完成、换行或提交；`keyReportQueued` 仅是本地发送事实，`keyEffectConfirmed=false`，结果仍为 unknown，必须检查新图。原生 type 的 auto/paste 正文允许 LF/CR 换行，作为文本一次粘贴，不转换或隐式附加 Return；keys 及其他控制字符仍拒绝。XCTest 仍使用原有 `press oN:eN --key return`。
 
 `apple-native` 使用 `type oN --mode insert|replace|append --text 'Ab7!?'`，绑定当前截图而非 AX 节点。所有模式都要求先在受控页面观察、点击输入框，再用新截图确认焦点。`insert` 使用当前光标/选区；`replace` 先发送 Command-A 全选；`append` 先发送 Command-Down 请求移动到全文末尾。后两者不读取或重构原文，也不声明已经确认选区或末尾定位。ASCII 路径接受 1–64 个可打印字符，使用 US HID 映射。包含非 ASCII 字符或 LF/CR 换行的整段文本（如 `中文`、` A7，测🙂`）使用原生剪贴板服务与一次自写 HID Paste，最多 4096 UTF-8 bytes；不拆成拼音，不做候选词判断。不切换设备布局/输入法，不自动聚焦，auto/paste 保留正文中的 LF/CR（包括 CRLF），不规范化换行；其他控制字符仍拒绝。发送 Return 按键必须通过上述独立 press 操作。只有 `replace` 接受空文本，使用全选后 Delete，不读写剪贴板；即使显式指定 paste，空文本也不创建粘贴事务。
 
 全选/末尾定位与后续文本共用一次有界 HID 序列，每个组合键后释放，再发送下一步。`textMode` 记录意图，`editingShortcutQueued` 只证明本地发送队列完成，`editingEffectConfirmed=false` 不宣称设备完成了定位。取消或通道错误即使发生在定位之后、正文之前，也返回可能执行的不确定结果，不自动重放。所有模式沿用完整字段保护，因此新增模式本身不解决光标闪烁拒绝。普通 UIKit 控件的验收不能代替网页、自定义编辑器或其他快捷键处理器的兼容验证。
 
-键盘按需创建且只属于当前连接。首次注册可能收起软键盘，随后屏幕保护会拒绝旧截图并返回 `not_dispatched`；必须重新观察并决定新动作。输入前仍校验设备、会话和整屏指纹。当前观察作为比较基准，不因 Agent 思考超过 30 秒直接失效；从请求受理开始最多允许 30 秒进入输入，每个截图复核阶段最多 8 秒，最后的剪贴板所有权检查也必须在最后阶段的期限内结束。该预算限制是否能派发输入，不是底层阻塞调用必定返回的墙钟上限。每个字符后释放全部按键，Shift 先独立按下；取消或发送失败尝试释放且不重放文本。结果截图由外部 Agent 核对，`charactersQueued` 不代表已输入字符数，`outcome=unknown` 不自动升级为成功。
+键盘服务按需发现，复用设备内置的 CoreDevice 服务。准备会使旧观察失效；必须检查新图再决定动作。输入前仍校验设备、会话和整屏指纹。当前观察作为比较基准，不因 Agent 思考超过 30 秒直接失效；从请求受理开始最多允许 30 秒进入输入，每个截图复核阶段最多 8 秒，最后的剪贴板所有权检查也必须在最后阶段的期限内结束。该预算限制是否能派发输入，不是底层阻塞调用必定返回的墙钟上限。每个字符后释放全部按键，Shift 先独立按下；取消或发送失败尝试释放且不重放文本。结果截图由外部 Agent 核对，`charactersQueued` 不代表已输入字符数，`outcome=unknown` 不自动升级为成功。
 
-`textInputMethods.asciiHID` / `unicodePasteboard` 区分当前可尝试的两条路径。`capabilities.text` 表示当前可尝试原生输入，`keyboard.prepared` 表示键盘已完成注册。设备焦点、布局、自动更正仍未由后端确认。关闭时必须按 ID 和唯一名称确认所属键盘，发送移除命令后通过关联枚举确认消失；`keyboardRemoveAcknowledged=false` 时不得宣称完整清理。以下原有节点输入与 Runner 检查描述适用于 XCTest 后端。
-
-此前的软键盘“你好”与 HID 拼音 `zhongwen` 选词测试只证明输入法闭环。本轮另外完成了直接 `type --text '中文'` 和中英/标点/emoji 的 Probe 验证，见[原生 Unicode 输入](apple-native-backend.md#unicode-text-input-2026-09-20)。
+`textInputMethods.asciiHID` / `unicodePasteboard` 区分当前可尝试的两条路径。`capabilities.text` 表示当前可尝试原生输入，`keyboard.prepared` 表示内置键盘服务已准备。设备焦点、布局、自动更正仍未由后端确认。关闭时释放本次按下的键并关闭自有通道，不移除内置键盘服务。以下原有节点输入与 Runner 检查描述适用于 XCTest 后端。
 
 Unicode 输入会读取并在内存中备份设备通用剪贴板，写入整段文本，核对内容与变化计数后发送一次 Command-V。原内容在内存中保留到显式 text-finish 或会话关闭，期间写入文本继续占用剪贴板，以便系统确认框中的粘贴仍能读取它。调用方必须先处理粘贴确认框、核对结果，再用当前观察和事务 ID 执行 text-finish，或关闭会话；后端不自动允许系统弹窗。`pasteShortcutQueued` 不是文字已提交的证明，API 仍返回 `unknown` 和新截图。
 
 关闭时仅在内容和身份/计数仍匹配时尝试恢复；`pasteboardRestoreAcknowledged=false` 会使整体清理不确认。协议不提供原子比较后恢复，不能与其他剪贴板写入者并发使用；宿主崩溃、断连、写入回包丢失可能导致无法恢复。原剪贴板正文不写入诊断日志或磁盘备份，不能恢复时不得宣称清理成功。
 
-原生 `type` 可指定 `--field-rect x,y,width,height`，由调用方在当前原始截图中选择完整输入框，以屏幕 points 表示。局部基准为零变化限制，全屏仍为 1% 变化限制；省略该参数时仍对整屏实施局部零变化保护。矩形必须在该截图范围内，不自动聚焦、不自动识别输入框，不接受 XCTest/节点引用用法。文字与按键均使用下述完整字段跨帧复核，不按光标颜色放行。Unicode 路径在剪贴板写入前后各最多采集 6 帧、各最多 8 秒，始终比较原 observation 的指纹，且从请求受理到输入的总预算为 30 秒；最后阶段的期限同时约束后续所有权检查和输入派发；全屏超限立即拒绝。这里只重复只读截图，不重试输入，也不刷新比较基准。不得缩小矩形去绕开正文或光标。
+原生 `type` 可指定 `--field-rect x,y,width,height`，由调用方在当前原始截图中选择完整输入框，以屏幕 points 表示。局部基准为零变化限制，全屏仍为 1% 变化限制；省略该参数时仍对整屏实施局部零变化保护。矩形必须在该截图范围内，不自动聚焦、不自动识别输入框，不接受 XCTest/节点引用用法。文字与按键均使用下述完整字段的新图校验，不按光标颜色放行。Unicode 路径在剪贴板写入前后各采集一张新 PNG，每阶段最多 8 秒，始终比较原 observation 的指纹，且从请求受理到输入的总预算为 30 秒；最后阶段的期限同时约束后续所有权检查和输入派发；全屏超限立即拒绝。各阶段只做只读校验，不重试输入，也不刷新比较基准。不得缩小矩形去绕开正文或光标。
 
 原生画面差异拒绝现在返回 `result.screenGuard` 的实际变化比例，并将触发拒绝的原图作为 `observation.phase=pre_input_rejection` 附带。`result.rejectedObservationID` 是该新观察，原引用失效；它不是动作后图，不提供 `afterObservationID`，动作仍为 `not_dispatched`。调用方先检查附图，再决定新动作；捕获失败/无差异比较结果的拒绝不保证带图。缓存仍只保留两个观察，关闭会话时移除，需及时保存证据。
 
@@ -52,7 +50,7 @@ iphone-use --session "$SESSION" tap o13:e10 --protect o13:e20
 
 - tap 元素用完整 `oN:eN`。点坐标形式用 `oN --x --y`，单位为屏幕点；不是 PNG 像素，不能同时指定元素引用。点击范围限制在当前已确认的 App 或弹窗内。
 - swipe 的 up/down/left/right 描述手指移动方向；宿主根据可见 frame 的 20%/80% 位置生成端点。明确端点形式可控制手指移动距离，两种形式均支持下述速度和停留参数。tap/swipe 先校验画面再执行坐标，不依赖 identifier/label 唯一性；阈值、附加保护区域、限制见 [动作前画面校验](screen-guard.md)。
-- insert 直接向指定输入框发送文字，保留已有光标位置，不额外点击字段。它需要现有键盘焦点；需要聚焦时由 agent 先 tap、再 observe。公开 hasFocus 在本设备中不反映键盘焦点，不能据此预检。
+- Runner insert 沿完整路径与 AX 身份定位字段，以 `hasKeyboardFocus` 判断键盘焦点。已有焦点时不额外点击；需要聚焦时只点击一次，随后重新采集并复核路径、身份和焦点。焦点切换创建新控件时停止，要求新观察。详见[路径定位与完整采集](architecture.md#runner-路径定位与完整-ax-采集)。
 - Runner replace 在再次核对目标后，用当前可读原文的 UTF-16 长度界定删除次数。聚焦后通过 XCTest `typeKey(Command-Down)` 请求移到全文末尾，再用 `typeText(Delete)` 退格；读取清空后的快照，只有无剩余 AX 文本才插入新正文。UIKit 空字段可能省略 AX value；残留文本或非字符串值返回 `replace_clear_unconfirmed`，不继续插入，也不重试。空文本只执行清空。安全字段、不可读原文、原文与非空 placeholder 相同或原文超过 4096 UTF-8 bytes 时，输入前返回 `replace_value_unavailable`。不使用 Command-A，也不把 Forward Delete 的原始字符交给 typeText（iOS 会将其插入正文）。没有自动 Return 或提交。App 可能在聚焦后打开另一个编辑器并继续暴露原字段的 AX 值，因此调用者仍必须检查动作后画面中的实际正文。
 - Runner append 读取已校验目标的完整可读原文，将原文和新增文本拼接后走 replace；不依赖初始光标/选区；若清空后的快照仍报告文本，则停止而不插入。安全字段、无字符串原文、原文与 placeholder 无法区分、拼接后超过 4096 bytes 或含不支持字符时，在输入前拒绝。nil 值不推断为空文本；已有内容的控件处理、格式和 undo 行为仍可能因整段替换改变。宿主验证旧观察，Runner 使用再次核对后的当前快照值构造正文；不从过期 AX 值重建。
 - Runner 文本上限为 4096 UTF-8 字节，支持 LF 换行，但只允许用于明确的 text_view；text_field、secure_text_field、search_field 在聚焦/输入前拒绝多行。当前 Probe 实测 XCTest 把 CRLF 写成两个 LF，因此 Runner 明确拒绝 CR/CRLF，既不静默规范化，也不借用原生粘贴通道。其他控制键仍拒绝；insert/append 不接受空字符串，replace 空字符串表示清空。
@@ -76,7 +74,7 @@ iphone-use --session "$SESSION" type o2:e8 --mode replace --text '新内容' --o
 ```
 
 - `action` 完整保留原动作回执，包括 `outcome`、错误及可用输入事实；`observation` 独立保留观察回执。CLI 退出码与顶层 `ok` 表示整组是否成功：动作和观察均成功才为 0 / true。
-- 标准模式动作后最多等待 15 秒，以 Apple PNG 连续采样：同一设备、会话、显示方向与尺寸下至少 3 帧满足就绪条件，稳定跨度至少 0.4 秒，总观察跨度至少 1.5 秒。比较固定候选帧，容忍有限色差；另允许每帧至多全屏 0.1% 像素变化，但连续窗口累计差异包围框必须在 320 平方点、任一边 80 点内。此局部容差仅用于动作后就绪，不修改动作前校验或 Runner；详见[动作后判稳](native-post-action-stability.md)。返回最后一张原图，`observationID`、PNG、哈希及 `postActionStability` 元数据保持绑定。该预算独立于派发前的 30/8 秒预算。
+- 标准模式动作后最多等待 15 秒，以 Apple PNG 连续采样：同一设备、会话、显示方向与尺寸下至少 3 帧满足就绪条件，稳定跨度至少 0.4 秒，总观察跨度至少 1.5 秒。比较固定候选帧，容忍有限色差；另允许每帧至多全屏 0.1% 像素变化，但连续窗口累计差异包围框必须在 320 平方点、任一边 80 点内。此局部容差仅用于动作后就绪，不修改动作前校验或 Runner。返回最后一张原图，`observationID`、PNG、哈希及 `postActionStability` 元数据保持绑定。该预算独立于派发前的 30/8 秒预算。
 - 视频等持续变化区域仅沿用本动作明确提供的 `--ignore-rect`；方向/坐标空间变化后禁用旧区域。动作后不会沿用输入前的光标位置，不会把整个输入框排除，也不识别光标颜色。小范围闪烁可满足上述就绪条件；较大持续运动在至少三个同几何样本和 1.5 秒观察后返回当前图，标记 `dynamic_or_transitioning`，不要求视频停止。
 - `observation.ok=true` 仅表示取得有效截图。必须另看 `observation.stability.stable`：动态画面或期限内未判稳时保留最后有效截图并附相应原因；没有有效截图等采集失败则 `observation.ok=false`。两者均保留输入的已知/未知结果，绝不重放输入。视觉稳定也不等于业务动作成功，仍须 Agent 判断。
 - 独立 `observe` 保留单次采集语义；`text-finish` 仅恢复剪贴板，不新增动作后判稳。Runner 的动态观察完成条件见下方执行结果。有限采样不能保证未来不会出现延迟加载，下一次动作仍执行原有前置校验。
@@ -129,13 +127,11 @@ iphone-use --session "$SESSION" observe
 
 成功回执增加 `result.motion`，例如 `{"velocity":100,"pressDuration":0.5,"holdDuration":0.2}`。它表示 Runner 调用 XCTest 时采用的参数，不是从触摸硬件采样出的实测速度。宿主核对它与请求一致；缺失或不一致时保留输入事实及可用结果帧，返回 `unknown` / `missing_swipe_motion_facts`，不重放。`completed` 仍只表示输入结束且画面稳定，目标值必须由调用 agent 核验。
 
-实验性 `apple-native` 后端使用当前截图 `oN` 的屏幕点轨迹，不读取 AX 或启动 Runner。对原生竖屏轴的显示器，支持当前画面为竖屏及左右横屏；两端坐标按本次观察方向映射，旋转后必须重新观察。它按原始截图比例换算速度，至少用一个 1/60 秒采样间隔完成移动，并返回 `motionVelocityUnit=original_screenshot_pixels_per_second`、计划移动时长及实际排队的 MOVE 数量。采样目标为 60 Hz，发送延迟时跳过过期点；速度是计划值，不是设备实测值。整个输入有 10 秒执行期限（释放清理另有最多 3 秒等待）。按住和末端停留沿用 `--press-duration`、`--hold-duration`；Probe 的长按菜单和拖放已完成竖屏及左右横屏验收，具体范围见[原生手势与方向记录](apple-native-backend.md#landscape-touch-and-static-display-liveness-2026-09-21)，不外推所有 App。
+实验性 `apple-native` 后端使用当前截图 `oN` 的屏幕点轨迹，不读取 AX 或启动 Runner。对原生竖屏轴的显示器，支持当前画面为竖屏及左右横屏；两端坐标按本次观察方向映射，旋转后必须重新观察。它按原始截图比例换算速度，至少用一个 1/60 秒采样间隔完成移动，并返回 `motionVelocityUnit=original_screenshot_pixels_per_second`、计划移动时长及实际排队的 MOVE 数量。采样目标为 60 Hz，发送延迟时跳过过期点；速度是计划值，不是设备实测值。整个输入有 10 秒执行期限（释放清理另有最多 3 秒等待）。按住和末端停留沿用 `--press-duration`、`--hold-duration`；Probe 的长按菜单和拖放已完成竖屏及左右横屏验收，验收方法见[测试指南](testing.md)，不外推所有 App。
 
 原生 CONTACT/MOVE/RELEASE 的发送完成不是设备执行确认，因此始终保留 `outcome=unknown`，附带新的截图供外部 Agent 判断滚动方向和目标状态。取消、媒体失活或发送异常时尝试在最后发送位置释放，撤销该会话后续输入能力，不补发 MOVE，不重放动作；需显式建立新会话并重新观察。
 
 原生回执的 `result.recovery` 区分检查结果截图、重新观察、检查媒体状态和显式重连。`result.controlErrorCode` 给出具体不可用原因，原有顶层 `error.code` 与执行事实保持不变。`automaticReplayAllowed` 始终为 false。截图过期不会要求重连；HID 输入或释放已不确定时，即使结果截图可用也必须先处理旧会话清理，再新建会话观察。IPC 失联只要求检查原会话，不能据此认定宿主已退出。详见[原生恢复契约](apple-native-backend.md#control-diagnostics-and-recovery)。
-
-本地验证覆盖参数拒绝、默认值兼容、两种目标形式的参数传输、Runner 共享模型解码、包含截图倍率及两端停留的预算、旧 Runner 拒绝、回执不一致以及拒绝后引用仍可用。2026-09-06 的 `swift test` 为 73 项通过、0 失败。非默认时长的 Lark 实机验收由用户另开 session 进行，本轮没有创建测试日程。
 
 ## 宿主与 Runner 的职责
 
@@ -147,12 +143,12 @@ iphone-use --session "$SESSION" observe
 
 1. 对应的目标 App 身份与前台状态；SpringBoard Alert 和 App 内 Alert 的存在与数量必须符合观察时的范围。
 2. tap/swipe 检查屏幕/范围/方向/键盘上下文，并重新截图。整屏和各保护区域变化在阈值内才执行坐标；不做 AX 目标路径重采样或名称查找。近似通过不保证业务状态未改变。
-3. type/press 仍检查当前 AX 中的目标路径和每层属性；frame 允许最多 0.5 点的浮点变化。随后按 type、identifier、label 精确匹配且要求唯一，不通过选择第一个来消除歧义。
+3. type/press 仍检查当前 AX 中的目标路径和每层属性；frame 允许最多 0.5 点的浮点变化。通过观察期 AX 身份绑定快照，再复核绑定元素和最新根路径；不按 type、identifier、label 重新查询候选元素，也不按序号猜测。
 4. type/press 目标仍须启用且 isHittable，并为 text field、secure text field、text view 或 search field。坐标动作不保留这项 live 目标语义保证。
 
 App 内唯一 Alert 现在单独作为 `scope=appAlert` 采集，SpringBoard Alert 使用 `scope=systemAlert`。原来没有弹窗的观察不会被用于点击后来出现的弹窗。
 
-Runner 没有跨请求观察缓存、短引用、续期计时或任务策略。它处理当前请求的验证与 XCTest 调用；普通手势和文本输入在全部输入步骤结束后采帧判断稳定。它不等待业务状态成功；截图与 AX 的非原子采集限制继续成立。
+Runner 不缓存历史根快照供动作复用，也不管理宿主短引用、续期计时或任务策略；仅保留观察期 token 对应的 AX 身份用于下一次校验。它处理当前请求的验证与 XCTest 调用；普通手势和文本输入在全部输入步骤结束后采帧判断稳定。它不等待业务状态成功；截图与 AX 的非原子采集限制继续成立。
 
 ## 执行结果
 
@@ -173,7 +169,7 @@ Runner 没有跨请求观察缓存、短引用、续期计时或任务策略。�
 
 采帧间隔约 200ms，至少观察 1500ms，至少取得 3 帧即可返回当前观察；只有连续至少 3 帧与同一候选帧等价、跨度至少 400ms 才标记 `stable=true`。持续视频返回 `completed`、`stable=false`、`reason=dynamic_or_transitioning`，不代表业务成功，也不允许重放。`yiq-local-caret-v1` 在全尺寸 sRGB 像素上允许小幅色差（Y/I/Q 各分量差不超过 2.5，RGB 每通道差不超过 4，alpha 必须相同）；不允许一定比例的明显变化，不降低分辨率，也不自动忽略抗锯齿边缘。单个超限像素也会重置窗口，因此局部文字变化不会被整屏平均分淹没。固定候选帧防止缓慢累计漂移。
 
-在 type/press 已验证的文本目标范围内，允许符合位置、尺寸、蓝色笔画和明暗变化模型的单根光标变化。tap 后若键盘存在，一次有界只读快照中唯一完整可见的输入框也可作为分析范围；多个字段或截断快照不启用此例外，不通过焦点遍历查找字段。Tab/Shift+Tab 可改变焦点，因此动作后读一次有界快照（最多 200 节点、8 个完整可见输入框），仅当这些字段中识别出唯一光标时启用同一例外；其他字段及整屏像素仍参与比较。光标最外侧像素若与抗锯齿文字重叠，还必须有紧邻且完全未变的中性文字边缘，各通道变化不能超过实测光标相位；不扩张遮罩到相邻文字。无法识别的光标保留正常比较。原始截图始终不变，例外区域写入 `comparison.ignoredCaret`。至少观察 1500ms 用于避免本次记录到的延迟键盘展开前提前判稳，并不保证未来不会出现异步更新；后续动作仍需新观察和输入前检查。
+在 type/press 已验证的文本目标范围内，允许符合位置、尺寸、蓝色笔画和明暗变化模型的单根光标变化。tap 后若键盘存在，一次有界只读快照中唯一完整可见的输入框也可作为分析范围；多个字段或截断快照不启用此例外，不通过焦点遍历查找字段。Tab/Shift+Tab 可改变焦点，因此动作后读一次有界快照（遍历返回的完整树，最多 8 个完整可见输入框参与光标检查），仅当这些字段中识别出唯一光标时启用同一例外；其他字段及整屏像素仍参与比较。光标最外侧像素若与抗锯齿文字重叠，还必须有紧邻且完全未变的中性文字边缘，各通道变化不能超过实测光标相位；不扩张遮罩到相邻文字。无法识别的光标保留正常比较。原始截图始终不变，例外区域写入 `comparison.ignoredCaret`。至少观察 1500ms 用于避免延迟键盘展开前提前判稳，并不保证未来不会出现异步更新；后续动作仍需新观察和输入前检查。
 
 全尺寸原始 sRGB RGBA8 像素和尺寸的 SHA-256 继续绑定最终图片与执行证据，不再用它判断视觉等价。比较/光标识别/哈希的处理时间计入 5 秒预算，但不冒充采样稳定跨度。
 
@@ -181,19 +177,19 @@ Runner 没有跨请求观察缓存、短引用、续期计时或任务策略。�
 
 正常结果返回最终原始 PNG 的路径和采集时间；超时还返回最后一次比较的候选原图与差异图路径。差异图标出所有原始像素变化（包括已容忍的光标和色差），不是观察，也不能用于选坐标。不向 agent 输出逐帧图片或 base64。宿主核对图片 hash 与稳定证据后，保存在 `observations/action/screen.png`；下一次带帧的动作覆盖它，disconnect/空闲回收时删除。需要保留时由调用 agent 复制。动作帧不创建观察 ID，不附带旧 AX；后续按引用操作仍需 observe。
 
-Runner 在每个输入原语调用期间，将 XCTest application-state 等待上限设为 1 秒并在结束后恢复原值。这通过运行时能力检查后的 `_XCTApplicationStateTimeout` / `_XCTSetApplicationStateTimeout` 符号实现，没有引入 WDA。连接时能力缺失返回 `unsupported_xctest_runtime`；该内部 API 的兼容性仅在本次工具链/设备上验证，1 秒也不是整个动作的耗时上限。
+Runner 在每个输入原语调用期间，将 XCTest application-state 等待上限设为 1 秒并在结束后恢复原值。这通过运行时能力检查后的 `_XCTApplicationStateTimeout` / `_XCTSetApplicationStateTimeout` 符号实现，没有引入 WDA。连接时能力缺失返回 `unsupported_xctest_runtime`；该内部 API 的兼容性需按工具链与设备验证，1 秒也不是整个动作的耗时上限。
 
 XCTest 的命令错误经 Runner 转成响应；不再把已经返回给调用方的正常运行时错误一并算作 Runner 整个持续会话的 XCTest 失败。会话外的测试断言和异常结束仍由 XCTest 记录。
 
-无焦点的 typeText 本轮确实发生了 XCTest 内部重试，最终没有写入文字。iPhone-use 的宿主与 Runner 不重新调用结果未知的动作，但单次调用不构成 Apple 内部严格只发送一次底层事件的保证。请求 ID 同样不是去重承诺。
+XCTest 自身可能在一次 API 调用内等待或重试。iPhone-use 的宿主与 Runner 不重新调用结果未知的动作，但单次调用不构成 Apple 内部严格只发送一次底层事件的保证。请求 ID 同样不是去重承诺。
 
 ## 兼容性与验证边界
 
-当前设备协议为 `actionVersion=9`、`launchVersion=2`、`observationVersion=2`、`screenGuardVersion=1`、`frameStabilityVersion=2`。发布用户安装配套版本并重新 setup；源码开发者重新 build-runner，并使用新路径 connect。旧 Runner 不会静默忽略速度与停留参数或接受尚不支持的新文本模式和手势。
+CLI 与 Runner 必须使用兼容的协议和能力。发布包用户安装配套版本并重新 setup；源码开发者重新 build-runner，显式安装返回的 Runner App 后，再使用新 manifest 连接。连接握手会拒绝不兼容版本，不会静默忽略不支持的参数。
 
-本地测试覆盖输入校验、引用失效、执行事实、画面校验和帧稳定；真机兼容性以 [README 中的实测环境](../README.zh-CN.md#前置条件)为限。历史操作记录、截图和诊断日志仅保留在本地，不作为公开运行依赖。执行前检查不构成与 App 自行变化原子隔离的事务。
+本地测试覆盖输入校验、引用失效、执行事实、画面校验和帧稳定；真机兼容性以 [测试指南中的实测范围](testing.md#recorded-refactor-acceptance)为限。历史操作记录、截图和诊断日志仅保留在本地，不作为公开运行依赖。执行前检查不构成与 App 自行变化原子隔离的事务。
 
-Runner append 与 LF 多行的实现取舍、宿主测试和 Probe 精确字节验收见 [文本能力验证](runner-text-parity.md)。
+测试流程与验收边界见[测试指南](testing.md)。
 
 ## 原生文本方式与显式完成
 
@@ -201,7 +197,7 @@ Runner append 与 LF 多行的实现取舍、宿主测试和 Probe 精确字节�
 
 粘贴回执中的 `result.pasteboard.transactionID` 标识当前剪贴板事务。外部 Agent 检查动作后截图并处理完粘贴确认框后，可执行 `text-finish oN --transaction ID`，核对所有权后恢复原剪贴板，保留媒体和键盘会话。要求当前、同设备/会话且在输入尝试结束后采集的截图；不因核对结果耗时超过 30 秒拒绝完成，恢复前仍重新核对剪贴板内容与所有权。完成结果的 `caller_confirmed` 仅记录调用方确认；`completed` 只表示剪贴板恢复并回读成功，不将原本未知的 HID 输入改写成设备确认。失败不重放恢复写入，未知结果需检查后关闭会话。
 
-详细的原生事实字段、旧宿主兼容保护和限制见[原生后端](apple-native-backend.md#explicit-text-methods-and-clipboard-completion)。
+详细的原生事实字段、旧宿主兼容保护和限制见[原生后端](apple-native-backend.md#keyboard-and-clipboard)。
 
 原生输入使用 `field-bound-caret-exclusion-v3`。每个动作前校验阶段仅取一张新 Apple PNG，比较完整字段与整屏，不再等待 A–B–A 光标周期。Unicode 剪贴板写入前后仍分别校验，两个阶段使用同一原观察；八秒阶段期限、三十秒请求派发期限、取消及未知结果不重放规则保留。
 
@@ -249,7 +245,7 @@ iphone-use --session "$SESSION" pinch oN --x 195 --y 350 \
 
 原生执行时每帧包含两个固定身份触点，不串行执行两个 swipe。起始和末端各保持至少 60ms，运动按目标 60Hz 采样，慢发送时跳过过期采样；整个执行期限 6 秒。取消、媒体失活或发送失败时，尝试在原通道以最后尝试位置同时释放两指，释放失败保留不确定状态。任何可能已发送的动作都不自动重放。
 
-`contactCount`、`moveReportsQueued`、`hidStart/hidEnd` 和时序仅表示发送事实，成功排队仍为 `outcome=unknown`。必须检查新图确认 App 是否缩放；`status.capabilities.pinch` 表示控制路径可用，不是效果保证。真机证据范围见 [原生后端记录](apple-native-backend.md#native-pinch-2026-09-21)。
+`contactCount`、`moveReportsQueued`、`hidStart/hidEnd` 和时序仅表示发送事实，成功排队仍为 `outcome=unknown`。必须检查新图确认 App 是否缩放；`status.capabilities.pinch` 表示控制路径可用，不是效果保证。运行时边界见[原生后端](apple-native-backend.md)。
 
 
 Runner 捏合使用自写 Objective-C 桥接 Apple XCTest 的事件合成对象，在一个事件中提交两条完整路径。方法签名在运行时核对；不兼容时输入前拒绝。事件标记 App 的 interfaceOrientation，路径在执行边界转换为原生竖屏坐标，不能使用手机 face-up 等物理朝向；此转换不适用于公开 XCTest 坐标点击 API。起末各保持 60ms，两指同时移动并释放；不把距离参数近似转换成元素 pinch 的比例。
@@ -273,7 +269,7 @@ iphone-use --session "$SESSION" relaunch com.example.probe --observe
 
 外部进程替换或 App 重装会中止后续步骤并要求新观察。超时、取消、读回失败或丢失回执发生在终止/启动尝试后，返回 unknown，保留部分事实，绝不自动重试或启动。读取使用短超时和整体期限；取消也传播到运行中的 Apple CLI 子进程。有待恢复的粘贴事务时，先看图并 `text-finish`，再执行生命周期命令；这里不会隐式恢复或丢弃剪贴板。
 
-Apple 终止接口只接受 PID，进程列表没有进程出生令牌，因此最后一次核对与发信号之间不能提供原子身份保证。功能保留这一限制，不宣称完全排除 PID 复用竞态。受控真机验收及边界见 [原生后端记录](apple-native-backend.md#native-app-lifecycle-2026-09-21)。
+Apple 终止接口只接受 PID，进程列表没有进程出生令牌，因此最后一次核对与发信号之间不能提供原子身份保证。功能保留这一限制，不宣称完全排除 PID 复用竞态。验收方法见[测试指南](testing.md)。
 
 
 ## Runner Home
@@ -286,7 +282,7 @@ Home 后 Runner 清除当前 App 目标，观察可能为 `scope=unknown`、截�
 
 `record-start --duration 60` 与 `record-stop RECORDING_ID` 在两种模式中均使用自有原生媒体接收器和 Apple 视频写入框架。Runner 模式仅为显式录屏创建媒体连接，控制仍由 XCTest 执行；标准模式不会启动 Runner。开始/停止录屏会使旧观察失效，后续输入必须重新 observe。
 
-视频帧不是 observation，文件解码成功不确认动作效果。正常手动/定时停止会在媒体健康且接收完整时保留最后一帧到停止时间的显示时长，原 RTP 时间戳不变；保持区间明确记录，不能作为持续收到新画面的证明。方向变化结束当前片段，不承诺连续旋转录制。详见[共享录屏契约](runner-recording.md)与[时间轴修复](native-recording-timeline.md)。
+视频帧不是 observation，文件解码成功不确认动作效果。正常手动/定时停止会在媒体健康且接收完整时保留最后一帧到停止时间的显示时长，原 RTP 时间戳不变；保持区间明确记录，不能作为持续收到新画面的证明。方向变化结束当前片段，不承诺连续旋转录制。详见[共享录屏契约](runner-recording.md)。
 
 
 ## Agent-facing output
@@ -322,4 +318,4 @@ disconnect、空闲回收与有序关闭会恢复仍归本事务所有的剪贴�
 
 当前源码新增此方式，不等于旧安装包已支持。新 CLI 对旧宿主使用显式 method 请求；旧宿主会拒绝未知方式，不会回退成普通键盘输入。无需修改手机 Runner 的协议或重装 Runner。
 
-已在 iPhone 12 Pro 的 rednote 评论框中分别用 standard、runner 验证中英文两行文本：菜单触摸粘贴后正文完整、评论框保留，剪贴板恢复确认成功。此输入路径不新增键盘事件；Runner 会话启动本身仍可能触发 XCTest 键盘接入，这不在本次改动范围。完整时序、截图与验证边界见[诊断记录](runner-rednote-text-diagnosis.md#新增公共-touch-paste-方式的验收)。
+此输入路径不新增键盘事件；Runner 会话启动本身仍可能触发 XCTest 键盘接入。应在目标编辑器分别核对正文、是否意外提交和剪贴板恢复结果，不能把菜单点击完成视为文字提交证明。验收流程见[测试指南](testing.md)。

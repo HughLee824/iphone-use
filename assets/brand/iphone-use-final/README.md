@@ -1,10 +1,10 @@
 # iphone-use · Logo 规范稿
 
-以本轮选定的最新版本 `iphone-use-logo-a-balanced-v2` 为基础，保留已调整好的弧线位置。主标和横向字标与该版本逐字节一致。本次补齐规范展示、B式制图、复建脚本与验证记录。
+本目录保存 iPhone-use 的品牌矢量母版、几何参数和参考文件。主标、反白版本、横向字标和比例制图共享相同几何定义。生产资源位于上一级目录。
 
 ## 设计与识别
 
-竖向圆角块面和顶部胶囊构成手机线索；屏幕内的等宽圆头弧线表达连续滑动。已移除触点，避免对单次操作进行过多图示。弧线的位置延续用户逐次校正的视觉平衡，没有为了网格或整数比例重新居中。
+竖向圆角块面和顶部胶囊构成手机线索；屏幕内的等宽圆头弧线表达连续滑动。已移除触点，避免对单次操作进行过多图示。弧线采用偏右的视觉平衡；调整时应同时检查手机轮廓内部留白。
 
 设计者语义自查：手机与滑动均有具体形态线索，但弧线也可能被理解成抽象曲线。此处是设计意图，不代表外部识别率。未进行外部人员识别测试或印刷打样。
 
@@ -24,15 +24,15 @@
 | `size-check.png` | 16/24/32/48px的8倍最近邻放大 |
 | `geometry.json` | 单一参数来源 |
 | `resolved-geometry.json` | 实际路径和圆弧端点 |
-| `build.py` / `render.cjs` / `verify.py` | 构造、栅格化与验证脚本 |
+| `scripts/brand/build.py` / `render.cjs` / `verify.py` | 构造、栅格化与验证脚本 |
 | `manifest.json` / `validation.json` | 校验和与实际检查记录 |
-| `reference/` | 用户选定版SVG及Geist字体许可 |
+| `reference/` | 母版参考SVG及Geist字体许可 |
 
 展示页中的英文说明是设计说明，不属于主标或横向组合。淡绿色仅用于验证透明留白，不规定为品牌色。
 
 ## 几何规范
 
-本坐标系原点在160×160画布左上，x向右、y向下。以下均为本次设计参数，不是对生成位图的测量推断。
+本坐标系原点在160×160画布左上，x向右、y向下。以下均为母版设计参数，不是对生成位图的测量推断。
 
 | 部位 | 参数 |
 | --- | --- |
@@ -64,14 +64,6 @@
 
 ## 复建
 
-从本目录执行：
+使用独立的[品牌工具链](../../../scripts/brand/README.md)固定依赖和重建命令。工具源码统一位于 `scripts/brand/`，本目录只保存设计输入和生成的矢量母版。`build.py --out DIRECTORY` 支持在临时目录重建。
 
-```sh
-python3 build.py
-NODE_PATH=/path/to/node_modules node render.cjs
-python3 verify.py
-```
-
-`build.py`仅依赖Python标准库；`render.cjs`依赖Node sharp；`verify.py`依赖Pillow。用 `build.py --out DIRECTORY` 可输出到新目录。脚本不绑定机器路径，也不影响iphone-use的CLI运行依赖。
-
-此目录保存已确认的设计母版。仓库中英文README、Runner App Icon和favicon现已切换，见[生产资源说明](../README.md)。favicon仅收紧画布留白，未改动母版轮廓；16px请使用生产资源中的专用导出，不使用本目录的失败样本。
+生产 favicon 使用收紧留白的专用导出；不要将本目录的 16px 母版样张直接作为 favicon。详见[生产资源说明](../README.md)。

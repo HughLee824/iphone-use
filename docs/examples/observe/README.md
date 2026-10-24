@@ -8,7 +8,7 @@
 - `screenshot` 是供调用 agent 用读图工具打开的 PNG 路径；示例路径是占位值。
 - `pixels` 是截图像素尺寸，`screen_points` 和元素 frame 使用屏幕点，两者不能混用。
 - `refs=current` 表示宿主尚未使引用失效，不证明控件仍可点击或画面持续未变。
-- `source_truncated=false` 只表示本次采集没有达到节点上限，不表示得到 App 的全部界面或 Web DOM。
+- `source_truncated=false` 只表示采集结果未声明截断，不表示得到 App 的全部界面或 Web DOM。
 - `snapshot` 指向同次观察的缓存节点。`inspect o4` 分页读取详情，`inspect o4 --query TEXT` 在已采集数据中搜索。
 
 截图与 AX 分开采集；应实际读取图片再决定动作。派发动作后重新 `observe`，不要把示例引用或旧引用用于下一次操作。完整规则见[观察契约](../../observations.md)和[动作接口](../../actions.md)。

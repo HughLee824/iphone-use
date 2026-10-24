@@ -62,17 +62,17 @@ jobs:
       - name: Validate version and publication mode
         run: |
           if [ "$VERIFY_ONLY" = true ]; then
-            python3 scripts/check-skill-release.py "$VERSION" --verify-only
+            python3 scripts/plugin/check-skill-release.py "$VERSION" --verify-only
           else
-            python3 scripts/check-skill-release.py "$VERSION"
+            python3 scripts/plugin/check-skill-release.py "$VERSION"
           fi
       - name: Check the source and installer
         run: |
-          python3 scripts/sync-plugin.py --check
+          python3 scripts/plugin/sync-plugin.py --check
           node --test scripts/tests/test_skill_installer.mjs
       - name: Build and smoke-test the exact publication archive
         run: |
-          python3 scripts/build-skill-package.py "$RUNNER_TEMP/skill-package"
+          python3 scripts/plugin/build-skill-package.py "$RUNNER_TEMP/skill-package"
           npm pack "$RUNNER_TEMP/skill-package" --ignore-scripts --pack-destination "$RUNNER_TEMP" --json > "$RUNNER_TEMP/skill-pack.json"
           mkdir "$RUNNER_TEMP/skill-smoke"
           npm exec --yes --offline --ignore-scripts --package="$RUNNER_TEMP/iphone-use-skill-$VERSION.tgz" -- \
@@ -91,7 +91,7 @@ jobs:
         if: ${{ !inputs.verify_only }}
         run: npm publish "$RUNNER_TEMP/iphone-use-skill-$VERSION.tgz" --ignore-scripts --access public --provenance
       - name: Verify registry integrity and public installation
-        run: python3 scripts/verify-skill-publication.py "$RUNNER_TEMP/skill-pack.json"
+        run: python3 scripts/plugin/verify-skill-publication.py "$RUNNER_TEMP/skill-pack.json"
       - name: Record the published source
         run: |
           {

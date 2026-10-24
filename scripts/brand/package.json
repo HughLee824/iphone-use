@@ -1,0 +1,11 @@
+{
+  "name": "iphone-use-brand-tools",
+  "version": "1.0.0",
+  "private": true,
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "export": "node export-brand-assets.cjs",
+    "render": "node render.cjs"
+  },
+  "dependencies": { "sharp": "0.35.5" }
+}

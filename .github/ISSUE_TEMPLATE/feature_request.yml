@@ -1,0 +1,17 @@
+name: Feature request
+description: Describe a concrete use case and the behavior you need.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What task cannot be completed today? Include relevant mode/client constraints.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior and alternatives
+      description: Describe an observable outcome, alternatives considered and compatibility expectations.
+    validations:
+      required: true

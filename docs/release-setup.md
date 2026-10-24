@@ -1,6 +1,6 @@
 # Release 与 setup
 
-[iPhone-use 0.2.1](https://github.com/HughLee824/iphone-use/releases/tag/v0.2.1) 已正式发布，同时包含标准模式 CLI 和可选的预编译 Runner。标准模式无需重签或 setup；Runner 模式保留本机重签部署流程。项目采用 MIT，分发仓库为 `HughLee824/iphone-use`，公开 Tap 为 `HughLee824/homebrew-tap`。当前渠道和实际验收范围见[发布状态](rename-to-iphone-use.md#remaining-external-rollout)，下文保留后续版本的维护流程。
+发布包同时包含标准模式 CLI 和可选的预编译 Runner。标准模式无需重签或 setup；Runner 保留本机重签部署流程。项目采用 MIT，分发仓库为 `HughLee824/iphone-use`，公开 Tap 为 `HughLee824/homebrew-tap`。版本状态以 [GitHub Releases](https://github.com/HughLee824/iphone-use/releases) 和对应包的验收记录为准。
 
 两种模式都保留完整 Xcode 前提，用户自己的开发签名仅是 Runner 的前提。日常使用不依赖源码仓库或 `.build` 目录。当前标准模式适配 macOS/iOS 27，不能以旧 Runner 发布包的编译下限推断兼容范围。用户流程见[首次接入](onboarding.md)，发布包附带的独立说明见[安装说明](install.md)。
 
@@ -23,7 +23,7 @@ CLI 从自身真实路径定位配套资源，支持搬移整个目录和软链�
 
 标准模式的 Swift/C/Objective-C 实现静态编入 CLI，随包无需额外 dylib 或研究探针。运行时使用系统 RemoteXPC、AVConference，以及 Xcode 安装的 CoreDevice 服务和元数据；这些 Apple 框架不随包复制，也不绕过权限。`verify-release.py` 检查 CLI 的 Mach-O 依赖仅指向系统库；动态打开的框架及服务需另做真机验收。
 
-发布 Runner 不包含 provisioning profile、嵌入的 XCTest 框架、调试符号包或源码。发布构建将 iOS 编译下限设为 17，使用设备提供的 XCTest；最低版本检查只排除已知不兼容，不证明所有 iOS/Xcode 组合都可用。XCTest 的断言和跳过报告使用 `#fileID`，打包时检查二进制是否残留源码仓库的绝对路径。
+发布 Runner 不包含 provisioning profile、嵌入的 XCTest 框架、调试符号包或源码。发布构建将 iOS 编译下限设为 17，使用设备提供的 XCTest；最低版本检查只排除已知不兼容，不证明所有 iOS/Xcode 组合都可用。XCTest 的断言和跳过报告使用 `#fileID`，打包时检查二进制是否残留源码仓库的绝对路径。共享 Swift 包静态链接进 Runner；Xcode 仍会附加构建目录的 `PackageFrameworks` runpath，打包仅从副本中移除这一条无运行时用途的绝对路径，保留系统和 bundle 相对搜索路径，再执行原有绝对路径检查。
 
 setup 将包复制到用户状态目录，改写为保存的 App bundle ID、嵌入用户 profile，由本机 codesign 对测试 bundle 和 Runner 签名并校验。随后通过 CoreDevice 显式安装，独立后台启动 Runner 并经 USB 本地通信做真机握手、截图和退出验证，成功后原子更新按 UDID 保存的记录。安装目录不写入用户签名资料。设备能力握手仍是最终兼容性检查；本地文件存在和签名校验成功不能替代它。
 
@@ -34,11 +34,12 @@ setup 将包复制到用户状态目录，改写为保存的 App bundle ID、嵌
 在 macOS/Xcode 主机的源码目录执行，需要 Python 3.9+；Python 仅用于维护者打包，不是用户运行依赖：
 
 ```sh
-swift test
-python3 -m unittest discover -s scripts/tests -v
-python3 scripts/build-release.py --version 0.2.0-rc.1 --require-clean
-python3 scripts/verify-release.py .build/releases/iphone-use-0.2.0-rc.1-macos-arm64.tar.gz --require-clean
-python3 scripts/generate-homebrew.py .build/releases/iphone-use-0.2.0-rc.1-macos-arm64.tar.gz --output .build/releases/iphone-use.rb
+python3 scripts/tools/install-swiftlint.py
+python3 scripts/tools/install-actionlint.py
+python3 scripts/check.py
+python3 scripts/release/build-release.py --version 0.2.0-rc.1 --require-clean
+python3 scripts/release/verify-release.py .build/releases/iphone-use-0.2.0-rc.1-macos-arm64.tar.gz --require-clean
+python3 scripts/release/generate-homebrew.py .build/releases/iphone-use-0.2.0-rc.1-macos-arm64.tar.gz --output .build/releases/iphone-use.rb
 ```
 
 脚本构建 release CLI、在隔离目录 `build-for-testing` 构建无开发签名的 Runner，移除二进制调试信息，整理固定相对路径的测试清单，附带许可证及构建记录，然后生成目录、tar.gz 和 SHA-256 文件。CLI 仅作本机运行所需的 ad-hoc 签名。产物默认位于 `.build/releases`，也可用 `--output-dir` 指定；已有同名产物会拒绝覆盖。打包和清单检查在临时目录完成，失败不会留下同名的半成品包。CLI 与 Runner 构建日志分开保存。脚本不创建 tag、不上传文件、不操作 Apple 账号、不使用维护者的 iOS profile。
@@ -94,7 +95,7 @@ formula 将原包的 `bin` 与 `libexec` 一起放在 Homebrew keg 的 `libexec`
   gh release download "v${IPHONE_USE_VERSION}" --repo HughLee824/iphone-use \
     --dir "$IPHONE_USE_ACCEPTANCE_DIR" \
     --pattern "${IPHONE_USE_PACKAGE}.tar.gz" --pattern "${IPHONE_USE_PACKAGE}.tar.gz.sha256"
-  python3 scripts/verify-release.py "$IPHONE_USE_ACCEPTANCE_DIR/${IPHONE_USE_PACKAGE}.tar.gz" \
+  python3 scripts/release/verify-release.py "$IPHONE_USE_ACCEPTANCE_DIR/${IPHONE_USE_PACKAGE}.tar.gz" \
     --require-clean > "$IPHONE_USE_ACCEPTANCE_DIR/package-verification.json"
   gh release view "v${IPHONE_USE_VERSION}" --repo HughLee824/iphone-use \
     --json body --jq .body > "$IPHONE_USE_ACCEPTANCE_DIR/acceptance.md"
@@ -122,43 +123,13 @@ formula 将原包的 `bin` 与 `libexec` 一起放在 Homebrew keg 的 `libexec`
 - 构建或上传失败时保持未发布状态；重试前检查已有草稿和资产，避免把不同提交的包混入同一版本。重新构建后，以新包摘要重新验收。
 - 已公开版本发现问题时发布新版本修复，保留历史安装包供手动回退。Tap 更新失败只重试 Tap，不重建已验收的 Release。
 
-当前双模式本地候选包的实现、宿主检查与真机进度见[标准模式首次使用验收](standard-package-acceptance.md)。下面保留旧发布路线的历史验收，不代表新名称渠道已发布。
+源码检查和可复现真机测试见[测试指南](testing.md)；发布仍须验证实际分发的包。
 
 ## 验证范围
 
-2026-09-07 对公开 `0.1.0-rc.1` 包补测下载渠道，包 SHA-256 为 `52ff3e7c8e90d142a704ec1914433c506ebcc4d92245b3a48db188d0934a174d`。本机 Apple Silicon / macOS 15.0.1 下，`curl` 下载、校验、解压及版本/setup/connect 帮助命令通过。Safari 下载内容与同一 RC 一致，解压后 CLI 保留隔离属性，但首次运行未通过；Chrome 下载在资产重定向处返回 `ERR_BLOCKED_BY_CLIENT`。这些结果分别记录，不将浏览器下载失败等同于 CLI 签名失败，也不将命令行安装通过外推为浏览器渠道通过。本轮没有重复真机业务验收。
+每次发布以实际候选包摘要和验收结果为准。源码、本地构建和前一版本的成功不能代替当前归档的安装、搬移、重签、连接及清理检查。下载渠道分别验证：命令行下载成功不能外推为浏览器或 Gatekeeper 首次运行通过，CI 的 Homebrew 测试不能代替公开 Tap 安装。
 
-当前采用命令行下载的已验证路径，保持 ad-hoc 签名。Developer ID 签名与公证不作为所有渠道统一的发布门槛；浏览器直接下载安装体验仍需解决后单独验收。上述 RC 补测时公共 Tap 尚未上架，已有 CI 中的 Homebrew 安装检查不代表公共 `brew install` 入口已可用；后续上架结果以 Tap 和对应 Release 为准。
-
-已有本地开发候选包的验收记录覆盖 Apple Silicon / macOS 15.0.1 / Xcode 16.0 / iPhone 12 Pro / iOS 26.6，以及已有付费开发团队签名条件下的包校验、搬移、重签、重复 setup 和正常连接。这些是路线验证，不自动构成后来 GitHub 构建包的验收结果。每次发布的结果以对应草稿的包摘要和本地验收记录为准。原始设备记录、候选包、签名资料和日志保留在本地。
-
-### 0.2.1 发布核验（2026-10-11）
-
-发布沿用源码 `0d8fe37d74e468165aebf30584c2640e3924b24a` 的已核验本地候选，不重新构建；五个公开附件的匿名下载摘要与草稿一致，公开标签指向该源码。CLI 归档 SHA-256 为 `2bb66dda320f789b27218fd5e7a9d1beea7475603e3a9d0c15b5215b369b64d8`。包内采用正式 Runner Logo，独立插件 ZIP 为 0.1.6。
-
-[Tap 更新](https://github.com/HughLee824/homebrew-tap/actions/runs/38128270181)、本机正式 formula 的 0.2.0 → 0.2.1 升级、`brew test`、CLI 与 12 个 Runner 文件摘要检查通过。此前公开 Git 插件安装与 0.1.4 → 0.1.6 缓存升级已在 Codex CLI 0.146.0 和 Claude Code 2.1.250 核验。这些检查不代表新增真机任务验收；本轮没有连接或操作 iPhone。免费账号、全新 Mac、浏览器首次安装等限制保留。
-
-后续 [插件图标 PR #10](https://github.com/HughLee824/iphone-use/pull/10) 将 Git 插件更新为 0.1.7；Codex、Claude Code 的公开 Git 升级及安装文件核验通过，Codex 图标显示由用户确认。这不改变 CLI 0.2.1 或其附带的插件 0.1.6 ZIP，也不构成新的真机任务验收。
-
-已发布的 0.2.0 和 0.2.1 附件保持不变。0.2.1 包内 README 保留构建时的渠道状态，当前发布状态以 Release 说明和在线文档为准。
-
-### 0.2.0 发布核验（2026-10-11）
-
-发布源码为 `d79263dd58554705924f87459d2840c950c0eee2`。草稿核验后发布同一批资产，匿名下载的 5 个文件摘要与草稿一致，公开 tag 指向该源码。Homebrew 安装、`brew test`、CLI 与 12 个 Runner 文件摘要及新旧命令版本检查通过；Tap Trust 的旧公式读取问题已按用户授权以单公式信任解决，操作说明见[安装指南](install.md#homebrew-单公式信任)。网站中英文渠道说明已部署，后续 Wrangler 安全修复的完整依赖审计为零告警。
-
-这份精确的 0.2.0 归档没有新增真机验收。此前 `.21` 候选的真机证据、Runner 后续修复的宿主覆盖及未测试条件已在 Release 中分别记录。该次发布时，公开 Git marketplace 的客户端安装、缓存升级与任务验证仍待单独完成；后续安装与升级结果见上方 0.2.1 记录，真机任务验证仍独立。已发布资产保持不变，文档修订及后续插件补丁不覆盖 0.2.0 归档。
-
-### 0.1.0 正式发布验收
-
-2026-09-07 已发布 [0.1.0](https://github.com/HughLee824/AgentSoma/releases/tag/v0.1.0)，源码提交为 `25bef5092aac42a3f60bf1ec01b7ba79e12bee5d`，安装包 SHA-256 为 `c2eb4f1ee1e2c61cf05bfae46076f38d18c3385a6b0a5ab2c9181ed933fec80d`。本次验收使用从 GitHub 下载并搬移到源码目录外的同一安装包；发布时未重新构建或替换资产。
-
-- Apple Silicon / macOS 15.0.1 / Xcode 16.0 / iPhone 12 Pro / iOS 26.6.1，已有付费开发签名。首次 setup 无需编译，重复 setup 复用成功。
-- 连接、应用发现、打开、观察、受保护输入及断开通过。计算器 `125 × 8 = 1,000` 经截图与界面文本核对；断开重连后再次打开历史记录，确认今天的计算仍在。一次屏幕变化拦截未派发输入，刷新观察后恢复。
-- setup 验证会话和业务会话均正常清理；业务会话的 host/xcodebuild 退出及观察缓存删除另行核对。
-- [Tap 更新](https://github.com/HughLee824/homebrew-tap/actions/runs/34123914541)通过，formula 提交为 `ab3cc80fc7af9db4483177f334c9f3cd686e1505`。匿名下载的三个公开资产与验收文件逐字节一致，公开 tag 指向上述源码提交。
-- 实际执行 `brew install HughLee824/tap/agentsoma` 和 `brew test HughLee824/tap/agentsoma` 通过，CLI/Runner 文件摘要与发布清单一致。使用 `/opt/homebrew/bin/agentsoma` 完成真机连接、截图检查、点击和正常断开。
-
-本次证明现有开发签名条件下的正式包与公共安装入口可用，未扩展免费账号、全新签名环境或浏览器渠道的支持范围。私有设备标识、签名资料、截图与命令原始记录保留在本地。
+当前采用 ad-hoc 签名；Developer ID 签名、公证与首次下载体验应按实际渠道声明。原始设备记录、候选包、签名资料和日志保留本地，发布说明只包含脱敏摘要。
 
 ## 尚未验收的发布条件
 

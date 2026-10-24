@@ -1,0 +1,150 @@
+import Foundation
+
+// Shared orchestration, exercised with event-recording doubles on the host.
+// Only read-only geometry validation can repeat. Input and target selection never replay.
+public final class RunnerTextTransaction {
+    public struct Events {
+        public init(
+            focus: @escaping () throws -> Void, position: @escaping () throws -> Void,
+            sendText: @escaping (String) throws -> Void
+        ) {
+            self.focus = focus; self.position = position; self.sendText = sendText
+        }
+
+        let focus: () throws -> Void
+        let position: () throws -> Void
+        let sendText: (String) throws -> Void
+    }
+
+    public struct Validation<State> {
+        public init(
+            read: @escaping (Bool) throws -> State, isEmpty: @escaping (State) -> Bool,
+            resultMatches: @escaping (State, String) -> Bool
+        ) {
+            self.read = read; self.isEmpty = isEmpty; self.resultMatches = resultMatches
+        }
+
+        let read: (Bool) throws -> State
+        let isEmpty: (State) -> Bool
+        let resultMatches: (State, String) -> Bool
+    }
+
+    public struct Plan {
+        public init(replacing: Bool, deletion: String, insertion: String) {
+            self.replacing = replacing; self.deletion = deletion; self.insertion = insertion
+        }
+
+        let replacing: Bool
+        let deletion: String
+        let insertion: String
+    }
+
+    public enum Failure: String, Error {
+        case clearUnconfirmed = "replace_clear_unconfirmed"
+        case resultUnconfirmed = "text_result_unconfirmed"
+        case geometryUnsettled = "text_geometry_unsettled"
+    }
+
+    public private(set) var stage = "validating"
+    public private(set) var focusAttempted = false
+    public private(set) var focusCompleted = false
+    public private(set) var keyboardEventsAttempted = 0
+    public private(set) var clearConfirmed = false
+    public private(set) var insertionAttempted = false
+    public private(set) var insertionAcknowledged = false
+    public private(set) var convergenceReads = 0
+    public private(set) var geometryRetries = 0
+    public private(set) var convergenceTimedOut = false
+    public private(set) var convergenceElapsedMs: Double = 0
+
+    private let now: () -> TimeInterval
+    private let pause: (TimeInterval) -> Void
+
+    public init(now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+                pause: @escaping (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }) {
+        self.now = now
+        self.pause = pause
+    }
+
+    public var facts: [String: Any] {
+        ["stage": stage, "focusAttempted": focusAttempted, "focusCompleted": focusCompleted,
+         "keyboardEventsAttempted": keyboardEventsAttempted, "clearConfirmed": clearConfirmed,
+         "insertionAttempted": insertionAttempted, "insertionAcknowledged": insertionAcknowledged,
+         "convergenceReads": convergenceReads, "geometryRetries": geometryRetries,
+         "convergenceTimedOut": convergenceTimedOut,
+         "convergenceElapsedMs": convergenceElapsedMs,
+         "automaticReplayAllowed": false]
+    }
+
+    private func converged<State>(_ read: () throws -> State) throws -> State {
+        let began = now()
+        let deadline = began + 5
+        defer { convergenceElapsedMs = max(0, now() - began) * 1000 }
+        for attempt in 0..<6 {
+            convergenceReads += 1
+            do {
+                let state = try read()
+                guard now() <= deadline else { break }
+                return state
+            } catch RunnerAXTree.Failure.geometryChanged {
+                guard attempt < 5, now() < deadline else { break }
+                pause(min(0.1, max(0, deadline - now())))
+                guard now() < deadline else { break }
+                geometryRetries += 1
+            }
+        }
+        convergenceTimedOut = true
+        throw Failure.geometryUnsettled
+    }
+
+    public func run<State>(
+        initial: State, needsFocus: Bool, events: Events,
+        validation: Validation<State>, plan: (State) throws -> Plan
+    ) throws -> State {
+        // Reject unsupported values before focus can mutate the page.
+        _ = try plan(initial)
+        if needsFocus {
+            stage = "focusing"
+            focusAttempted = true
+            try events.focus()
+            focusCompleted = true
+        }
+        stage = "validating_after_focus"
+        var current = try needsFocus ? converged { try validation.read(false) } : validation.read(false)
+        let prepared = try plan(current)
+        if prepared.replacing {
+            if !prepared.deletion.isEmpty {
+                stage = "positioning"
+                keyboardEventsAttempted += 1
+                try events.position()
+                current = try converged { try validation.read(false) }
+                stage = "clearing"
+                keyboardEventsAttempted += 1
+                try events.sendText(prepared.deletion)
+            }
+            stage = "verifying_clear"
+            current = try converged { try validation.read(true) }
+            guard validation.isEmpty(current) else { throw Failure.clearUnconfirmed }
+            clearConfirmed = true
+        }
+        // Fresh identity/path validation immediately before insertion; if an
+        // external edit followed clearing, do not overwrite it or repeat clearing.
+        stage = "validating_before_insert"
+        current = try validation.read(prepared.replacing)
+        if prepared.replacing && !validation.isEmpty(current) { throw Failure.clearUnconfirmed }
+        if !prepared.insertion.isEmpty {
+            stage = "inserting"
+            insertionAttempted = true
+            keyboardEventsAttempted += 1
+            try events.sendText(prepared.insertion)
+            insertionAcknowledged = true
+        }
+        stage = "verifying_result"
+        current = try converged { try validation.read(true) }
+        if prepared.replacing && !validation.resultMatches(current, prepared.insertion) {
+            throw Failure.resultUnconfirmed
+        }
+        stage = "completed"
+        return current
+    }
+}

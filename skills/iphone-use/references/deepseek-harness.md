@@ -52,7 +52,7 @@ If `read_image` is missing or refuses image input, report the missing compositio
 
 ## Preview and permissions
 
-Follow the shared [live-preview lifecycle](live-preview.md). On the first successful task-owned connection, run `preview` once; the CLI opens the Mac default browser. Do not issue a second browser-open call. Honor explicit opt-out and retain the session's attempt/URL record across turns. Disconnect cleans up the owned preview service.
+Follow the shared [live-preview lifecycle](live-preview.md). On the first successful task-owned connection, run `preview` once; the CLI opens the Mac default browser. Do not issue a second browser-open call. Honor explicit opt-out and retain the session's attempt/URL record across turns. Disconnect cleans up the owned preview source; a stable viewer page may remain waiting. Preserve its URL across reconnects as described in the shared lifecycle.
 
 Use the normal Harness approval flow after an actual permission denial, with the `sandbox_permissions` values advertised by its tool and a concrete `justification`. Do not copy Codex's permission enum, change profile-wide sandbox settings, or retry an uncertain device input. For CoreDevice discovery failures, follow the shared bounded diagnostic and preserve the working execution context on later calls. If filesystem policy prevents reading the screenshot, resolve that access through the supported client flow; a successful shell call does not grant image-reader access.
 

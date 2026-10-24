@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -14,7 +15,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  quick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+      - name: Validate pull request title
+        run: python3 scripts/checks/check-pr-title.py --event "$GITHUB_EVENT_PATH"
+      - name: Install Actionlint
+        run: python3 scripts/tools/install-actionlint.py
+      - name: Run portable checks
+        run: python3 scripts/check.py --suite quick
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: client-plugins
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: true # Explicit public paths below include .build/plugins.
+          path: |
+            .build/plugins/*.zip
+            .build/plugins/*.zip.sha256
+  native:
+    needs: quick
     runs-on: xcode-27
     timeout-minutes: 20
     env:
@@ -31,49 +58,25 @@ jobs:
         run: |
           xcodebuild -version
           swift --version
-      - run: swift test
-      - name: Test the Runner event bridge with host runtime doubles
+      - name: Install SwiftLint
+        run: python3 scripts/tools/install-swiftlint.py
+      - name: Run shared engineering checks
+        run: python3 scripts/check.py --suite native
+      - name: Verify brand toolchain and reproducible assets
         run: |
-          xcrun clang -fobjc-arc -framework Foundation -framework CoreGraphics \
-            Runner/RunnerPinchEvent.m Tests/RunnerRuntime/PinchEventTests.m \
-            -o .build/runner-pinch-runtime-tests
-          .build/runner-pinch-runtime-tests
-      - name: Test the Runner startup guard with host runtime doubles
-        run: |
-          xcrun clang -fobjc-arc -framework Foundation \
-            Runner/RunnerStartupGuard.m Tests/RunnerRuntime/StartupGuardTests.m \
-            -o .build/runner-startup-runtime-tests
-          .build/runner-startup-runtime-tests disabled
-          IPHONE_USE_HOST_MANAGED=1 IPHONE_USE_SESSION_TOKEN=short \
-            .build/runner-startup-runtime-tests disabled
-          for scenario in active inactive flapping background enter_background timeout nonhome offmain finish; do
-            IPHONE_USE_HOST_MANAGED=1 IPHONE_USE_SESSION_TOKEN=00000000000000000000000000000000 \
-              .build/runner-startup-runtime-tests "$scenario"
-          done
-          xcrun clang -fobjc-arc -framework Foundation -DSTARTUP_TEST_UNSUPPORTED \
-            Runner/RunnerStartupGuard.m Tests/RunnerRuntime/StartupGuardTests.m \
-            -o .build/runner-startup-unsupported-tests
-          IPHONE_USE_HOST_MANAGED=1 IPHONE_USE_SESSION_TOKEN=00000000000000000000000000000000 \
-            .build/runner-startup-unsupported-tests unsupported
-      - run: python3 -m unittest discover -s scripts/tests -v
-      - run: node --test scripts/tests/test_dsh_plugin.mjs scripts/tests/test_agent_templates.mjs scripts/tests/test_preview_metrics.mjs scripts/tests/test_skill_installer.mjs
-      - name: Compile the iPhone Runner without signing
-        run: |
-          xcodebuild build-for-testing \
-            -project Runner/IPhoneUseRunner.xcodeproj -scheme IPhoneUseRunner \
-            -configuration Debug -sdk iphoneos -destination 'generic/platform=iOS' \
-            -derivedDataPath .build/ci-runner \
-            CODE_SIGNING_ALLOWED=NO IPHONEOS_DEPLOYMENT_TARGET=17.0
-      - name: Check and package the self-contained client plugin
-        run: |
-          python3 scripts/sync-plugin.py --check
-          python3 scripts/sync-plugin.py --archive .build/plugins
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: client-plugins
-          if-no-files-found: error
-          retention-days: 7
-          include-hidden-files: true # Explicit public paths below include .build/plugins.
-          path: |
-            .build/plugins/*.zip
-            .build/plugins/*.zip.sha256
+          npm ci --prefix scripts/brand --ignore-scripts
+          python3 -m venv .build/brand-venv
+          .build/brand-venv/bin/python -m pip install -r scripts/brand/requirements.txt
+          .build/brand-venv/bin/python scripts/brand/check.py
+  test:
+    # Keep the protected status name and fail even when an upstream job was skipped.
+    if: always()
+    needs: [quick, native]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every check group
+        env:
+          QUICK_RESULT: ${{ needs.quick.result }}
+          NATIVE_RESULT: ${{ needs.native.result }}
+        run: test "$QUICK_RESULT" = success && test "$NATIVE_RESULT" = success
