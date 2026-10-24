@@ -51,7 +51,7 @@ let arguments = Array(CommandLine.arguments.dropFirst())
 if arguments.contains("--help") {
     print(
         """
-        swift scripts/verify-apple-native.swift --output NEW_PRIVATE_DIRECTORY [--cli\
+        swift scripts/device/verify-apple-native.swift --output NEW_PRIVATE_DIRECTORY [--cli\
          .build/release/iphone-use] [--device ID] [--duration 300] [--cycles 3] [--interval 15]
         """
     )

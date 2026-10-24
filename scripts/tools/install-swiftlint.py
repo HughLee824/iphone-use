@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 import zipfile
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def extract(archive, destination, checksum):
@@ -27,7 +27,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--archive', type=Path, help='Use an already downloaded archive; still verify its checksum')
     args = parser.parse_args()
-    pin = json.loads((ROOT / 'scripts/swiftlint.json').read_text())
+    pin = json.loads((ROOT / 'scripts/tools/swiftlint.json').read_text())
     version = pin['version']
     directory = ROOT / '.build/tools' / f'swiftlint-{version}'
     if args.archive and hashlib.sha256(args.archive.read_bytes()).hexdigest() != pin['sha256']:

@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 SPEC = importlib.util.spec_from_file_location(
-    "check_docs", Path(__file__).resolve().parents[1] / "check-docs.py")
+    "check_docs", Path(__file__).resolve().parents[1] / "checks/check-docs.py")
 docs = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(docs)
 

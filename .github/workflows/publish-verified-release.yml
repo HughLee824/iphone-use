@@ -77,7 +77,7 @@ jobs:
           gh release download "v$VERSION" --dir "$RUNNER_TEMP/assets" \
             --pattern "iphone-use-$VERSION-macos-arm64.tar.gz" \
             --pattern "iphone-use-$VERSION-macos-arm64.tar.gz.sha256"
-          python3 scripts/verify-release.py "$RUNNER_TEMP/assets/iphone-use-$VERSION-macos-arm64.tar.gz" \
+          python3 scripts/release/verify-release.py "$RUNNER_TEMP/assets/iphone-use-$VERSION-macos-arm64.tar.gz" \
             --require-clean --no-execute > "$RUNNER_TEMP/verified.json"
           python3 - <<'PY'
           import json, os

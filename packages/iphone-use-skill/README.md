@@ -32,7 +32,7 @@ A generic `npx skills add ...` installer does not run this package's conflict ch
 The canonical skill lives at `skills/iphone-use` in the repository. Build a fresh staging directory before packing; the source package directory intentionally has no duplicated skill tree:
 
 ```sh
-python3 scripts/build-skill-package.py /tmp/iphone-use-skill-package
+python3 scripts/plugin/build-skill-package.py /tmp/iphone-use-skill-package
 cd /tmp/iphone-use-skill-package
 npm pack --ignore-scripts
 ```

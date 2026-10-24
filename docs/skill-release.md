@@ -4,13 +4,13 @@
 
 ## 发布顺序
 
-1. 在功能分支修改唯一 skill 源及安装器，通过 PR 审阅合入 main。发布前用 `python3 scripts/set-plugin-version.py X.Y.Z` 联动更新分发版本并同步副本；递增规则见 [CONTRIBUTING.md](../CONTRIBUTING.md#versions-and-release-notes)。
+1. 在功能分支修改唯一 skill 源及安装器，通过 PR 审阅合入 main。发布前用 `python3 scripts/plugin/set-plugin-version.py X.Y.Z` 联动更新分发版本并同步副本；递增规则见 [CONTRIBUTING.md](../CONTRIBUTING.md#versions-and-release-notes)。
 2. 等待该 main 提交的 CI 成功。完成并记录相应的本地真机验收；云端安装测试不能替代真机证据。
 3. 在 GitHub Actions 选择 **Publish portable skill**，选择 main，输入源文件中已有的新版本。不允许从 PR/其他分支发布，也不在每次普通合并时自动发布。
 4. 工作流校验相同 SHA 的 main CI、版本、registry 未占用、生成文件同步和安装器测试；生成完整 tgz，测试该 tgz，然后通过 OIDC 发布，并等待 registry 提供相同 integrity 的包。
 5. 工作流以全新缓存按公开版本安装 Cursor/OpenCode，检查重复安装、托管状态、卸载与残留。成功结果关联 GitHub Actions 源提交及 npm provenance。真机范围独立记录。
 
-失败后先判断是否已经被 npm 接受。包处理或安装核验失败不意味着发布失败；禁止直接重发或改写已发布版本。可下载该运行的 `portable-skill-package` artifact 核对归档与 integrity，并用其中的 `npm pack --json` 输出运行发布核验脚本：`python3 scripts/verify-skill-publication.py /path/to/skill-pack.json`。本脚本会临时安装并卸载 skill，但不会发布、改 dist-tag 或操作手机。
+失败后先判断是否已经被 npm 接受。包处理或安装核验失败不意味着发布失败；禁止直接重发或改写已发布版本。可下载该运行的 `portable-skill-package` artifact 核对归档与 integrity，并用其中的 `npm pack --json` 输出运行发布核验脚本：`python3 scripts/plugin/verify-skill-publication.py /path/to/skill-pack.json`。本脚本会临时安装并卸载 skill，但不会发布、改 dist-tag 或操作手机。
 
 若包已发布但 CI 验证失败，可在同一个工作流勾选 **verify_only**，输入已发布版本。它仍要求当前 main 的 CI 成功及版本匹配，重新构建归档并核对公开包的完整性，但跳过发布步骤。只有打包内容与已发布包完全相同才会通过；这次验证的源码提交不会替换原发布的 provenance。普通发布模式仍拒绝已存在的版本。
 

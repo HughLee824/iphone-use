@@ -4,11 +4,11 @@ Keep changes focused and behavior explicit. Discuss substantial architecture or 
 
 ## Development and validation
 
-Read the [architecture](docs/architecture.md) and [testing guide](docs/testing.md). Use full Xcode 27 for native builds, Python 3.9+ and Node.js 22+. The pinned SwiftLint release and checksum live in [scripts/swiftlint.json](scripts/swiftlint.json).
+Read the [architecture](docs/architecture.md) and [testing guide](docs/testing.md). Use full Xcode 27 for native builds, Python 3.9+ and Node.js 22+. The pinned SwiftLint release and checksum live in [scripts/tools/swiftlint.json](scripts/tools/swiftlint.json).
 
 ```sh
-python3 scripts/install-swiftlint.py
-python3 scripts/install-actionlint.py
+python3 scripts/tools/install-swiftlint.py
+python3 scripts/tools/install-actionlint.py
 python3 scripts/check.py
 ```
 
@@ -47,12 +47,12 @@ The PR description should explain the concrete problem, resulting behavior, veri
 
 ## Source ownership and generated files
 
-Edit `skills/iphone-use/`, then run `python3 scripts/sync-plugin.py`. Do not edit its generated copy in `plugins/iphone-use/skills/` or the generated repository package manifest directly. Plugin-specific manifests and adapters remain in `plugins/iphone-use/`; the portable installer remains in `packages/iphone-use-skill/`.
+Edit `skills/iphone-use/`, then run `python3 scripts/plugin/sync-plugin.py`. Do not edit its generated copy in `plugins/iphone-use/skills/` or the generated repository package manifest directly. Plugin-specific manifests and adapters remain in `plugins/iphone-use/`; the portable installer remains in `packages/iphone-use-skill/`.
 
 Before releasing changed plugin/skill content, choose the next shared distribution version and run:
 
 ```sh
-python3 scripts/set-plugin-version.py X.Y.Z
+python3 scripts/plugin/set-plugin-version.py X.Y.Z
 ```
 
 This updates the three plugin manifests, portable installer manifest and workflow version, then regenerates distribution copies. It does not publish, create tags, update the CLI version or query npm. Existing consistency checks still run; registry availability is checked by the release workflow.

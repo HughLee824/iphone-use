@@ -9,7 +9,7 @@ import subprocess
 import tarfile
 import tempfile
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def platform_key():
@@ -38,7 +38,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--archive', type=Path, help='Use a downloaded archive; checksum verification is still required')
     args = parser.parse_args()
-    pin = json.loads((ROOT / 'scripts/actionlint.json').read_text())
+    pin = json.loads((ROOT / 'scripts/tools/actionlint.json').read_text())
     key = platform_key()
     if key not in pin['sha256']:
         raise ValueError(f'Unsupported Actionlint platform: {key}')

@@ -97,7 +97,7 @@ iPhone-use/
 ├── docs/
 │   ├── examples/observe/            # Curated CLI output example
 │   └── *.md                        # Public guides and architecture
-├── scripts/                         # Release/plugin tooling and tests
+├── scripts/                         # Engineering tools grouped by responsibility
 ├── skills/iphone-use/                # Canonical skill, client adapters and preflight
 ├── plugins/iphone-use/               # Generated self-contained dual-client plugin
 ├── packaging/homebrew-tap/          # Tap setup and update workflow
@@ -108,11 +108,13 @@ iPhone-use/
 
 Commit files needed to build, test, distribute, or understand the public project. Keep the Swift lockfile, shared Xcode project/scheme, release scripts, and sanitized test fixtures in Git. Xcode user settings are local; do not ignore all `.xcodeproj` files.
 
-The plugin contains instructions and a preflight script; it does not add another runtime service. Edit `skills/iphone-use/`, then run `python3 scripts/sync-plugin.py` to update the committed distribution. CI rejects drift. The [public website](https://iphone-use.com) is maintained in the separate [iphone-use-website](https://github.com/HughLee824/iphone-use-website) repository and deployed through Cloudflare Workers Static Assets at `iphone-use.com`. The public client installation path is documented in [public access release](public-access-release.md).
+The plugin contains instructions and a preflight script; it does not add another runtime service. Edit `skills/iphone-use/`, then run `python3 scripts/plugin/sync-plugin.py` to update the committed distribution. CI rejects drift. The [public website](https://iphone-use.com) is maintained in the separate [iphone-use-website](https://github.com/HughLee824/iphone-use-website) repository and deployed through Cloudflare Workers Static Assets at `iphone-use.com`. The public client installation path is documented in [public access release](public-access-release.md).
 
 Test inputs belong under `Tests/IPhoneUseCoreTests/Fixtures` and are loaded through SwiftPM's resource bundle. `Package.swift` explicitly copies the JSON and PNG inputs; fixture documentation is excluded. Individual copies appear at the bundle root and preserve image bytes. Add new fixture files to the manifest deliberately. Tests must pass in a fresh checkout without `.local/`, private device captures, or files under `docs/examples`. Published examples should illustrate the current interface, use placeholder paths and IDs, and identify any omitted media.
 
 SwiftPM discovers source files within each target's conventional `Sources/<target>` or `Tests/<target>` directory. The root package uses only the bridge, Core, CLI and Core test targets; RunnerSupport has its own package and tests. Repository documentation, brand assets, scripts, the Runner Xcode project and local archives are outside those target roots and are not compiled or bundled by these manifests. Their presence in an editor's package navigator does not make them build inputs.
+
+See the [engineering tools directory](../scripts/README.md) for check, release, plugin, device and brand tool ownership. The root `scripts/check.py` remains the shared orchestration entry point.
 
 ## Engineering checks
 

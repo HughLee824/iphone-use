@@ -9,7 +9,7 @@ from unittest.mock import Mock
 
 
 def module(name):
-    spec = importlib.util.spec_from_file_location(name, Path(__file__).parents[1] / f'{name}.py')
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).parents[1] / 'plugin' / f'{name}.py')
     result = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(result)
     return result

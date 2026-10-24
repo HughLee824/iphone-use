@@ -146,7 +146,7 @@ test('OpenCode can create a new XDG config root but refuses a linked root', asyn
 test('packed installer works through npm exec outside the checkout', async (t) => {
   const f = await fixture(t);
   const staging = join(f.root, 'package');
-  execFileSync('python3', [join(repository, 'scripts/build-skill-package.py'), staging]);
+  execFileSync('python3', [join(repository, 'scripts/plugin/build-skill-package.py'), staging]);
   const [pack] = JSON.parse(execFileSync('npm', ['pack', '--json', '--ignore-scripts', '--cache', join(f.root, 'cache'), '--pack-destination', f.root], { cwd: staging, encoding: 'utf8' }));
   assert.ok(pack.files.every(({ path }) => path.startsWith('bin/') || path.startsWith('skills/') || ['package.json', 'README.md', 'LICENSE'].includes(path)));
   assert.ok(pack.files.some(({ path }) => path === 'skills/iphone-use/references/generic-agent.md'));

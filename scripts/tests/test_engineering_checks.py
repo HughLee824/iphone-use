@@ -57,3 +57,24 @@ class EngineeringChecksTests(unittest.TestCase):
                     self.assertEqual(commands[-2][1:], ['--help'])
                     self.assertEqual(commands[-1][1:], ['--self-test'])
                     self.assertEqual(len(commands), 4)
+
+    def test_homebrew_template_imports_tools_from_current_and_published_legacy_layouts(self):
+        import os
+        import subprocess
+        import sys
+        workflow = (CHECKS.ROOT / 'packaging/homebrew-tap/.github/workflows/update-iphone-use.yml').read_text()
+        selection = workflow.split('          release_tools=', 1)[1].split('          python3 ', 1)[0]
+        selection = 'release_tools=' + selection
+        for layout in ('source/scripts/release', 'source/scripts'):
+            with self.subTest(layout=layout), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                directory = root / layout
+                directory.mkdir(parents=True)
+                (directory / 'verify-release.py').touch()
+                (directory / 'release_artifact.py').write_text('marker = "correct tagged source"\n')
+                command = selection + '\nPYTHONPATH="$release_tools" "$TEST_PYTHON" -c \'import release_artifact; print(release_artifact.marker)\''
+                result = subprocess.run(['/bin/sh', '-eu', '-c', command], cwd=root,
+                                        env={**os.environ, 'TEST_PYTHON': sys.executable},
+                                        check=True, capture_output=True, text=True)
+                self.assertEqual(result.stdout.strip(), 'correct tagged source')
+        self.assertIn('PYTHONPATH="$release_tools" python3', workflow)

@@ -62,20 +62,20 @@ jobs:
       - name: Validate version and publication mode
         run: |
           if [ "$VERIFY_ONLY" = true ]; then
-            python3 scripts/dsh-release.py check "$VERSION" --verify-only
+            python3 scripts/plugin/dsh-release.py check "$VERSION" --verify-only
           else
-            python3 scripts/dsh-release.py check "$VERSION"
+            python3 scripts/plugin/dsh-release.py check "$VERSION"
           fi
       - name: Check the source and plugin
         run: |
-          python3 scripts/sync-plugin.py --check
+          python3 scripts/plugin/sync-plugin.py --check
           node --test scripts/tests/test_dsh_plugin.mjs
       - name: Build and smoke-test the exact publication archive
         run: |
           npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP" --json > "$RUNNER_TEMP/dsh-pack.json"
           npm install "$RUNNER_TEMP/dsh-iphone-use-$VERSION.tgz" --prefix "$RUNNER_TEMP/dsh-smoke" \
             --ignore-scripts --no-audit --no-fund --no-package-lock --offline
-          node scripts/check-dsh-package.mjs "$RUNNER_TEMP/dsh-smoke/node_modules/dsh-iphone-use"
+          node scripts/plugin/check-dsh-package.mjs "$RUNNER_TEMP/dsh-smoke/node_modules/dsh-iphone-use"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: dsh-plugin-package
@@ -88,7 +88,7 @@ jobs:
         if: ${{ !inputs.verify_only }}
         run: npm publish "$RUNNER_TEMP/dsh-iphone-use-$VERSION.tgz" --ignore-scripts --access public --provenance
       - name: Verify registry integrity and public installation
-        run: python3 scripts/dsh-release.py verify "$RUNNER_TEMP/dsh-pack.json"
+        run: python3 scripts/plugin/dsh-release.py verify "$RUNNER_TEMP/dsh-pack.json"
       - name: Record the published source
         run: |
           {

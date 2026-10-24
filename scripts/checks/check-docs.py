@@ -8,7 +8,7 @@ import sys
 import unicodedata
 from urllib.parse import unquote, urlsplit
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def prose(text):

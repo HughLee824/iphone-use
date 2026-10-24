@@ -80,7 +80,7 @@ dsh --profile desktop --dump-config
 
 若桌面安装尚未将 `dsh` 加入 PATH，可将上面的 `dsh` 替换为 `"/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"`。使用当前桌面 runtime 附带的 CLI，避免另一个版本的 `npx` 命令管理同一 profile。
 
-仓库根目录的 `package.json` 直接暴露现有 `plugins/iphone-use` bundle，无需子目录参数、额外仓库、安装脚本或本地构建。根清单由 `scripts/sync-plugin.py` 从插件清单生成，发布的 npm 包只包含公开插件文件。Git 来源跟随仓库默认分支；需要固定版本时可指定已经存在的提交 SHA。npm 来源可用 `dsh-iphone-use@VERSION` 固定版本。
+仓库根目录的 `package.json` 直接暴露现有 `plugins/iphone-use` bundle，无需子目录参数、额外仓库、安装脚本或本地构建。根清单由 `scripts/plugin/sync-plugin.py` 从插件清单生成，发布的 npm 包只包含公开插件文件。Git 来源跟随仓库默认分支；需要固定版本时可指定已经存在的提交 SHA。npm 来源可用 `dsh-iphone-use@VERSION` 固定版本。
 
 重启 Harness 并开始新会话，要求“使用 iphone-use skill 打开我的 iPhone 设置，进入通用，读图验证并断开”。注册名称为 `iphone-use`，不使用 Codex/Claude 的冒号命名空间。模型通过 `skill` 工具加载指引，截图使用 **read_image**，文本参考文件使用 **read**。完整差异见 [DeepSeek adapter](../skills/iphone-use/references/deepseek-harness.md)。
 
@@ -94,7 +94,7 @@ Trusted Publisher 配置为 npm 包 `dsh-iphone-use`、仓库 `hughlee824/iphone
 
 CI 校验版本与未发布状态、同步插件，测试并打包根目录的 npm 包，再安装和测试同一个 tgz，通过 OIDC 发布并附带 provenance。`dsh-plugin-package` artifact 保存 tgz 和 `dsh-pack.json`。随后以全新 npm cache 从公开 registry 安装固定版本，核对 integrity、注册、资源和释放，再卸载。云端注册检查使用测试 registry；真实 Harness CLI/profile 和 Cordis/SkillRegistry 安装验收需在本机另行完成，不能据此声称真机操作通过。
 
-npm 接受发布后若验证失败，不可重发同版本。先检查公开包；可勾选 **verify_only** 重新运行工作流，仍需 main CI 成功及重建归档 integrity 与公开包一致，但跳过发布。脚本 `python3 scripts/dsh-release.py verify /path/to/dsh-pack.json` 也只验证和临时安装，不发布。版本详情与安装索引可能分批可见，安装仅对 npm `E404`/`ETARGET` 有限重试；其他错误立即失败并输出原始错误。
+npm 接受发布后若验证失败，不可重发同版本。先检查公开包；可勾选 **verify_only** 重新运行工作流，仍需 main CI 成功及重建归档 integrity 与公开包一致，但跳过发布。脚本 `python3 scripts/plugin/dsh-release.py verify /path/to/dsh-pack.json` 也只验证和临时安装，不发布。版本详情与安装索引可能分批可见，安装仅对 npm `E404`/`ETARGET` 有限重试；其他错误立即失败并输出原始错误。
 
 更新第三方插件时，先在 Plugin Manager 卸载，再通过原来源重装；或使用 `dsh plugin --profile desktop remove dsh-iphone-use` 后执行对应安装命令，再重启 Harness。这些操作只管理插件，不卸载 CLI。
 
@@ -119,7 +119,7 @@ OpenCode 使用 `--agent opencode`。默认安装到当前项目 `.cursor/skills
 
 不建议用第三方 `npx skills add ...` 替代上述命令：它不会运行我们的冲突检查，且目标 agent 参数不一定阻止共享目录被其他客户端扫描。通用 adapter 要求本机 shell、完整命令状态及真实 PNG 读图工具；云端 agent 或只有多模态模型但没有文件读图工具的客户端不满足真机操作条件。预览默认由 CLI 打开本机浏览器；设备会话和清理规则保持一致。
 
-安装器源码在 `packages/iphone-use-skill`，发布包通过 `python3 scripts/build-skill-package.py NEW_OUTPUT_DIRECTORY` 从共享源生成，再在输出目录执行 `npm pack --ignore-scripts`。不要直接发布缺少 skill 资源的源码子目录。自动化测试覆盖打包后的 npm exec、重复安装、兼容目录冲突、更新、卸载和文件保留。安装成功、agent 实际加载成功、真机任务成功须分别验收；不能把一个客户端的结果视为全部客户端的真机兼容承诺。
+安装器源码在 `packages/iphone-use-skill`，发布包通过 `python3 scripts/plugin/build-skill-package.py NEW_OUTPUT_DIRECTORY` 从共享源生成，再在输出目录执行 `npm pack --ignore-scripts`。不要直接发布缺少 skill 资源的源码子目录。自动化测试覆盖打包后的 npm exec、重复安装、兼容目录冲突、更新、卸载和文件保留。安装成功、agent 实际加载成功、真机任务成功须分别验收；不能把一个客户端的结果视为全部客户端的真机兼容承诺。
 
 ## 首个任务
 
@@ -176,8 +176,8 @@ claude plugin update iphone-use@iphone-use
 canonical skill 位于 `skills/iphone-use/`；已提交的自包含副本位于 `plugins/iphone-use/skills/iphone-use/`。修改源文件后执行：
 
 ```sh
-python3 scripts/sync-plugin.py
-python3 scripts/sync-plugin.py --check
+python3 scripts/plugin/sync-plugin.py
+python3 scripts/plugin/sync-plugin.py --check
 python3 -m unittest discover -s scripts/tests -v
 node --test scripts/tests/test_dsh_plugin.mjs scripts/tests/test_agent_templates.mjs
 ```
@@ -185,7 +185,7 @@ node --test scripts/tests/test_dsh_plugin.mjs scripts/tests/test_agent_templates
 `--check` 在副本有遗漏或漂移时失败。Codex/Claude 的 Git 插件安装不需要额外的 Python 或 Node；DeepSeek 使用 Harness 自带的 JavaScript runtime。生成独立 ZIP 和校验文件：
 
 ```sh
-python3 scripts/sync-plugin.py --archive .build/plugins
+python3 scripts/plugin/sync-plugin.py --archive .build/plugins
 ```
 
 Codex/Claude 本地 marketplace 安装使用**仓库根目录**：`codex plugin marketplace add /absolute/path/to/iphone-use` 或 `claude plugin marketplace add /absolute/path/to/iphone-use`，随后执行对应安装命令。Claude 也支持 `claude --plugin-dir /absolute/path/to/iphone-use/plugins/iphone-use` 或解压后的自包含目录。DeepSeek 安装的是 `plugins/iphone-use` 包目录。
@@ -201,7 +201,7 @@ DSH_RUNTIME_MODULES='/Applications/DeepSeek Harness.app/Contents/Resources/app.a
 
 该测试使用临时插件副本，不连接设备或启动模型，也不修改用户 profile。
 
-对通过公开渠道安装的包，使用同一个真实 runtime 运行 `scripts/verify-dsh-install.mjs /absolute/path/to/profile/node_modules/dsh-iphone-use`，验证已安装文件而非 checkout。分别为 npm 与 GitHub 来源创建隔离的 `DSH_HOME`/profile，安装后用 `--dump-config` 核对 bundle 层，再执行该脚本，最后通过 CLI 卸载并确认配置层与包目录消失。若安装时指定了 `--store-dir`，卸载时也传入同一个目录。
+对通过公开渠道安装的包，使用同一个真实 runtime 运行 `scripts/plugin/verify-dsh-install.mjs /absolute/path/to/profile/node_modules/dsh-iphone-use`，验证已安装文件而非 checkout。分别为 npm 与 GitHub 来源创建隔离的 `DSH_HOME`/profile，安装后用 `--dump-config` 核对 bundle 层，再执行该脚本，最后通过 CLI 卸载并确认配置层与包目录消失。若安装时指定了 `--store-dir`，卸载时也传入同一个目录。
 
 独立 ZIP 包含 Codex/Claude 清单、DeepSeek 的 package.json、patch、注册入口与中英文显示元数据、README、MIT LICENSE 和完整 skill。不要将插件目录外的共享文件或软链接当成已打包依赖。正式发布验收必须覆盖各客户端的实际分发渠道、任务和升级，不能用本地加载成功代替公开分发验收。
 

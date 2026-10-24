@@ -34,12 +34,12 @@ setup 将包复制到用户状态目录，改写为保存的 App bundle ID、嵌
 在 macOS/Xcode 主机的源码目录执行，需要 Python 3.9+；Python 仅用于维护者打包，不是用户运行依赖：
 
 ```sh
-python3 scripts/install-swiftlint.py
-python3 scripts/install-actionlint.py
+python3 scripts/tools/install-swiftlint.py
+python3 scripts/tools/install-actionlint.py
 python3 scripts/check.py
-python3 scripts/build-release.py --version 0.2.0-rc.1 --require-clean
-python3 scripts/verify-release.py .build/releases/iphone-use-0.2.0-rc.1-macos-arm64.tar.gz --require-clean
-python3 scripts/generate-homebrew.py .build/releases/iphone-use-0.2.0-rc.1-macos-arm64.tar.gz --output .build/releases/iphone-use.rb
+python3 scripts/release/build-release.py --version 0.2.0-rc.1 --require-clean
+python3 scripts/release/verify-release.py .build/releases/iphone-use-0.2.0-rc.1-macos-arm64.tar.gz --require-clean
+python3 scripts/release/generate-homebrew.py .build/releases/iphone-use-0.2.0-rc.1-macos-arm64.tar.gz --output .build/releases/iphone-use.rb
 ```
 
 脚本构建 release CLI、在隔离目录 `build-for-testing` 构建无开发签名的 Runner，移除二进制调试信息，整理固定相对路径的测试清单，附带许可证及构建记录，然后生成目录、tar.gz 和 SHA-256 文件。CLI 仅作本机运行所需的 ad-hoc 签名。产物默认位于 `.build/releases`，也可用 `--output-dir` 指定；已有同名产物会拒绝覆盖。打包和清单检查在临时目录完成，失败不会留下同名的半成品包。CLI 与 Runner 构建日志分开保存。脚本不创建 tag、不上传文件、不操作 Apple 账号、不使用维护者的 iOS profile。
@@ -95,7 +95,7 @@ formula 将原包的 `bin` 与 `libexec` 一起放在 Homebrew keg 的 `libexec`
   gh release download "v${IPHONE_USE_VERSION}" --repo HughLee824/iphone-use \
     --dir "$IPHONE_USE_ACCEPTANCE_DIR" \
     --pattern "${IPHONE_USE_PACKAGE}.tar.gz" --pattern "${IPHONE_USE_PACKAGE}.tar.gz.sha256"
-  python3 scripts/verify-release.py "$IPHONE_USE_ACCEPTANCE_DIR/${IPHONE_USE_PACKAGE}.tar.gz" \
+  python3 scripts/release/verify-release.py "$IPHONE_USE_ACCEPTANCE_DIR/${IPHONE_USE_PACKAGE}.tar.gz" \
     --require-clean > "$IPHONE_USE_ACCEPTANCE_DIR/package-verification.json"
   gh release view "v${IPHONE_USE_VERSION}" --repo HughLee824/iphone-use \
     --json body --jq .body > "$IPHONE_USE_ACCEPTANCE_DIR/acceptance.md"

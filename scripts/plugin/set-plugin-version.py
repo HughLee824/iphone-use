@@ -7,7 +7,7 @@ import re
 import subprocess
 import sys
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 MANIFESTS = (
     'plugins/iphone-use/.codex-plugin/plugin.json',
     'plugins/iphone-use/.claude-plugin/plugin.json',
@@ -62,7 +62,7 @@ def main():
     # Validate every source before writing any file; changes remain reviewable in Git.
     for path, content in updates.items():
         path.write_text(content)
-    subprocess.run([sys.executable, str(ROOT / 'scripts/sync-plugin.py')], check=True, cwd=ROOT)
+    subprocess.run([sys.executable, str(ROOT / 'scripts/plugin/sync-plugin.py')], check=True, cwd=ROOT)
     print(f'Updated plugin/skill source to {args.version}; nothing was published.')
 
 

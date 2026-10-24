@@ -7,7 +7,7 @@ import urllib.error
 from pathlib import Path
 from unittest.mock import Mock
 
-spec = importlib.util.spec_from_file_location('dsh_release', Path(__file__).parents[1] / 'dsh-release.py')
+spec = importlib.util.spec_from_file_location('dsh_release', Path(__file__).parents[1] / 'plugin/dsh-release.py')
 release = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(release)
 

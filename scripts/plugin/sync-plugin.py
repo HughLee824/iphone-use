@@ -9,7 +9,7 @@ import sys
 import zipfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 PLUGIN = ROOT / "plugins/iphone-use"
 
 
@@ -31,7 +31,7 @@ def sync_repository_manifest(check=False):
     expected = json.dumps(repository_manifest(), ensure_ascii=False, indent=2) + "\n"
     if not target.is_file() or target.read_text() != expected:
         if check:
-            raise ValueError("Repository package.json is stale. Run python3 scripts/sync-plugin.py.")
+            raise ValueError("Repository package.json is stale. Run python3 scripts/plugin/sync-plugin.py.")
         target.write_text(expected)
 
 
@@ -54,7 +54,7 @@ def sync(check=False):
     changed = [path for path, content in expected.items()
                if not (PLUGIN / path).is_file() or (PLUGIN / path).read_bytes() != content]
     if check and (changed or stale):
-        raise ValueError("Plugin bundle is stale. Run python3 scripts/sync-plugin.py. Files: "
+        raise ValueError("Plugin bundle is stale. Run python3 scripts/plugin/sync-plugin.py. Files: "
                          + ", ".join(str(path) for path in sorted(set(changed) | stale)))
     if not check:
         for path in stale:

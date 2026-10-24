@@ -10,10 +10,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "release"))
 from release_artifact import PREVIEW, PREVIEW_FILES, preview_asset_files, RUNNER, VERSION_PATTERN, check_checksum, check_linked_libraries, inspect_archive, sha256
 
-spec = importlib.util.spec_from_file_location("homebrew", Path(__file__).resolve().parents[1] / "generate-homebrew.py")
+spec = importlib.util.spec_from_file_location("homebrew", Path(__file__).resolve().parents[1] / "release/generate-homebrew.py")
 homebrew = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(homebrew)
 

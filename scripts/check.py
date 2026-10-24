@@ -57,37 +57,37 @@ def runtime_checks():
 
 
 def swiftlint_command():
-    pin = json.loads((ROOT / "scripts/swiftlint.json").read_text())
+    pin = json.loads((ROOT / "scripts/tools/swiftlint.json").read_text())
     version = pin["version"]
     local = ROOT / ".build/tools" / f"swiftlint-{version}" / "swiftlint"
     command = str(local) if local.is_file() else "swiftlint"
     actual = run([command, "version"], capture=True)
     if actual != version:
-        raise RuntimeError(f"Expected SwiftLint {version}, got {actual}. Run python3 scripts/install-swiftlint.py.")
+        raise RuntimeError(f"Expected SwiftLint {version}, got {actual}. Run python3 scripts/tools/install-swiftlint.py.")
     return command
 
 
 def quick_checks():
-    pin = json.loads((ROOT / "scripts/actionlint.json").read_text())
+    pin = json.loads((ROOT / "scripts/tools/actionlint.json").read_text())
     actionlint = ROOT / ".build/tools" / f"actionlint-{pin['version']}" / "actionlint"
     if not actionlint.is_file():
-        raise RuntimeError("Run python3 scripts/install-actionlint.py before checks.")
+        raise RuntimeError("Run python3 scripts/tools/install-actionlint.py before checks.")
     if run([actionlint, "-version"], capture=True).splitlines()[0] != pin['version']:
-        raise RuntimeError("Actionlint version does not match scripts/actionlint.json")
+        raise RuntimeError("Actionlint version does not match scripts/tools/actionlint.json")
     workflows = sorted((ROOT / ".github/workflows").glob("*.yml"))
     workflows += sorted((ROOT / "packaging").glob("*/.github/workflows/*.yml"))
     run([actionlint, "-shellcheck=", "-pyflakes=", *workflows])
-    run([sys.executable, "scripts/check-docs.py"])
+    run([sys.executable, "scripts/checks/check-docs.py"])
     for pattern in ("test_docs.py", "test_governance.py", "test_engineering_checks.py"):
         run([sys.executable, "-m", "unittest", "discover", "-s", "scripts/tests", "-p", pattern, "-v"])
     node_tests = sorted(str(path.relative_to(ROOT)) for path in (ROOT / "scripts/tests").glob("test_*.mjs"))
     run(["node", "--test", *node_tests])
-    run([sys.executable, "scripts/sync-plugin.py", "--check"])
-    run([sys.executable, "scripts/sync-plugin.py", "--archive", ".build/plugins"])
+    run([sys.executable, "scripts/plugin/sync-plugin.py", "--check"])
+    run([sys.executable, "scripts/plugin/sync-plugin.py", "--archive", ".build/plugins"])
 
 
 def acceptance_checks(binary_directory, jobs):
-    run(["xcodebuild", "build", "-project", "scripts/NativeTextProbe.xcodeproj",
+    run(["xcodebuild", "build", "-project", "scripts/device/text-probe/NativeTextProbe.xcodeproj",
          "-target", "NativeTextProbe", "-configuration", "Debug", "-sdk", "iphoneos",
          "-jobs", str(jobs), "CODE_SIGNING_ALLOWED=NO",
          f"SYMROOT={ROOT / '.build/check-probe/products'}",
@@ -107,7 +107,7 @@ def acceptance_checks(binary_directory, jobs):
     modules = binary_directory / "Modules"
     binary = directory / "ContactFaultHost"
     run(["xcrun", "swiftc", "-parse-as-library", "-I", modules if modules.is_dir() else binary_directory,
-         "-Xcc", f"-fmodule-map-file={modulemap}", "scripts/native-contact-fault-host.swift",
+         "-Xcc", f"-fmodule-map-file={modulemap}", "scripts/device/native-contact-fault-host.swift",
          *objects, "-o", binary])
     run([binary, "--help"])
     run([binary, "--self-test"])

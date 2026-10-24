@@ -13,15 +13,15 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def load(name):
-    spec = importlib.util.spec_from_file_location(name.replace('-', '_'), ROOT / 'scripts' / f'{name}.py')
+    spec = importlib.util.spec_from_file_location(name.replace('-', '_').replace('/', '_'), ROOT / 'scripts' / f'{name}.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-titles = load('check-pr-title')
-versions = load('set-plugin-version')
-swiftlint = load('install-swiftlint')
+titles = load('checks/check-pr-title')
+versions = load('plugin/set-plugin-version')
+swiftlint = load('tools/install-swiftlint')
 
 
 class GovernanceTests(unittest.TestCase):
@@ -41,11 +41,11 @@ class GovernanceTests(unittest.TestCase):
             root = Path(directory)
             event = root / 'event.json'
             event.write_text(json.dumps({'pull_request': {'title': 'fix: avoid $(touch OWNED) expansion'}}))
-            subprocess.run([sys.executable, str(ROOT / 'scripts/check-pr-title.py'), '--event', str(event)],
+            subprocess.run([sys.executable, str(ROOT / 'scripts/checks/check-pr-title.py'), '--event', str(event)],
                            cwd=root, check=True, capture_output=True)
             self.assertFalse((root / 'OWNED').exists())
             event.write_text('{}')
-            subprocess.run([sys.executable, str(ROOT / 'scripts/check-pr-title.py'), '--event', str(event)],
+            subprocess.run([sys.executable, str(ROOT / 'scripts/checks/check-pr-title.py'), '--event', str(event)],
                            check=True, capture_output=True)
 
     def version_fixture(self, root):
@@ -107,8 +107,8 @@ class GovernanceTests(unittest.TestCase):
     def test_failed_tool_download_never_executes_or_installs_a_binary(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / 'scripts').mkdir()
-            (root / 'scripts/swiftlint.json').write_text(json.dumps({'version': '0.65.1', 'sha256': '0' * 64}))
+            (root / 'scripts/tools').mkdir(parents=True)
+            (root / 'scripts/tools/swiftlint.json').write_text(json.dumps({'version': '0.65.1', 'sha256': '0' * 64}))
             with patch.object(swiftlint, 'ROOT', root), patch('sys.argv', ['install-swiftlint.py']), \
                     patch.object(swiftlint.subprocess, 'run', side_effect=subprocess.CalledProcessError(60, 'curl')), \
                     patch.object(swiftlint.subprocess, 'check_output') as execute:
@@ -141,7 +141,7 @@ class ActionlintInstallerTests(unittest.TestCase):
         import hashlib
         import io
         import tarfile
-        installer = load('install-actionlint')
+        installer = load('tools/install-actionlint')
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             archive = directory / 'tool.tar.gz'
@@ -168,11 +168,11 @@ class ActionlintInstallerTests(unittest.TestCase):
                     self.assertEqual((directory / 'actionlint').read_bytes(), b'fixture')
 
     def test_download_failure_does_not_execute_payload(self):
-        installer = load('install-actionlint')
+        installer = load('tools/install-actionlint')
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / 'scripts').mkdir()
-            (root / 'scripts/actionlint.json').write_text(json.dumps({
+            (root / 'scripts/tools').mkdir(parents=True)
+            (root / 'scripts/tools/actionlint.json').write_text(json.dumps({
                 'version': '1.7.12', 'sha256': {'linux_amd64': '0' * 64}}))
             with patch.object(installer, 'ROOT', root), patch.object(installer, 'platform_key', return_value='linux_amd64'), \
                     patch('sys.argv', ['install-actionlint.py']), \

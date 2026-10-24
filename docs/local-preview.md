@@ -141,7 +141,7 @@ standard 的静态画面可能不再发送视频帧。录屏期间若 `observe` 
 需要复现时，可从预览响应取 URL、从 connect 取 `hostPid`，显式运行：
 
 ```sh
-python3 scripts/preview-soak.py --url "$PREVIEW_URL" --pid "$HOST_PID" \
+python3 scripts/device/preview-soak.py --url "$PREVIEW_URL" --pid "$HOST_PID" \
   --seconds 480 --interval 1 --output .local/preview-soak
 ```
 

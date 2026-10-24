@@ -6,8 +6,8 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-SPEC = importlib.util.spec_from_file_location("build_release", Path(__file__).resolve().parents[1] / "build-release.py")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "release"))
+SPEC = importlib.util.spec_from_file_location("build_release", Path(__file__).resolve().parents[1] / "release/build-release.py")
 BUILD = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(BUILD)
 

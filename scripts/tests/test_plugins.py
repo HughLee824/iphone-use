@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN = ROOT / "plugins/iphone-use"
-spec = importlib.util.spec_from_file_location("sync_plugin", ROOT / "scripts/sync-plugin.py")
+spec = importlib.util.spec_from_file_location("sync_plugin", ROOT / "scripts/plugin/sync-plugin.py")
 sync_plugin = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sync_plugin)
 

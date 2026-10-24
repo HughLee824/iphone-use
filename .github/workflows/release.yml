@@ -39,29 +39,29 @@ jobs:
           xcodebuild -version
           swift --version
       - name: Install SwiftLint
-        run: python3 scripts/install-swiftlint.py
+        run: python3 scripts/tools/install-swiftlint.py
       - name: Install Actionlint
-        run: python3 scripts/install-actionlint.py
+        run: python3 scripts/tools/install-actionlint.py
       - name: Run shared engineering checks
         run: python3 scripts/check.py
       - name: Validate and package the client plugin
         run: |
-          python3 scripts/sync-plugin.py --check
-          python3 scripts/sync-plugin.py --archive .build/releases
+          python3 scripts/plugin/sync-plugin.py --check
+          python3 scripts/plugin/sync-plugin.py --archive .build/releases
       - name: Build and verify the exact archive
         run: |
-          python3 scripts/build-release.py --version "$VERSION" --require-clean
-          python3 scripts/verify-release.py ".build/releases/iphone-use-${VERSION}-macos-arm64.tar.gz" --require-clean
+          python3 scripts/release/build-release.py --version "$VERSION" --require-clean
+          python3 scripts/release/verify-release.py ".build/releases/iphone-use-${VERSION}-macos-arm64.tar.gz" --require-clean
       - name: Verify Homebrew installation preserves the CLI and Runner
         run: |
-          python3 scripts/generate-homebrew.py ".build/releases/iphone-use-${VERSION}-macos-arm64.tar.gz" --local --output "$RUNNER_TEMP/iphone-use.rb"
+          python3 scripts/release/generate-homebrew.py ".build/releases/iphone-use-${VERSION}-macos-arm64.tar.gz" --local --output "$RUNNER_TEMP/iphone-use.rb"
           ruby -c "$RUNNER_TEMP/iphone-use.rb"
           brew tap-new iphone-use/acceptance
           cp "$RUNNER_TEMP/iphone-use.rb" "$(brew --repository iphone-use/acceptance)/Formula/iphone-use.rb"
           brew install iphone-use/acceptance/iphone-use
           brew test iphone-use/acceptance/iphone-use
       - name: Generate the public formula
-        run: python3 scripts/generate-homebrew.py ".build/releases/iphone-use-${VERSION}-macos-arm64.tar.gz" --output .build/releases/iphone-use.rb
+        run: python3 scripts/release/generate-homebrew.py ".build/releases/iphone-use-${VERSION}-macos-arm64.tar.gz" --output .build/releases/iphone-use.rb
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: release-assets
@@ -97,10 +97,10 @@ jobs:
           path: release-assets
       - name: Check downloaded artifacts and refuse an existing tag
         run: |
-          python3 scripts/verify-release.py "release-assets/iphone-use-${VERSION}-macos-arm64.tar.gz" --require-clean --no-execute > "$RUNNER_TEMP/verified-release.json"
-          python3 scripts/generate-homebrew.py "release-assets/iphone-use-${VERSION}-macos-arm64.tar.gz" --output "$RUNNER_TEMP/iphone-use.rb"
+          python3 scripts/release/verify-release.py "release-assets/iphone-use-${VERSION}-macos-arm64.tar.gz" --require-clean --no-execute > "$RUNNER_TEMP/verified-release.json"
+          python3 scripts/release/generate-homebrew.py "release-assets/iphone-use-${VERSION}-macos-arm64.tar.gz" --output "$RUNNER_TEMP/iphone-use.rb"
           cmp "$RUNNER_TEMP/iphone-use.rb" release-assets/iphone-use.rb
-          python3 scripts/sync-plugin.py --archive "$RUNNER_TEMP/plugins"
+          python3 scripts/plugin/sync-plugin.py --archive "$RUNNER_TEMP/plugins"
           cmp "$RUNNER_TEMP/plugins/"*.zip release-assets/iphone-use-plugin-*.zip
           cmp "$RUNNER_TEMP/plugins/"*.zip.sha256 release-assets/iphone-use-plugin-*.zip.sha256
           existing=$(git ls-remote --tags origin "refs/tags/v${VERSION}")

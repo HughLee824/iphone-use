@@ -44,4 +44,4 @@ Keep durable instructions, current contracts, design decisions with tradeoffs, r
 
 Investigation diaries, failed-attempt timelines, candidate-by-candidate results, session handoffs, filming briefs and raw device captures belong under ignored `.local/`. Extract any still-relevant limitation or regression case before removing a process document. Put reusable sanitized fixtures in `Tests/`; keep original evidence local. Use release notes and pull requests for change history. Removing a file from the current tree does not erase prior Git history.
 
-Run `python3 scripts/check-docs.py` for local links and Markdown heading anchors, or `python3 scripts/check.py` for the complete engineering checks. The checker does not validate remote URLs or the factual accuracy of instructions. Update both READMEs when changing public usage.
+Run `python3 scripts/checks/check-docs.py` for local links and Markdown heading anchors, or `python3 scripts/check.py` for the complete engineering checks. The checker does not validate remote URLs or the factual accuracy of instructions. Update both READMEs when changing public usage.

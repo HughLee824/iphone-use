@@ -111,7 +111,7 @@ def main():
     architecture = platform.machine()
     if platform.system() != "Darwin" or architecture not in ("arm64", "x86_64"):
         parser.error("Build on macOS using an arm64 or x86_64 host")
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     commit = run(["git", "rev-parse", "HEAD"], cwd=root)
     dirty = bool(run(["git", "status", "--porcelain"], cwd=root))
     if args.require_clean and dirty:

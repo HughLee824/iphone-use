@@ -26,9 +26,9 @@ jobs:
         with:
           node-version: '22'
       - name: Validate pull request title
-        run: python3 scripts/check-pr-title.py --event "$GITHUB_EVENT_PATH"
+        run: python3 scripts/checks/check-pr-title.py --event "$GITHUB_EVENT_PATH"
       - name: Install Actionlint
-        run: python3 scripts/install-actionlint.py
+        run: python3 scripts/tools/install-actionlint.py
       - name: Run portable checks
         run: python3 scripts/check.py --suite quick
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -59,7 +59,7 @@ jobs:
           xcodebuild -version
           swift --version
       - name: Install SwiftLint
-        run: python3 scripts/install-swiftlint.py
+        run: python3 scripts/tools/install-swiftlint.py
       - name: Run shared engineering checks
         run: python3 scripts/check.py --suite native
   test:

@@ -7,8 +7,8 @@ Build and test the exact source you intend to distribute. Device-free checks, in
 On a Mac with full Xcode selected, Python 3.9+ and Node.js 22+, install the pinned SwiftLint and run:
 
 ```sh
-python3 scripts/install-swiftlint.py
-python3 scripts/install-actionlint.py
+python3 scripts/tools/install-swiftlint.py
+python3 scripts/tools/install-actionlint.py
 python3 scripts/check.py
 ```
 
@@ -19,7 +19,7 @@ CI runs portable checks on Linux first, then runs native checks on macOS. The re
 For documentation-only changes:
 
 ```sh
-python3 scripts/check-docs.py
+python3 scripts/checks/check-docs.py
 python3 -m unittest discover -s scripts/tests -p test_docs.py -v
 ```
 
@@ -35,12 +35,12 @@ Use the selected CLI consistently. Preserve each command's exit status and compl
 
 ### Ordinary text fixture
 
-The [NativeTextProbe project](../scripts/NativeTextProbe.xcodeproj) builds a normal app from [native-text-probe.swift](../scripts/native-text-probe.swift). It provides disposable controls and exact UTF-8 comparison. It has no XCTest target or text-injection endpoint and is not required to use iPhone-use.
+The [NativeTextProbe project](../scripts/device/text-probe/NativeTextProbe.xcodeproj) builds a normal app from [native-text-probe.swift](../scripts/device/text-probe/native-text-probe.swift). It provides disposable controls and exact UTF-8 comparison. It has no XCTest target or text-injection endpoint and is not required to use iPhone-use.
 
 With your own provisionable identifiers and signing configured:
 
 ```sh
-xcodebuild -project scripts/NativeTextProbe.xcodeproj -target NativeTextProbe \
+xcodebuild -project scripts/device/text-probe/NativeTextProbe.xcodeproj -target NativeTextProbe \
   -configuration Debug -sdk iphoneos DEVELOPMENT_TEAM="$TEAM_ID" \
   PRODUCT_BUNDLE_IDENTIFIER="$PROBE_BUNDLE_ID" \
   SYMROOT="$PWD/.local/native-text-probe/products" \
@@ -89,8 +89,8 @@ For changes to those paths, add an affected-scope matrix rather than treating th
 - Test screenshot-derived coordinates in portrait and both landscape directions, gestures on disposable controls, and fresh observations after rotation.
 - Exercise dynamic content with default guards and explicitly chosen exclusions/overlay targets. A pre-dispatch rejection must preserve input facts; do not weaken guards to make acceptance pass.
 - Check preview alone, recording alone and coexistence, then stop each consumer and disconnect. Decode the actual MP4 and inspect frames, orientation, timestamp continuity and cleanup. Rotation may end a segment; a playable file or target frame rate does not prove sustained fresh frames.
-- Use [verify-apple-native.swift](../scripts/verify-apple-native.swift) for bounded media/lifecycle checks without UI input; run its `--help` for current options. Use a new private output directory. It does not establish text or gesture success.
-- [native-contact-fault-host.swift](../scripts/native-contact-fault-host.swift) is an explicit developer fault harness. Its self-test is separate from hardware fault injection. Review its mode/help before using it on controlled UI; it is not the production client or an automatic recovery route.
+- Use [verify-apple-native.swift](../scripts/device/verify-apple-native.swift) for bounded media/lifecycle checks without UI input; run its `--help` for current options. Use a new private output directory. It does not establish text or gesture success.
+- [native-contact-fault-host.swift](../scripts/device/native-contact-fault-host.swift) is an explicit developer fault harness. Its self-test is separate from hardware fault injection. Review its mode/help before using it on controlled UI; it is not the production client or an automatic recovery route.
 
 The obsolete XCTest attachment recording experiment is not a supported test path. Its design limitation is retained in [recording](runner-recording.md#为什么不使用-xctest-附件录屏).
 

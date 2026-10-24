@@ -11,7 +11,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = 'dsh-iphone-use'
 REGISTRY = 'https://registry.npmjs.org'
 
@@ -74,7 +74,7 @@ def verify(pack_metadata):
                   '--no-fund', '--no-package-lock', '--prefer-online']
         install(prefix + ['install', f'{PACKAGE}@{expected["version"]}'])
         installed = root / 'install/node_modules' / PACKAGE
-        subprocess.run(['node', str(ROOT / 'scripts/check-dsh-package.mjs'), str(installed)], check=True)
+        subprocess.run(['node', str(ROOT / 'scripts/plugin/check-dsh-package.mjs'), str(installed)], check=True)
         subprocess.run(prefix + ['uninstall', PACKAGE], check=True)
         if installed.exists():
             raise ValueError('Package remained after npm uninstall.')

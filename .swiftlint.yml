@@ -15,6 +15,7 @@ excluded:
   - packages/runner-support/.swiftpm
   - .swiftpm
   - .local
+  - scripts/brand/node_modules
   - build
   - DerivedData
   - spikes
