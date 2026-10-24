@@ -115,6 +115,10 @@ class PreviewServiceCLITests(unittest.TestCase):
         stopped = subprocess.run([str(CLI), "preview-service-stop", "--port", str(self.port)],
                                  env=self.env, capture_output=True, text=True, timeout=8)
         self.assertEqual(stopped.returncode, 0, stopped.stdout + stopped.stderr)
+        result = json.loads(stopped.stdout)["result"]
+        self.assertEqual(result["state"], "stopped")
+        self.assertTrue(result["stopAccepted"])
+        self.assertTrue(result["exited"])
         self.process.wait(timeout=5)
         self.start()
         with urllib.request.urlopen(url + "state", timeout=3) as response:
@@ -207,6 +211,45 @@ class PreviewServiceCLITests(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as error:
             urllib.request.urlopen(attached["url"] + "state", timeout=3)
         self.assertEqual(error.exception.code, 404)
+
+    def test_unclosed_stop_connection_expires_and_concurrent_clients_restart(self):
+        self.start()
+        with socket.socket(socket.AF_UNIX) as pending_stop:
+            pending_stop.settimeout(3)
+            pending_stop.connect(str(self.directory / "ipc.sock"))
+            request = {"id": str(uuid.uuid4()), "version": 1, "op": "stop",
+                       "authorization": (self.directory / "authorization").read_text()}
+            pending_stop.sendall(json.dumps(request).encode() + b"\n")
+            data = b""
+            while b"\n" not in data:
+                chunk = pending_stop.recv(4096)
+                self.assertTrue(chunk)
+                data += chunk
+            response = json.loads(data.split(b"\n")[0])
+            self.assertEqual(response["state"], "stop_requested")
+            self.assertEqual(response["pid"], self.process.pid)
+            clients = [self.revoke_client(f"missing-{index}") for index in range(8)]
+            time.sleep(.2)
+            self.assertIsNone(self.process.poll())
+            self.assertTrue(all(client.poll() is None for client in clients))
+            # Never close pending_stop to release shutdown; the daemon must enforce its deadline.
+            self.process.wait(timeout=7)
+            for client in clients:
+                out, err = client.communicate(timeout=15)
+                self.assertEqual(json.loads(out)["error"]["code"], "preview_not_found", out + err)
+        self.assertTrue(self.control("ping")["ok"])
+
+    def test_unresponsive_owner_times_out_without_starting_a_replacement(self):
+        self.directory.mkdir(parents=True, mode=0o700)
+        with (self.directory / "device-service.lock").open("w") as owner:
+            fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            client = self.revoke_client()
+            started = time.monotonic()
+            out, err = client.communicate(timeout=12)
+            self.assertEqual(json.loads(out)["error"]["code"], "preview_service_busy", out + err)
+            self.assertLess(time.monotonic() - started, 10)
+            self.assertFalse((self.directory / "service.log").exists())
+            self.assertFalse((self.directory / "ipc.sock").exists())
 
 
 if __name__ == "__main__":

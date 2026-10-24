@@ -84,7 +84,7 @@ struct PreviewRevoke: ParsableCommand {
 struct PreviewServiceStop: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "preview-service-stop",
-        abstract: "Stop the local viewer service on a port. All its pages pause; device sessions remain connected.")
+        abstract: "Request viewer shutdown and confirm exit within a bounded wait; device sessions remain connected.")
     @Option(help: "Preview service port; defaults to config preview-port.") var port: Int?
     mutating func run() throws { try output { try stopPreviewService(port: port) } }
 }

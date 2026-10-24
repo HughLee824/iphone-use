@@ -97,4 +97,33 @@ final class PreviewServiceLifecycleTests: XCTestCase {
             XCTAssertEqual(error?["code"] as? String, "preview_service_stopping")
         }
     }
+
+    func testStopAcknowledgmentDoesNotMistakeFreeOwnershipLockForProcessExit() throws {
+        // This service runs inside the test process, which intentionally stays alive.
+        let service = try PreviewService(directory: directory(), port: 0)
+        try service.start()
+        defer { service.stop() }
+        let client = try PreviewServiceClient(port: service.port, directory: service.directory)
+        let result = try client.stopAndWait(timeout: 0.02)
+        XCTAssertEqual(result["state"] as? String, "stop_requested")
+        XCTAssertEqual(result["stopAccepted"] as? Bool, true)
+        XCTAssertEqual(result["exited"] as? Bool, false)
+        XCTAssertEqual(result["reason"] as? String, "exit_wait_timeout")
+        XCTAssertTrue(service.queue.sync { service.isStopping })
+    }
+
+    func testOlderDaemonAcknowledgmentWithoutPIDRemainsUnconfirmed() throws {
+        let root = try directory(), client = try PreviewServiceClient(port: 12345, directory: root)
+        let server = try JSONServer(path: root.appendingPathComponent("ipc.sock").path)
+        let ready = DispatchSemaphore(value: 0)
+        server.onRequest = { request, reply in reply(["id": request["id"]!, "ok": true]) {} }
+        server.start { ready.signal() }
+        defer { server.stopAccepting() }
+        XCTAssertEqual(ready.wait(timeout: .now() + 2), .success)
+        let result = try client.stopAndWait(timeout: 0.02)
+        XCTAssertEqual(result["state"] as? String, "stop_requested")
+        XCTAssertEqual(result["stopAccepted"] as? Bool, true)
+        XCTAssertEqual(result["exited"] as? Bool, false)
+        XCTAssertEqual(result["reason"] as? String, "exit_observation_unavailable")
+    }
 }

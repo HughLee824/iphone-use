@@ -76,17 +76,32 @@ final class PreviewServiceClient {
         process.arguments = ["_preview-service", "--directory", directory.path, "--port", String(port)]
         process.standardInput = FileHandle.nullDevice; process.standardOutput = log; process.standardError = log
         try process.run()
-        let deadline = ProcessInfo.processInfo.systemUptime + 6
-        while process.isRunning, ProcessInfo.processInfo.systemUptime < deadline {
-            if (try? call("ping")) != nil { return }
-            Thread.sleep(forTimeInterval: 0.1)
-        }
-        if process.isRunning { process.terminate() } // Only the child launched by this attempt.
+        if try PreviewServiceProcess.waitForStartup(process, ready: { (try? call("ping")) != nil }) { return }
         if let data = try? Data(contentsOf: errorURL), let error = try? jsonObject(data) {
             throw IPhoneUseError(error["code"] as? String ?? "preview_service_failed",
                                  error["message"] as? String ?? "Preview service failed to start")
         }
         throw IPhoneUseError("preview_service_unavailable", "Cannot start preview service; see \(logURL.path)")
+    }
+
+    func stopAndWait(timeout: TimeInterval = 6) throws -> [String: Any] {
+        // Keep a replacement from taking ownership before exit is confirmed.
+        let lock = try Self.startupLock(directory: directory)
+        defer { withExtendedLifetime(lock) {} }
+        let response = try call("stop") // Once only; never start a daemon merely to stop it.
+        var result: [String: Any] = ["state": "stop_requested", "stopAccepted": true,
+                                     "exited": false, "port": Int(port)]
+        guard let pid = response["pid"] as? Int, let identifier = Int32(exactly: pid),
+            let observer = try? PreviewProcessExit(pid: identifier) else {
+            result["reason"] = "exit_observation_unavailable"
+            return result // Older daemons may acknowledge stop without process identity.
+        }
+        if observer.wait(timeout: timeout) {
+            result["state"] = "stopped"; result["exited"] = true
+        } else {
+            result["reason"] = "exit_wait_timeout"
+        }
+        return result
     }
 
     @discardableResult
@@ -118,6 +133,5 @@ public func stopPreviewService(port: Int?) throws -> [String: Any] {
     let fields = try PreviewConfiguration().startFields(port: port)
     let selectedPort = fields["port"] as? Int ?? PreviewConfiguration.defaultPort
     let client = try PreviewServiceClient(port: PreviewConfiguration.validate(port: selectedPort))
-    try client.call("stop") // Never start a service merely to stop it.
-    return ["ok": true, "result": ["state": "stop_requested", "port": selectedPort]]
+    return ["ok": true, "result": try client.stopAndWait()]
 }

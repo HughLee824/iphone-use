@@ -98,7 +98,10 @@ final class PreviewService {
         do {
             try admit(request)
             if ["ping", "stop"].contains(request["op"] as? String ?? "") {
-                if request["op"] as? String == "stop" { beginStopping() }
+                if request["op"] as? String == "stop" {
+                    beginStopping()
+                    response["state"] = "stop_requested"; response["pid"] = Int(getpid())
+                }
                 response["ok"] = true; return response
             }
             guard let device = request["device"] as? String else {
