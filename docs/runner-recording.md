@@ -65,29 +65,11 @@ iphone-use --session "$SESSION" record-stop "$RECORDING_ID"
 
 以上证明“可录制、可按所有权停止、可在测试结束后导出”，**不证明会话存续期间可即时导出**，也不证明所有合法 XCTest 导出方式都不可行。当前直接读文件及 `xcresulttool` 两条路径不足以满足现有命令契约。
 
-## 可复现代码
+## 历史实现
 
-代码位于 `scripts/runner-recording-probe/`，只在新的本地工作目录复制、扩展 Runner，不修改生产 target 或公共接口。需要已有 Apple 签名团队、已配对解锁设备及已安装的普通 Probe；结束自己已有的控制会话，并目视确认 Probe 后运行。不要对未知屏幕直接开始录制。
+XCTest 附件探针已从当前源码删除；它验证的是已放弃的附件导出路线，不参与当前生产录屏或验收。历史实现可在 Git 提交 `4e31f6c` 的 `scripts/runner-recording-probe/` 下查看。上述研究结论保留，当前验证应使用本文开头的生产命令和普通测试 App。
 
-```sh
-python3 scripts/runner-recording-probe/prepare.py .local/recording-probe/workspace
-iphone-use build-runner --source-root .local/recording-probe/workspace --team "$TEAM"
-
-# DEVICE 来自 iphone-use devices；XCTESTRUN 使用上一命令返回的实际路径。
-python3 scripts/runner-recording-probe/run.py \
-  --device "$DEVICE" --xctestrun "$XCTESTRUN" \
-  --output .local/recording-probe/run
-```
-
-工作目录和证据目录必须尚不存在，脚本不覆盖先前结果。测试还要求显式 opt-in 环境变量，由脚本传入；仅在 Probe 已处于前台时发送一次开始请求。没有自动重放；三秒定时停止绑定开始回复返回的 UUID。未知结果不会触发新录制。
-
-脚本保存锁屏状态、xcodebuild 日志、事件流、运行中导出失败、会话结束后附件清单、完整解码结果及 `frame.png`。开始/停止失败会让最终测试失败，不能仅凭 xcodebuild 的退出状态判定录屏成功。`report.json` 明确标记 `productionRecordingImplemented=false`。
-
-这是限定工具链的研究探针，不是生产状态机：未完成通用运行时签名兼容校验、取消/断连/晚回复生命周期、重复 stop、横屏与手势共存等生产验收。不要把探针桥接器直接接入产品并广告支持。
-
-Apple 工具可能需要宿主的系统服务访问权限：本次 `xcresulttool` 在受限宿主环境中不能写其 TestReport 临时目录，AVFoundation 解码也曾失败；允许宿主工具正常使用系统服务后，导出和解码成功。这与 iOS 内部容器的 `EPERM` 是两个问题，后者仍然存在，不是用户尚未批准工具命令。
-
-原始证据：`.local/research/runner-recording-20260925/`，包括首轮失败与修复后验证，不作为产品依赖。没有引入第三方设备工具。
+原始证据位于 `.local/research/runner-recording-20260925/`，不作为产品依赖。
 
 ## 验证范围
 

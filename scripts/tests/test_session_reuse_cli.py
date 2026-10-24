@@ -9,7 +9,7 @@ import threading
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
-CLI = ROOT / '.build/debug/iphone-use'
+CLI = Path(os.environ.get("IPHONE_USE_TEST_CLI", ROOT / '.build/debug/iphone-use'))
 
 
 @unittest.skipUnless(CLI.is_file(), 'Build the CLI first')

@@ -9,7 +9,7 @@ import threading
 import unittest
 
 
-CLI = Path(__file__).resolve().parents[2] / ".build/debug/iphone-use"
+CLI = Path(os.environ.get("IPHONE_USE_TEST_CLI", Path(__file__).resolve().parents[2] / ".build/debug/iphone-use"))
 
 
 @unittest.skipUnless(CLI.is_file(), "Run swift build or swift test before CLI integration tests")

@@ -257,13 +257,10 @@ Issues, focused pull requests, and reproducible device reports are welcome. For 
 Run the same checks configured in [CI](.github/workflows/ci.yml):
 
 ```sh
-swift test
-python3 -m unittest discover -s scripts/tests -v
-node --test scripts/tests/test_dsh_plugin.mjs scripts/tests/test_agent_templates.mjs
-python3 scripts/sync-plugin.py --check
+python3 scripts/check.py
 ```
 
-Python 3.9+ is used for release tooling and development tests, not the installed CLI runtime. Run the commands in the order shown: CLI integration tests use `.build/debug/iphone-use` from the Swift build and are skipped when it is absent. The only Swift package dependency is [Swift ArgumentParser](https://github.com/apple/swift-argument-parser/tree/1.5.0), pinned to `1.5.0`.
+Python 3.9+ is used for release tooling and development tests, not the installed CLI runtime. The check entry point requires full Xcode and SwiftLint, builds the CLI before integration tests, and supplies its executable path explicitly. A missing CLI fails the check. Build concurrency defaults to two jobs. The only Swift package dependency is [Swift ArgumentParser](https://github.com/apple/swift-argument-parser/tree/1.5.0), pinned to `1.5.0`.
 
 Node.js 22+ runs the documented call templates against controlled tool responses in CI; it is only needed for development tests. After changing the canonical skill, run `python3 scripts/sync-plugin.py` to update its packaged copy and bump all three plugin manifest versions when releasing changed instructions. CI also compiles the Runner without signing and packages the plugin for review. Website source, tests and Cloudflare deployment are maintained separately in [iphone-use-website](https://github.com/HughLee824/iphone-use-website). See [public-access release checks](docs/public-access-release.md) for the exact commands and hardware acceptance requirements.
 

@@ -38,9 +38,10 @@ jobs:
         run: |
           xcodebuild -version
           swift --version
-      - run: swift test
-      - run: python3 -m unittest discover -s scripts/tests -v
-      - run: node --test scripts/tests/test_dsh_plugin.mjs scripts/tests/test_agent_templates.mjs
+      - name: Install SwiftLint
+        run: brew list swiftlint >/dev/null 2>&1 || brew install swiftlint
+      - name: Run shared engineering checks
+        run: python3 scripts/check.py
       - name: Validate and package the client plugin
         run: |
           python3 scripts/sync-plugin.py --check

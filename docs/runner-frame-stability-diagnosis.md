@@ -8,7 +8,7 @@ Base implementation: `cbe37b5`, with documentation commit `9bc4c60`. Environment
 
 The ordinary Probe's 起始 button reset the field. One explicit `type o2:e19 --mode replace --text '头🙂尾' --observe` then reproduced the timeout. Input completed; the first retained frame already displayed EXACT UTF-8 MATCH, UTF8 10/10, Scalars 3/3, Edits 3. The subsequent observation confirmed the same text. No unknown input was replayed.
 
-`Runner/LiveSessionTests.swift::waitForStableFrame` captures approximately every 200 ms. `Sources/IPhoneUseCore/FrameStability.swift` requires at least three consecutive identical full-resolution sRGB pixel hashes spanning at least 400 ms, within five seconds. PNG metadata is excluded. All 25 retained frames independently reproduced their live hashes from decoded RGBA bytes and dimensions, ruling out file-metadata differences or a mismatch between analyzed pixels and live hashing in this run.
+`Runner/LiveSessionTests.swift::waitForStableFrame` captures approximately every 200 ms. `Sources/IPhoneUseCore/RunnerSupport/FrameStability.swift` requires at least three consecutive identical full-resolution sRGB pixel hashes spanning at least 400 ms, within five seconds. PNG metadata is excluded. All 25 retained frames independently reproduced their live hashes from decoded RGBA bytes and dimensions, ruling out file-metadata differences or a mismatch between analyzed pixels and live hashing in this run.
 
 | Captured fact | Result |
 | --- | --- |

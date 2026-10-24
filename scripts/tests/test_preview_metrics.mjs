@@ -3,11 +3,11 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-const source = readFileSync(new URL('../../Sources/IPhoneUseCore/NativePreviewPage.swift', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../../Sources/IPhoneUseCore/Media/Preview/NativePreviewPage.swift', import.meta.url), 'utf8');
 const fragments = source.match(/static let html = \[([\s\S]*?)\]/)[1].trim().split(/,\s*/);
 const html = fragments.map(name => {
   const file = `NativePreviewPage+${name[0].toUpperCase()}${name.slice(1)}.swift`;
-  const fragment = readFileSync(new URL(`../../Sources/IPhoneUseCore/${file}`, import.meta.url), 'utf8');
+  const fragment = readFileSync(new URL(`../../Sources/IPhoneUseCore/Media/Preview/${file}`, import.meta.url), 'utf8');
   return fragment.match(/"""\n([\s\S]*?)\n        """/)[1].replace(/^        /gm, '').replace(/\\\n/g, '');
 }).join('\n');
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];

@@ -31,49 +31,10 @@ jobs:
         run: |
           xcodebuild -version
           swift --version
-      - run: swift test
-      - name: Test the Runner AX binding with host runtime doubles
-        run: |
-          xcrun clang -fobjc-arc -framework Foundation \
-            Runner/RunnerAXBinding.m Tests/RunnerRuntime/AXBindingTests.m \
-            -o .build/runner-ax-binding-tests
-          .build/runner-ax-binding-tests
-      - name: Test the Runner event bridge with host runtime doubles
-        run: |
-          xcrun clang -fobjc-arc -framework Foundation -framework CoreGraphics \
-            Runner/RunnerPinchEvent.m Tests/RunnerRuntime/PinchEventTests.m \
-            -o .build/runner-pinch-runtime-tests
-          .build/runner-pinch-runtime-tests
-      - name: Test the Runner startup guard with host runtime doubles
-        run: |
-          xcrun clang -fobjc-arc -framework Foundation \
-            Runner/RunnerStartupGuard.m Tests/RunnerRuntime/StartupGuardTests.m \
-            -o .build/runner-startup-runtime-tests
-          .build/runner-startup-runtime-tests disabled
-          IPHONE_USE_HOST_MANAGED=1 IPHONE_USE_SESSION_TOKEN=short \
-            .build/runner-startup-runtime-tests disabled
-          for scenario in active inactive flapping background enter_background timeout nonhome offmain finish; do
-            IPHONE_USE_HOST_MANAGED=1 IPHONE_USE_SESSION_TOKEN=00000000000000000000000000000000 \
-              .build/runner-startup-runtime-tests "$scenario"
-          done
-          xcrun clang -fobjc-arc -framework Foundation -DSTARTUP_TEST_UNSUPPORTED \
-            Runner/RunnerStartupGuard.m Tests/RunnerRuntime/StartupGuardTests.m \
-            -o .build/runner-startup-unsupported-tests
-          IPHONE_USE_HOST_MANAGED=1 IPHONE_USE_SESSION_TOKEN=00000000000000000000000000000000 \
-            .build/runner-startup-unsupported-tests unsupported
-      - run: python3 -m unittest discover -s scripts/tests -v
-      - run: node --test scripts/tests/test_dsh_plugin.mjs scripts/tests/test_agent_templates.mjs scripts/tests/test_preview_metrics.mjs scripts/tests/test_skill_installer.mjs
-      - name: Compile the iPhone Runner without signing
-        run: |
-          xcodebuild build-for-testing \
-            -project Runner/IPhoneUseRunner.xcodeproj -scheme IPhoneUseRunner \
-            -configuration Debug -sdk iphoneos -destination 'generic/platform=iOS' \
-            -derivedDataPath .build/ci-runner \
-            CODE_SIGNING_ALLOWED=NO IPHONEOS_DEPLOYMENT_TARGET=17.0
-      - name: Check and package the self-contained client plugin
-        run: |
-          python3 scripts/sync-plugin.py --check
-          python3 scripts/sync-plugin.py --archive .build/plugins
+      - name: Install SwiftLint
+        run: brew list swiftlint >/dev/null 2>&1 || brew install swiftlint
+      - name: Run shared engineering checks
+        run: python3 scripts/check.py
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: client-plugins

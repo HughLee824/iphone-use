@@ -4,12 +4,12 @@
 	classes = {};
 	objectVersion = 56;
 	objects = {
-		B1494624CDDA406095CE1006 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/IPhoneUseCore/RunnerTextTransaction.swift; sourceTree = "<group>"; };
+		B1494624CDDA406095CE1006 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/IPhoneUseCore/RunnerSupport/RunnerTextTransaction.swift; sourceTree = "<group>"; };
 		B1494624CDDA406095CE1007 = { isa = PBXBuildFile; fileRef = B1494624CDDA406095CE1006; };
 		B1494624CDDA406095CE1003 = { isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RunnerAXBinding.m; sourceTree = "<group>"; };
 		B1494624CDDA406095CE1004 = { isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RunnerAXBinding.h; sourceTree = "<group>"; };
 		B1494624CDDA406095CE1005 = { isa = PBXBuildFile; fileRef = B1494624CDDA406095CE1003; };
-		B1494624CDDA406095CE1001 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/IPhoneUseCore/RunnerAXTree.swift; sourceTree = "<group>"; };
+		B1494624CDDA406095CE1001 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/IPhoneUseCore/RunnerSupport/RunnerAXTree.swift; sourceTree = "<group>"; };
 		B1494624CDDA406095CE1002 = { isa = PBXBuildFile; fileRef = B1494624CDDA406095CE1001; };
 		F326E15101D0902D09F4E5B4 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CommandServer.swift"; sourceTree = "<group>"; };
 		446D3333D8E8C94D84B53DB1 = { isa = PBXBuildFile; fileRef = F326E15101D0902D09F4E5B4; };
@@ -23,13 +23,13 @@
 		C8DA1C47B1F6AA59C9F9D622 = { isa = PBXBuildFile; fileRef = A8421CBA324523D9D79928AB; };
 		664B6D8B15D706482E0FAB90 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LiveSessionTests+Gestures.swift"; sourceTree = "<group>"; };
 		F864B9B2C1811A839A892D7C = { isa = PBXBuildFile; fileRef = 664B6D8B15D706482E0FAB90; };
-		2111932A63B88EF5367FE1C4 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/IPhoneUseCore/ScreenGeometry.swift"; sourceTree = "<group>"; };
+		2111932A63B88EF5367FE1C4 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/IPhoneUseCore/RunnerSupport/ScreenGeometry.swift"; sourceTree = "<group>"; };
 		681C0D948F5C6A5BEC6BDA79 = { isa = PBXBuildFile; fileRef = 2111932A63B88EF5367FE1C4; };
-		A3D083FCADB1573C7E91DC04 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/IPhoneUseCore/CoordinateGesture.swift"; sourceTree = "<group>"; };
+		A3D083FCADB1573C7E91DC04 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/IPhoneUseCore/RunnerSupport/CoordinateGesture.swift"; sourceTree = "<group>"; };
 		9FFEF2104E514F58E3608C2E = { isa = PBXBuildFile; fileRef = A3D083FCADB1573C7E91DC04; };
-		E75347E005499C5EC16A4C67 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/IPhoneUseCore/ScreenImage.swift"; sourceTree = "<group>"; };
+		E75347E005499C5EC16A4C67 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/IPhoneUseCore/RunnerSupport/ScreenImage.swift"; sourceTree = "<group>"; };
 		41939D0431F559932EF32B72 = { isa = PBXBuildFile; fileRef = E75347E005499C5EC16A4C67; };
-		8244E93B9785891ACBF38CFB = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/IPhoneUseCore/ScreenGuard+Comparison.swift"; sourceTree = "<group>"; };
+		8244E93B9785891ACBF38CFB = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/IPhoneUseCore/RunnerSupport/ScreenGuard+Comparison.swift"; sourceTree = "<group>"; };
 		435DCD02C449D753B42743CA = { isa = PBXBuildFile; fileRef = 8244E93B9785891ACBF38CFB; };
 		A0000000000000000000001D = { isa = PBXBuildFile; fileRef = A0000000000000000000001E; };
 		A0000000000000000000001E = { isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RunnerStartupGuard.m; sourceTree = "<group>"; };
@@ -38,7 +38,7 @@
 		A0000000000000000000001B = { isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RunnerPinchEvent.m; sourceTree = "<group>"; };
 		A0000000000000000000001C = { isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RunnerPinchEvent.h; sourceTree = "<group>"; };
 		A00000000000000000000018 /* RunnerTextInput.swift in Sources */ = { isa = PBXBuildFile; fileRef = A00000000000000000000019; };
-		A00000000000000000000019 /* RunnerTextInput.swift */ = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/IPhoneUseCore/RunnerTextInput.swift; sourceTree = "<group>"; };
+		A00000000000000000000019 /* RunnerTextInput.swift */ = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/IPhoneUseCore/RunnerSupport/RunnerTextInput.swift; sourceTree = "<group>"; };
 		A00000000000000000000016 /* NativeCaretGuard.swift in Sources */ = {
 			isa = PBXBuildFile;
 			fileRef = A00000000000000000000017;
@@ -46,7 +46,7 @@
 		A00000000000000000000017 /* NativeCaretGuard.swift */ = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
-			path = ../Sources/IPhoneUseCore/NativeCaretGuard.swift;
+			path = ../Sources/IPhoneUseCore/RunnerSupport/NativeCaretGuard.swift;
 			sourceTree = "<group>";
 		};
 
@@ -73,7 +73,7 @@
 		A00000000000000000000012 /* XCTestDiagnostics.swift */ = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
-			path = ../Sources/IPhoneUseCore/XCTestDiagnostics.swift;
+			path = ../Sources/IPhoneUseCore/RunnerSupport/XCTestDiagnostics.swift;
 			sourceTree = "<group>";
 		};
 		A0000000000000000000000F /* ScreenGuard.swift in Sources */ = {
@@ -83,7 +83,7 @@
 		A00000000000000000000010 /* ScreenGuard.swift */ = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
-			path = ../Sources/IPhoneUseCore/ScreenGuard.swift;
+			path = ../Sources/IPhoneUseCore/RunnerSupport/ScreenGuard.swift;
 			sourceTree = "<group>";
 		};
 		A0000000000000000000000D /* FrameStability.swift in Sources */ = {
@@ -93,7 +93,7 @@
 		A0000000000000000000000E /* FrameStability.swift */ = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
-			path = ../Sources/IPhoneUseCore/FrameStability.swift;
+			path = ../Sources/IPhoneUseCore/RunnerSupport/FrameStability.swift;
 			sourceTree = "<group>";
 		};
 		A00000000000000000000001 /* LiveSessionTests.swift in Sources */ = {

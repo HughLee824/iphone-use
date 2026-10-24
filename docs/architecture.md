@@ -26,17 +26,17 @@ The CLI and host are two process roles of the same executable. A connection star
 | Component | Owns |
 | --- | --- |
 | [CLI](../Sources/IPhoneUse/IPhoneUse.swift) | Argument parsing, command dispatch, text/JSON output, and exit codes. |
-| [Session client](../Sources/IPhoneUseCore/SessionClient.swift) | Host startup, local IPC, response matching, and transport uncertainty. |
-| [Session host](../Sources/IPhoneUseCore/SessionHost.swift) | Serial request execution, device ownership, observation references, outcome classification, and lifecycle coordination. |
-| [Observation cache](../Sources/IPhoneUseCore/Observation.swift) | AX compaction, cached snapshots, queries, pagination, and reference invalidation. |
-| [XCTest backend](../Sources/IPhoneUseCore/XCTestBackend.swift) | Standalone Runner process ownership, capability checks, USB loopback transport, and backend cleanup. |
-| [Device discovery](../Sources/IPhoneUseCore/DeviceDiscovery.swift) | Device metadata, installed-app queries, and native-tool diagnostics. |
-| [Runner setup](../Sources/IPhoneUseCore/RunnerSetup.swift) / [source build](../Sources/IPhoneUseCore/RunnerBuild.swift) | Preparing a packaged Runner with local signing, or building a signed Runner from source. |
+| [Session client](../Sources/IPhoneUseCore/Session/Client/SessionClient.swift) | Host startup, local IPC, response matching, and transport uncertainty. |
+| [Session host](../Sources/IPhoneUseCore/Session/Host/SessionHost.swift) | Serial request execution, device ownership, observation references, outcome classification, and lifecycle coordination. |
+| [Observation cache](../Sources/IPhoneUseCore/Observation/Observation.swift) | AX compaction, cached snapshots, queries, pagination, and reference invalidation. |
+| [XCTest backend](../Sources/IPhoneUseCore/Backends/XCTest/XCTestBackend.swift) | Standalone Runner process ownership, capability checks, USB loopback transport, and backend cleanup. |
+| [Device discovery](../Sources/IPhoneUseCore/Device/DeviceDiscovery.swift) | Device metadata, installed-app queries, and native-tool diagnostics. |
+| [Runner setup](../Sources/IPhoneUseCore/Setup/RunnerSetup.swift) / [source build](../Sources/IPhoneUseCore/Setup/RunnerBuild.swift) | Preparing a packaged Runner with local signing, or building a signed Runner from source. |
 | [iOS Runner](../Runner/LiveSessionTests.swift) | Screenshots, AX collection, app activation, input primitives, device-side checks, and execution facts. |
 
 The Runner does not own agent-facing observation IDs, short references, snapshot caches, or task strategy. It receives resolved targets or coordinates from the host. Tap/swipe use screen-context and fingerprint checks; type/press use AX target checks. The host interprets returned execution facts as `completed`, `not_dispatched`, or `unknown`.
 
-The native Xcode project shares `FrameStability.swift`, `ScreenGuard.swift`, `NativeCaretGuard.swift`, `RunnerTextInput.swift`, and `XCTestDiagnostics.swift` from `Sources/IPhoneUseCore`. Keep these paths intact when changing the Runner project. The production build does not depend on local experiments, an installed test Fixture app, or XcodeGen.
+The native Xcode project currently compiles the 11 shared Swift files under `Sources/IPhoneUseCore/RunnerSupport`. Keep its explicit references in sync when moving these files. The production build does not depend on local experiments, an installed test Fixture app, or XcodeGen.
 
 ## Session lifecycle
 
@@ -70,14 +70,28 @@ iPhone-use/
 ├── Package.swift                    # Executable, core library, and test resources
 ├── Package.resolved                 # Pinned Swift dependency resolution
 ├── Sources/
-│   ├── iPhone-use/                   # CLI entry point
-│   └── IPhoneUseCore/               # Host and device integration
+│   ├── IPhoneUse/                   # CLI entry point
+│   ├── AppleNativeBridge/          # macOS Objective-C runtime adapters
+│   └── IPhoneUseCore/
+│       ├── Session/                # Client, host, lifecycle and session storage
+│       ├── Actions/                # Validated actions and input requests
+│       ├── Observation/            # Complete AX cache, references and presentation
+│       ├── Backends/               # Shared contract; AppleNative and XCTest adapters
+│       ├── Media/                  # Streaming, decoding, recording and preview
+│       ├── Device/                 # Discovery, display metadata and device locks
+│       ├── Transport/              # IPC, USB and Apple service transports
+│       ├── RunnerSupport/          # Swift algorithms also compiled by the iOS Runner
+│       ├── Setup/                  # Runner build, signing and installation preparation
+│       ├── Configuration/          # Mode, preview and timeout configuration
+│       ├── Output/                 # Agent-facing formatting
+│       └── Utilities/              # JSON and error helpers
 ├── Runner/
 │   ├── IPhoneUseRunner.xcodeproj/   # Shared project and scheme
 │   └── LiveSessionTests.swift       # Device-side Runner
 ├── Tests/IPhoneUseCoreTests/
 │   ├── Fixtures/Observations/       # Sanitized AX regression data
-│   └── *.swift                      # Tests and synthetic image helpers
+│   ├── Support/                    # Synthetic image/network helpers
+│   └── <responsibility>/          # Mirrors Core responsibilities, in one test target
 ├── docs/
 │   ├── examples/observe/            # Curated CLI output example
 │   └── *.md                        # Public guides and architecture
@@ -95,6 +109,14 @@ Commit files needed to build, test, distribute, or understand the public project
 The plugin contains instructions and a preflight script; it does not add another runtime service. Edit `skills/iphone-use/`, then run `python3 scripts/sync-plugin.py` to update the committed distribution. CI rejects drift. The [public website](https://iphone-use.com) is maintained in the separate [iphone-use-website](https://github.com/HughLee824/iphone-use-website) repository and deployed through Cloudflare Workers Static Assets at `iphone-use.com`. The public client installation path is documented in [public access release](public-access-release.md).
 
 Test inputs belong under `Tests/IPhoneUseCoreTests/Fixtures` and are loaded through SwiftPM's resource bundle. Tests must pass in a fresh checkout without `spikes/`, private device captures, or files under `docs/examples`. Published examples should illustrate the current interface, use placeholder paths and IDs, and identify any omitted media.
+
+## Engineering checks
+
+Run `python3 scripts/check.py` from a full-Xcode macOS environment with SwiftLint and Node.js 22+. Local development, CI and draft releases use this same device-free entry point. It runs strict lint, builds the CLI, runs Swift tests and Objective-C runtime doubles, supplies the built CLI path to Python integration tests, runs all Node test files, builds the unsigned iOS Runner, and checks/packages the plugin. A missing CLI is an error in this full check, rather than a silently skipped integration suite. Build concurrency defaults to two jobs (`--jobs` can override it).
+
+Directory grouping does not introduce Swift module boundaries. Keep type extensions together and assign files by responsibility, not by `Native`/`Runner` prefixes. `SessionBackend` belongs to both adapters; media implementation is shared by both modes. Resource fixtures remain at the test target root and load through `Bundle.module`.
+
+The retired XCTest attachment recording experiment was removed; its findings remain in [Runner recording](runner-recording.md). The ordinary `NativeTextProbe` App and current acceptance tools remain available for physical-device validation. Device tests are explicit and are not part of the automated check entry point.
 
 ## Local-only files
 

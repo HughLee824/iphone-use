@@ -10,7 +10,7 @@ import unittest
 @unittest.skipUnless(sys.platform == "darwin", "Requires macOS Foundation and Xcode")
 class PreviewLaunchTests(unittest.TestCase):
     def test_installed_preview_resources_and_build_configuration_through_symlinks(self):
-        source = Path(__file__).resolve().parents[2] / "Sources/IPhoneUseCore/NativePreviewPage.swift"
+        source = Path(__file__).resolve().parents[2] / "Sources/IPhoneUseCore/Media/Preview/NativePreviewPage.swift"
         with tempfile.TemporaryDirectory(prefix="iphone-use preview launch ") as temporary:
             root = Path(temporary)
             main = root / "main.swift"

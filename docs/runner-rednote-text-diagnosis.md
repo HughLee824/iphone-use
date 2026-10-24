@@ -77,7 +77,7 @@ iphone-use --session <session> type <fresh-text-view-ref> \
 - 文本动作后仍读取 `target.frame`，用于 `postInputTextFields`。此时评论面板已经消失，重新解析 query 可以再产生 XCTest snapshot 错误。
 - `execute` 在 `perform` 返回后设置 `inputCompleted=true`，之后判稳才再次检查记录的 XCTest issues。因此部分失败具有 `inputCompleted=true`，并不意味着文本已被 App 接受或业务动作成功。
 
-[`Sources/IPhoneUseCore/NativeHID.swift`](../Sources/IPhoneUseCore/NativeHID.swift) 的 `prepareKeyboard` 已明确记录同类风险：注册新 HID 键盘可能改变硬件键盘状态并隐藏整个 composer，所以 standard 路径借用已公布的 CoreDevice 键盘。后续真机验证见文末：避免新增硬件键盘有效，但仍需避开快捷键粘贴的授权弹窗路径。
+[`Sources/IPhoneUseCore/Backends/AppleNative/Input/NativeHID.swift`](../Sources/IPhoneUseCore/Backends/AppleNative/Input/NativeHID.swift) 的 `prepareKeyboard` 已明确记录同类风险：注册新 HID 键盘可能改变硬件键盘状态并隐藏整个 composer，所以 standard 路径借用已公布的 CoreDevice 键盘。后续真机验证见文末：避免新增硬件键盘有效，但仍需避开快捷键粘贴的授权弹窗路径。
 
 ## 修复方向和验收条件
 
