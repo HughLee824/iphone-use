@@ -68,6 +68,7 @@ def main():
     run(["swift", "build", "--jobs", str(args.jobs), "--product", "iphone-use"])
     binary_directory = Path(run(["swift", "build", "--show-bin-path"], capture=True))
     environment = require_cli(binary_directory / "iphone-use")
+    run(["swift", "test", "--package-path", "packages/runner-support", "--jobs", str(args.jobs)])
     run(["swift", "test", "--jobs", str(args.jobs)])
     runtime_checks()
     run([sys.executable, "-m", "unittest", "discover", "-s", "scripts/tests", "-v"],

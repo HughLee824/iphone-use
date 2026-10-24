@@ -37,11 +37,11 @@ extension ScreenGuard {
         )
     }
 
-    func check(png: Data, context current: ScreenContext) throws -> Check {
+    public func check(png: Data, context current: ScreenContext) throws -> Check {
         try check(image: ScreenImage(png: png), context: current)
     }
 
-    func check(image: ScreenImage, context current: ScreenContext) throws -> Check {
+    public func check(image: ScreenImage, context current: ScreenContext) throws -> Check {
         try validate()
         guard context.matches(current) else { throw Failure.contextChanged }
         guard image.image.width == pixelWidth, image.image.height == pixelHeight else {
@@ -102,7 +102,7 @@ extension ScreenGuard {
         return Double(changed) / Double(firstSample.count / 3)
     }
 
-    func validate() throws {
+    public func validate() throws {
         guard
             algorithm
                 == (dynamicOverlay == nil

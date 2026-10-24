@@ -1,3 +1,4 @@
+import IPhoneUseRunnerSupport
 import Foundation
 
 // An explicit visual assertion by the Agent, bound to the original observation.

@@ -4,15 +4,15 @@ import CryptoKit
 import ImageIO
 
 // Compiled into both the host and the device Runner. No encoded-image metadata enters the hash.
-struct FrameFingerprint {
-    let hash: String
-    let width: Int
-    let height: Int
+public struct FrameFingerprint {
+    public let hash: String
+    public let width: Int
+    public let height: Int
     let pixels: Data
 
-    enum Failure: Error { case invalidImage }
+    public enum Failure: Error { case invalidImage }
 
-    init(png: Data) throws {
+    public init(png: Data) throws {
         guard let source = CGImageSourceCreateWithData(png as CFData, nil),
             let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
             let sourceWidth = properties[kCGImagePropertyPixelWidth] as? Int,
@@ -55,7 +55,7 @@ struct FrameFingerprint {
 
     // Diagnostic mask of ALL raw pixel differences, including tolerated color/caret
     // differences. Original screenshots remain untouched; this is never an observation.
-    func differencePNG(from reference: FrameFingerprint) throws -> Data {
+    public func differencePNG(from reference: FrameFingerprint) throws -> Data {
         guard width == reference.width, height == reference.height else { throw Failure.invalidImage }
         var mask = Data(repeating: 0, count: width * height * 4)
         mask.withUnsafeMutableBytes { (out: UnsafeMutableRawBufferPointer) in
@@ -92,16 +92,16 @@ struct FrameFingerprint {
 // Image comparison is deliberately separate from the hash that binds the original PNG.
 // Inspired by screenshot assertions: tolerate rendering noise, retain local changes.
 // No resampling, global changed-area allowance, or automatic antialiasing suppression.
-struct FrameComparison {
-    static let algorithm = "yiq-local-caret-v1"
-    static let colorTolerance = 2.5
-    let changedPixels: Int
-    let changedBounds: CGRect?
-    let ignoredCaret: ScreenRect?
-    let dimensionsMatch: Bool
-    var equivalent: Bool { dimensionsMatch && changedPixels == 0 }
+public struct FrameComparison {
+    public static let algorithm = "yiq-local-caret-v1"
+    public static let colorTolerance = 2.5
+    public let changedPixels: Int
+    public let changedBounds: CGRect?
+    public let ignoredCaret: ScreenRect?
+    public let dimensionsMatch: Bool
+    public var equivalent: Bool { dimensionsMatch && changedPixels == 0 }
 
-    init(
+    public init(
         reference: FrameFingerprint, current: FrameFingerprint, ignoredCaret: ScreenRect? = nil,
         screen: ScreenRect? = nil
     ) {
@@ -176,7 +176,7 @@ struct FrameComparison {
                 abs(0.211 * red - 0.523 * green + 0.312 * blue)) <= Self.colorTolerance
     }
 
-    var result: [String: Any] {
+    public var result: [String: Any] {
         var value: [String: Any] = [
             "equivalent": equivalent, "dimensionsMatch": dimensionsMatch,
             "changedPixels": changedPixels, "colorTolerance": Self.colorTolerance, "maxChannelDelta": 4
@@ -197,11 +197,11 @@ struct FrameComparison {
 
 // Timestamps are monotonic and belong to post-input captures only. Compare against
 // a fixed candidate, not adjacent frames: small incremental drift must accumulate.
-struct FrameStability {
-    static let sampleInterval: TimeInterval = 0.2
-    static let stableDuration: TimeInterval = 0.4
-    static let minimumObservationDuration: TimeInterval = 1.5
-    static let timeout: TimeInterval = 5
+public struct FrameStability {
+    public static let sampleInterval: TimeInterval = 0.2
+    public static let stableDuration: TimeInterval = 0.4
+    public static let minimumObservationDuration: TimeInterval = 1.5
+    public static let timeout: TimeInterval = 5
     private let startedAt: TimeInterval
     private let context: ScreenContext?
     private let textFields: [ScreenRect]
@@ -212,22 +212,22 @@ struct FrameStability {
     private var anchorPNG: Data?
     private var caret: NativeCaretGuard?
     private var comparison: FrameComparison?
-    private(set) var comparisonReferencePNG: Data?
-    private(set) var comparisonReferenceHash: String?
-    private(set) var hash: String?
-    private(set) var samples = 0
-    private(set) var consecutiveFrames = 0
-    private(set) var stable = false
+    public private(set) var comparisonReferencePNG: Data?
+    public private(set) var comparisonReferenceHash: String?
+    public private(set) var hash: String?
+    public private(set) var samples = 0
+    public private(set) var consecutiveFrames = 0
+    public private(set) var stable = false
 
-    init(startedAt: TimeInterval, context: ScreenContext? = nil, textFields: [ScreenRect] = []) {
+    public init(startedAt: TimeInterval, context: ScreenContext? = nil, textFields: [ScreenRect] = []) {
         self.startedAt = startedAt; self.context = context
         self.textFields = textFields.count <= 8 ? textFields : []
         unchangedSince = startedAt; lastSampleAt = startedAt; processedAt = startedAt
     }
 
-    func remaining(at now: TimeInterval) -> TimeInterval { max(0, Self.timeout - (now - startedAt)) }
+    public func remaining(at now: TimeInterval) -> TimeInterval { max(0, Self.timeout - (now - startedAt)) }
 
-    mutating func record(
+    public mutating func record(
         frame: FrameFingerprint, png: Data, capturedAt: TimeInterval,
         processedAt: @autoclosure () -> TimeInterval
     ) {
@@ -272,11 +272,11 @@ struct FrameStability {
 
     // A fresh view of a moving page is useful even when it never becomes still.
     // This is not permission for the next input; its observation guard still runs.
-    var observationReady: Bool {
+    public var observationReady: Bool {
         samples >= 3 && lastSampleAt - startedAt >= Self.minimumObservationDuration
     }
 
-    var result: [String: Any] {
+    public var result: [String: Any] {
         var value: [String: Any] = [
             "stable": stable,
             "reason": stable

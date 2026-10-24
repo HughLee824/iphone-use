@@ -4,12 +4,15 @@
 included:
   - Package.swift
   - Sources
+  - packages/runner-support
   - Runner
   - Tests
   - scripts
 
 excluded:
   - .build
+  - packages/runner-support/.build
+  - packages/runner-support/.swiftpm
   - .swiftpm
   - .local
   - build

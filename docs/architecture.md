@@ -36,7 +36,7 @@ The CLI and host are two process roles of the same executable. A connection star
 
 The Runner does not own agent-facing observation IDs, short references, snapshot caches, or task strategy. It receives resolved targets or coordinates from the host. Tap/swipe use screen-context and fingerprint checks; type/press use AX target checks. The host interprets returned execution facts as `completed`, `not_dispatched`, or `unknown`.
 
-The native Xcode project currently compiles the 11 shared Swift files under `Sources/IPhoneUseCore/RunnerSupport`. Keep its explicit references in sync when moving these files. The production build does not depend on local experiments, an installed test Fixture app, or XcodeGen.
+The host and native Xcode project depend on the local static Swift package [IPhoneUseRunnerSupport](../packages/runner-support/Package.swift). It contains shared AX identity/path algorithms, text transactions, geometry, image comparison and bounded validation. It imports neither XCTest nor `IPhoneUseCore`/`AppleNativeBridge`; actual XCTest element access and Objective-C adapters remain in `Runner/`. The Runner links the package product instead of compiling individual Core source paths. Static linkage adds no embedded framework or runtime resource bundle. The production build does not depend on local experiments, an installed test Fixture app, or XcodeGen.
 
 ## Session lifecycle
 
@@ -80,11 +80,13 @@ iPhone-use/
 │       ├── Media/                  # Streaming, decoding, recording and preview
 │       ├── Device/                 # Discovery, display metadata and device locks
 │       ├── Transport/              # IPC, USB and Apple service transports
-│       ├── RunnerSupport/          # Swift algorithms also compiled by the iOS Runner
 │       ├── Setup/                  # Runner build, signing and installation preparation
 │       ├── Configuration/          # Mode, preview and timeout configuration
 │       ├── Output/                 # Agent-facing formatting
 │       └── Utilities/              # JSON and error helpers
+├── packages/runner-support/         # macOS/iOS static package; no host/runtime dependencies
+│   ├── Sources/IPhoneUseRunnerSupport/
+│   └── Tests/IPhoneUseRunnerSupportTests/
 ├── Runner/
 │   ├── IPhoneUseRunner.xcodeproj/   # Shared project and scheme
 │   └── LiveSessionTests.swift       # Device-side Runner
@@ -112,9 +114,9 @@ Test inputs belong under `Tests/IPhoneUseCoreTests/Fixtures` and are loaded thro
 
 ## Engineering checks
 
-Run `python3 scripts/check.py` from a full-Xcode macOS environment with SwiftLint and Node.js 22+. Local development, CI and draft releases use this same device-free entry point. It runs strict lint, builds the CLI, runs Swift tests and Objective-C runtime doubles, supplies the built CLI path to Python integration tests, runs all Node test files, builds the unsigned iOS Runner, and checks/packages the plugin. A missing CLI is an error in this full check, rather than a silently skipped integration suite. Build concurrency defaults to two jobs (`--jobs` can override it).
+Run `python3 scripts/check.py` from a full-Xcode macOS environment with SwiftLint and Node.js 22+. Local development, CI and draft releases use this same device-free entry point. It runs strict lint, builds the CLI, runs the independent shared-package and Core Swift tests plus Objective-C runtime doubles, supplies the built CLI path to Python integration tests, runs all Node test files, builds the unsigned iOS Runner, and checks/packages the plugin. A missing CLI is an error in this full check, rather than a silently skipped integration suite. Build concurrency defaults to two jobs (`--jobs` can override it).
 
-Directory grouping does not introduce Swift module boundaries. Keep type extensions together and assign files by responsibility, not by `Native`/`Runner` prefixes. `SessionBackend` belongs to both adapters; media implementation is shared by both modes. Resource fixtures remain at the test target root and load through `Bundle.module`.
+Core directory grouping does not introduce additional Swift module boundaries. The shared package is the one extracted module: dependencies run from Core and Runner to it, never back to either consumer. Its public declarations are the repository-internal cross-module contract, not a separately versioned SDK. Keep type extensions together and assign files by responsibility, not by `Native`/`Runner` prefixes. `SessionBackend` belongs to both adapters; media implementation is shared by both modes. Resource fixtures remain at the Core test target root and load through `Bundle.module`. AX/path, transaction and XCTest-default tests run independently in the shared package; tests that exercise host serialization, observations or native capture remain in Core. Root `swift test` does not run dependency-package tests; `scripts/check.py` runs both suites explicitly.
 
 The retired XCTest attachment recording experiment was removed; its findings remain in [Runner recording](runner-recording.md). The ordinary `NativeTextProbe` App and current acceptance tools remain available for physical-device validation. Device tests are explicit and are not part of the automated check entry point.
 

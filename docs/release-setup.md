@@ -23,7 +23,7 @@ CLI 从自身真实路径定位配套资源，支持搬移整个目录和软链�
 
 标准模式的 Swift/C/Objective-C 实现静态编入 CLI，随包无需额外 dylib 或研究探针。运行时使用系统 RemoteXPC、AVConference，以及 Xcode 安装的 CoreDevice 服务和元数据；这些 Apple 框架不随包复制，也不绕过权限。`verify-release.py` 检查 CLI 的 Mach-O 依赖仅指向系统库；动态打开的框架及服务需另做真机验收。
 
-发布 Runner 不包含 provisioning profile、嵌入的 XCTest 框架、调试符号包或源码。发布构建将 iOS 编译下限设为 17，使用设备提供的 XCTest；最低版本检查只排除已知不兼容，不证明所有 iOS/Xcode 组合都可用。XCTest 的断言和跳过报告使用 `#fileID`，打包时检查二进制是否残留源码仓库的绝对路径。
+发布 Runner 不包含 provisioning profile、嵌入的 XCTest 框架、调试符号包或源码。发布构建将 iOS 编译下限设为 17，使用设备提供的 XCTest；最低版本检查只排除已知不兼容，不证明所有 iOS/Xcode 组合都可用。XCTest 的断言和跳过报告使用 `#fileID`，打包时检查二进制是否残留源码仓库的绝对路径。共享 Swift 包静态链接进 Runner；Xcode 仍会附加构建目录的 `PackageFrameworks` runpath，打包仅从副本中移除这一条无运行时用途的绝对路径，保留系统和 bundle 相对搜索路径，再执行原有绝对路径检查。
 
 setup 将包复制到用户状态目录，改写为保存的 App bundle ID、嵌入用户 profile，由本机 codesign 对测试 bundle 和 Runner 签名并校验。随后通过 CoreDevice 显式安装，独立后台启动 Runner 并经 USB 本地通信做真机握手、截图和退出验证，成功后原子更新按 UDID 保存的记录。安装目录不写入用户签名资料。设备能力握手仍是最终兼容性检查；本地文件存在和签名校验成功不能替代它。
 

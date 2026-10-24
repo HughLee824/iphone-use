@@ -1,5 +1,5 @@
 import XCTest
-@testable import IPhoneUseCore
+@testable import IPhoneUseRunnerSupport
 
 final class RunnerTextTransactionTests: XCTestCase {
     private enum Failure: Error { case changed, apple }

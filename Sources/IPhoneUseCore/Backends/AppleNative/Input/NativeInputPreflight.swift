@@ -1,3 +1,4 @@
+import IPhoneUseRunnerSupport
 import Foundation
 
 // Native text checks fresh images against the original observation.

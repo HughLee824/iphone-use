@@ -208,6 +208,7 @@ flowchart LR
 | --- | --- |
 | [`Sources/IPhoneUse`](Sources/IPhoneUse) | CLI 命令与参数解析。 |
 | [`Sources/IPhoneUseCore`](Sources/IPhoneUseCore) | 会话、通信、观察、动作、签名和设备发现。 |
+| [`packages/runner-support`](packages/runner-support) | 宿主与 Runner 共用的 macOS/iOS 静态模块：AX、输入事务和画面校验。 |
 | [`Runner`](Runner) | 薄 iOS XCTest Runner 与独立 Xcode 工程。 |
 | [`Tests`](Tests) | 宿主行为与设备契约的 Swift 测试，以及脱敏测试数据。 |
 | [`scripts`](scripts) / [`packaging`](packaging) | 发布打包、校验与 Homebrew 工具。 |
@@ -249,7 +250,7 @@ iPhone-use 处于早期开发阶段。真机验收覆盖上述实测环境，不
 python3 scripts/check.py
 ```
 
-Python 3.9+ 仅用于发布工具和开发测试，不是已安装 CLI 的运行依赖。检查入口需要完整 Xcode 和 SwiftLint，先构建 CLI，再把可执行文件路径显式传给集成测试；缺少 CLI 会报错。默认构建并发为两个任务。唯一 Swift 包依赖为 [Swift ArgumentParser](https://github.com/apple/swift-argument-parser/tree/1.5.0)，锁定版本 `1.5.0`。
+Python 3.9+ 仅用于发布工具和开发测试，不是已安装 CLI 的运行依赖。检查入口需要完整 Xcode 和 SwiftLint，先构建 CLI，再把可执行文件路径显式传给集成测试；缺少 CLI 会报错。默认构建并发为两个任务。唯一外部 Swift 包依赖为 [Swift ArgumentParser](https://github.com/apple/swift-argument-parser/tree/1.5.0)，锁定版本 `1.5.0`。
 
 CI 使用 Node.js 22+ 将文档中的调用模板用于受控工具响应；Node 仅为开发测试所需。修改 canonical skill 后运行 `python3 scripts/sync-plugin.py` 更新包内副本；发布变更时同步提升三份插件清单版本。CI 还会无签名编译 Runner，并打包插件供审阅。官网源码、测试和 Cloudflare 部署独立维护于 [iphone-use-website](https://github.com/HughLee824/iphone-use-website)。具体命令和真机验收要求见[公开接入发布检查](docs/public-access-release.md)。
 

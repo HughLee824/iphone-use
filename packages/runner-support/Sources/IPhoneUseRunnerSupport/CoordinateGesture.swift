@@ -2,39 +2,47 @@ import Foundation
 import CoreGraphics
 import ImageIO
 
-struct SwipeMotion: Codable, Equatable {
-    static let maximumEstimatedDuration: TimeInterval = 10
-    var velocity = 500.0
-    var pressDuration = 0.0
-    var holdDuration = 0.0
+public struct SwipeMotion: Codable, Equatable {
+    public static let maximumEstimatedDuration: TimeInterval = 10
+    public var velocity = 500.0
+    public var pressDuration = 0.0
+    public var holdDuration = 0.0
 
-    var valid: Bool {
+    public init(velocity: Double = 500, pressDuration: Double = 0, holdDuration: Double = 0) {
+        self.velocity = velocity; self.pressDuration = pressDuration; self.holdDuration = holdDuration
+    }
+
+    public var valid: Bool {
         [velocity, pressDuration, holdDuration].allSatisfy(\.isFinite)
             && velocity > 0 && velocity <= 10_000
             && (0...5).contains(pressDuration) && (0...5).contains(holdDuration)
     }
 
-    var result: [String: Any] {
+    public var result: [String: Any] {
         ["velocity": velocity, "pressDuration": pressDuration, "holdDuration": holdDuration]
     }
 }
 
 // Distances are the separation of two fingers along the current screenshot's X axis.
 // They describe input geometry, not the scale that an app will apply.
-struct PinchMotion: Codable, Equatable {
-    let fromDistance: Double
-    let toDistance: Double
-    let duration: TimeInterval
-    var valid: Bool {
+public struct PinchMotion: Codable, Equatable {
+    public let fromDistance: Double
+    public let toDistance: Double
+    public init(fromDistance: Double, toDistance: Double, duration: TimeInterval) {
+        self.fromDistance = fromDistance; self.toDistance = toDistance; self.duration = duration
+    }
+
+    public let duration: TimeInterval
+    public var valid: Bool {
         [fromDistance, toDistance, duration].allSatisfy(\.isFinite)
             && fromDistance >= 20 && toDistance >= 20
             && abs(fromDistance - toDistance) >= 1 && (0.1...5).contains(duration)
     }
-    func points(center: CGPoint, ending: Bool) -> [CGPoint] {
+    public func points(center: CGPoint, ending: Bool) -> [CGPoint] {
         let half = (ending ? toDistance : fromDistance) / 2
         return [CGPoint(x: center.x - half, y: center.y), CGPoint(x: center.x + half, y: center.y)]
     }
-    func regions(center: CGPoint, screen: CGRect) -> [ScreenRect] {
+    public func regions(center: CGPoint, screen: CGRect) -> [ScreenRect] {
         zip(points(center: center, ending: false), points(center: center, ending: true)).map { start, end in
             ScreenRect(
                 CGRect(
@@ -43,7 +51,7 @@ struct PinchMotion: Codable, Equatable {
                 ).intersection(screen))
         }
     }
-    var result: [String: Any] {
+    public var result: [String: Any] {
         [
             "fromDistance": fromDistance, "toDistance": toDistance,
             "duration": duration, "axis": "screenshot_horizontal", "distanceUnit": "screen_points"
@@ -54,8 +62,8 @@ struct PinchMotion: Codable, Equatable {
 // XCTest's synthesized touch coordinates use the native portrait screen even
 // when the screenshot and App frame are landscape. Keep guards in screenshot
 // points; convert only at the Runner execution boundary.
-enum RunnerCoordinateMapping {
-    static func point(_ point: CGPoint, screen: ScreenRect, interfaceOrientation: Int) throws -> CGPoint {
+public enum RunnerCoordinateMapping {
+    public static func point(_ point: CGPoint, screen: ScreenRect, interfaceOrientation: Int) throws -> CGPoint {
         guard screen.valid, screen.cgRect.contains(point), (1...4).contains(interfaceOrientation) else {
             throw ScreenGuard.Failure.invalidGuard
         }
@@ -70,14 +78,22 @@ enum RunnerCoordinateMapping {
     }
 }
 
-struct CoordinateGesture: Codable {
-    let start: CGPoint
-    let end: CGPoint?
-    let screenGuard: ScreenGuard
-    var motion: SwipeMotion?
-    var pinch: PinchMotion?
+public struct CoordinateGesture: Codable {
+    public let start: CGPoint
+    public let end: CGPoint?
+    public let screenGuard: ScreenGuard
+    public var motion: SwipeMotion?
+    public var pinch: PinchMotion?
 
-    var withinMotionBudget: Bool {
+    public init(
+        start: CGPoint, end: CGPoint?, screenGuard: ScreenGuard,
+        motion: SwipeMotion? = nil, pinch: PinchMotion? = nil
+    ) {
+        self.start = start; self.end = end; self.screenGuard = screenGuard
+        self.motion = motion; self.pinch = pinch
+    }
+
+    public var withinMotionBudget: Bool {
         guard let end, let motion else { return true }
         // XCTest documents velocity in pixels/s. Use screenshot scale for a conservative
         // estimate; this bounds requested motion, not the runtime's idle/capture overhead.
@@ -91,7 +107,7 @@ struct CoordinateGesture: Codable {
     }
 
     // Always protect the touch-down neighborhood; also protect the entire swipe corridor.
-    static func actionRegions(start: CGPoint, end: CGPoint?, screen: CGRect) -> [ScreenRect] {
+    public static func actionRegions(start: CGPoint, end: CGPoint?, screen: CGRect) -> [ScreenRect] {
         var rects = [CGRect(x: start.x - 32, y: start.y - 32, width: 64, height: 64)]
         if let end {
             rects.append(
@@ -102,7 +118,7 @@ struct CoordinateGesture: Codable {
         return rects.map { ScreenRect($0.intersection(screen)) }
     }
 
-    func validate(kind: String) throws {
+    public func validate(kind: String) throws {
         try screenGuard.validate()
         if kind == "pinch" {
             guard let pinch, pinch.valid, end == nil, motion == nil,

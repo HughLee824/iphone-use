@@ -1,5 +1,5 @@
 import XCTest
-@testable import IPhoneUseCore
+@testable import IPhoneUseRunnerSupport
 
 final class RunnerAXTreeTests: XCTestCase {
     private final class Node {

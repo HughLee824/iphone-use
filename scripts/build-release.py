@@ -34,6 +34,17 @@ def write_plist(path, value):
     path.write_bytes(plistlib.dumps(value, sort_keys=True))
 
 
+def remove_package_build_runpath(executable, products):
+    # Xcode injects this absolute search path even for a static Swift package.
+    # It cannot exist on the iPhone and is not needed by our static product.
+    # Remove only this build-owned path; retain all Apple/bundle search paths.
+    path = str(products / "PackageFrameworks")
+    commands = run(["/usr/bin/otool", "-l", str(executable)], cwd=executable.parent)
+    entry = rf"cmd LC_RPATH\s+cmdsize \d+\s+path {re.escape(path)} \(offset \d+\)"
+    if re.search(entry, commands):
+        run(["/usr/bin/install_name_tool", "-delete_rpath", path, str(executable)], cwd=executable.parent)
+
+
 def package_runner(products, destination):
     manifests = list(products.glob("*.xctestrun"))
     if len(manifests) != 1:
@@ -61,6 +72,7 @@ def package_runner(products, destination):
         if subprocess.run(["/usr/bin/codesign", "-d", str(bundle)], capture_output=True).returncode == 0:
             run(["/usr/bin/codesign", "--remove-signature", str(bundle / executable)], cwd=destination)
         run(["/usr/bin/strip", "-S", str(bundle / executable)], cwd=destination)
+        remove_package_build_runpath(bundle / executable, source.parent)
     info = plistlib.loads((app / "Info.plist").read_bytes())
     info["CFBundleDisplayName"] = "iPhone-use"
     write_plist(app / "Info.plist", info)

@@ -2,53 +2,71 @@ import Foundation
 
 // Shared orchestration, exercised with event-recording doubles on the host.
 // Only read-only geometry validation can repeat. Input and target selection never replay.
-final class RunnerTextTransaction {
-    struct Events {
+public final class RunnerTextTransaction {
+    public struct Events {
+        public init(
+            focus: @escaping () throws -> Void, position: @escaping () throws -> Void,
+            sendText: @escaping (String) throws -> Void
+        ) {
+            self.focus = focus; self.position = position; self.sendText = sendText
+        }
+
         let focus: () throws -> Void
         let position: () throws -> Void
         let sendText: (String) throws -> Void
     }
 
-    struct Validation<State> {
+    public struct Validation<State> {
+        public init(
+            read: @escaping (Bool) throws -> State, isEmpty: @escaping (State) -> Bool,
+            resultMatches: @escaping (State, String) -> Bool
+        ) {
+            self.read = read; self.isEmpty = isEmpty; self.resultMatches = resultMatches
+        }
+
         let read: (Bool) throws -> State
         let isEmpty: (State) -> Bool
         let resultMatches: (State, String) -> Bool
     }
 
-    struct Plan {
+    public struct Plan {
+        public init(replacing: Bool, deletion: String, insertion: String) {
+            self.replacing = replacing; self.deletion = deletion; self.insertion = insertion
+        }
+
         let replacing: Bool
         let deletion: String
         let insertion: String
     }
 
-    enum Failure: String, Error {
+    public enum Failure: String, Error {
         case clearUnconfirmed = "replace_clear_unconfirmed"
         case resultUnconfirmed = "text_result_unconfirmed"
         case geometryUnsettled = "text_geometry_unsettled"
     }
 
-    private(set) var stage = "validating"
-    private(set) var focusAttempted = false
-    private(set) var focusCompleted = false
-    private(set) var keyboardEventsAttempted = 0
-    private(set) var clearConfirmed = false
-    private(set) var insertionAttempted = false
-    private(set) var insertionAcknowledged = false
-    private(set) var convergenceReads = 0
-    private(set) var geometryRetries = 0
-    private(set) var convergenceTimedOut = false
-    private(set) var convergenceElapsedMs: Double = 0
+    public private(set) var stage = "validating"
+    public private(set) var focusAttempted = false
+    public private(set) var focusCompleted = false
+    public private(set) var keyboardEventsAttempted = 0
+    public private(set) var clearConfirmed = false
+    public private(set) var insertionAttempted = false
+    public private(set) var insertionAcknowledged = false
+    public private(set) var convergenceReads = 0
+    public private(set) var geometryRetries = 0
+    public private(set) var convergenceTimedOut = false
+    public private(set) var convergenceElapsedMs: Double = 0
 
     private let now: () -> TimeInterval
     private let pause: (TimeInterval) -> Void
 
-    init(now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
-         pause: @escaping (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }) {
+    public init(now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+                pause: @escaping (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }) {
         self.now = now
         self.pause = pause
     }
 
-    var facts: [String: Any] {
+    public var facts: [String: Any] {
         ["stage": stage, "focusAttempted": focusAttempted, "focusCompleted": focusCompleted,
          "keyboardEventsAttempted": keyboardEventsAttempted, "clearConfirmed": clearConfirmed,
          "insertionAttempted": insertionAttempted, "insertionAcknowledged": insertionAcknowledged,
@@ -79,7 +97,7 @@ final class RunnerTextTransaction {
         throw Failure.geometryUnsettled
     }
 
-    func run<State>(
+    public func run<State>(
         initial: State, needsFocus: Bool, events: Events,
         validation: Validation<State>, plan: (State) throws -> Plan
     ) throws -> State {

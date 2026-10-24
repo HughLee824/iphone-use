@@ -1,3 +1,4 @@
+import IPhoneUseRunnerSupport
 import Foundation
 
 // Confined to the caller's capture operation; parallel CoreDevice results join

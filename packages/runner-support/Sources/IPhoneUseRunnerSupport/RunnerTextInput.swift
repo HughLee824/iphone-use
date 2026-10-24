@@ -2,13 +2,13 @@ import Foundation
 
 // Shared by the host and Runner. Append uses a validated readable value rather
 // than assuming a keyboard shortcut moved the caret. Never reconstruct secrets.
-enum RunnerTextInput {
-    enum Failure: String, Error {
+public enum RunnerTextInput {
+    public enum Failure: String, Error {
         case valueUnavailable = "append_value_unavailable"
         case invalidResult = "append_result_unsupported"
         case clearValueUnavailable = "replace_value_unavailable"
 
-        var message: String {
+        public var message: String {
             switch self {
             case .valueUnavailable:
                 return "Runner append requires readable non-secure text, distinct from any placeholder"
@@ -24,7 +24,7 @@ enum RunnerTextInput {
         }
     }
 
-    static func replacementInput(
+    public static func replacementInput(
         _ text: String, value: Any?, secure: Bool, placeholder: String?, deleteKey: String
     )
         throws -> String {
@@ -42,11 +42,11 @@ enum RunnerTextInput {
 
     // UIKit text views omit AX value after the last character is removed.
     // Only use this after a validated readable field has been cleared.
-    static func isCleared(_ value: Any?) -> Bool {
+    public static func isCleared(_ value: Any?) -> Bool {
         value == nil || (value as? String)?.isEmpty == true
     }
 
-    static func append(_ text: String, to value: Any?, secure: Bool, placeholder: String? = nil) throws
+    public static func append(_ text: String, to value: Any?, secure: Bool, placeholder: String? = nil) throws
         -> String {
         guard !secure, let source = value as? String,
             placeholder.map({ $0.isEmpty || $0 != source }) ?? true
@@ -68,7 +68,7 @@ enum RunnerTextInput {
 
 // Public command names shared by host validation and Runner execution. The
 // XCTest key constants themselves stay in the iPhone target.
-enum RunnerPressKey: String, CaseIterable {
+public enum RunnerPressKey: String, CaseIterable {
     case `return`, backspace, left, right, upArrow = "up", down, tab, shiftTab = "shift-tab"
-    var modifiers: [String] { self == .shiftTab ? ["shift"] : [] }
+    public var modifiers: [String] { self == .shiftTab ? ["shift"] : [] }
 }

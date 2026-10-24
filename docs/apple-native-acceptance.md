@@ -82,7 +82,8 @@ NATIVE_BUILD="$(swift build --show-bin-path)"
 swiftc -parse-as-library -I "$NATIVE_BUILD" \
   -Xcc -fmodule-map-file=.build/out/Intermediates.noindex/GeneratedModuleMaps/AppleNativeBridge.modulemap \
   scripts/native-contact-fault-host.swift \
-  "$NATIVE_BUILD/AgentSomaCore.o" "$NATIVE_BUILD/AppleNativeBridge.o" \
+  "$NATIVE_BUILD/IPhoneUseCore.o" "$NATIVE_BUILD/IPhoneUseRunnerSupport.o" \
+  "$NATIVE_BUILD/AppleNativeBridge.o" \
   -o .local/research/native-fault-build/ContactFaultHost
 .local/research/native-fault-build/ContactFaultHost --help
 .local/research/native-fault-build/ContactFaultHost --self-test

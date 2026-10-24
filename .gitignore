@@ -1,5 +1,7 @@
 # Build products and tool caches
 /.build/
+/packages/runner-support/.build/
+/packages/runner-support/.swiftpm/
 /.swiftpm/
 /build/
 /DerivedData/

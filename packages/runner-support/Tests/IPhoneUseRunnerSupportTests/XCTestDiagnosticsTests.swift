@@ -1,5 +1,5 @@
 import XCTest
-@testable import IPhoneUseCore
+@testable import IPhoneUseRunnerSupport
 
 final class XCTestDiagnosticsTests: XCTestCase {
     private var originalArguments: [String: Any] = [:]

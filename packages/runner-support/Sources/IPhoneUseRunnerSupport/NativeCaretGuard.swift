@@ -4,7 +4,7 @@ import CoreGraphics
 // An optional, source-anchored exception for a single blue, yellow or green UIKit-style caret.
 // Never infer a caret from a difference alone: a hidden source has no anchor.
 // This is pixel evidence, not independent confirmation of editor focus.
-struct NativeCaretGuard {
+public struct NativeCaretGuard {
     private let context: ScreenContext
     private let field: ScreenRect
     private let width: Int
@@ -15,9 +15,9 @@ struct NativeCaretGuard {
     private let reference: Int
     private let referenceChannel: Int
     private let allowsAdjacentText: Bool
-    let caret: ScreenRect
+    public let caret: ScreenRect
 
-    init?(
+    public init?(
         png: Data, context: ScreenContext, field: ScreenRect, allowsAdjacentText: Bool = false,
         allowsColoredCarets: Bool = true
     ) throws {
@@ -68,7 +68,7 @@ struct NativeCaretGuard {
                 width: Double(pixelWidth) / scale, height: Double(pixelHeight) / scale))
     }
 
-    func acceptsBlink(png: Data, context current: ScreenContext) throws -> Bool {
+    public func acceptsBlink(png: Data, context current: ScreenContext) throws -> Bool {
         guard context.matches(current) else { return false }
         let image = try ScreenImage(png: png)
         try image.validateMapping(to: current.screen)

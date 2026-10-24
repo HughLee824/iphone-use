@@ -4,13 +4,28 @@
 	classes = {};
 	objectVersion = 56;
 	objects = {
-		B1494624CDDA406095CE1006 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/IPhoneUseCore/RunnerSupport/RunnerTextTransaction.swift; sourceTree = "<group>"; };
-		B1494624CDDA406095CE1007 = { isa = PBXBuildFile; fileRef = B1494624CDDA406095CE1006; };
+		C1494624CDDA406095CE1001 = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../packages/runner-support";
+		};
+		C1494624CDDA406095CE1002 = {
+			isa = XCSwiftPackageProductDependency;
+			package = C1494624CDDA406095CE1001;
+			productName = IPhoneUseRunnerSupport;
+		};
+		C1494624CDDA406095CE1003 = {
+			isa = PBXBuildFile;
+			productRef = C1494624CDDA406095CE1002;
+		};
+		C1494624CDDA406095CE1004 = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (C1494624CDDA406095CE1003);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B1494624CDDA406095CE1003 = { isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RunnerAXBinding.m; sourceTree = "<group>"; };
 		B1494624CDDA406095CE1004 = { isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RunnerAXBinding.h; sourceTree = "<group>"; };
 		B1494624CDDA406095CE1005 = { isa = PBXBuildFile; fileRef = B1494624CDDA406095CE1003; };
-		B1494624CDDA406095CE1001 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/IPhoneUseCore/RunnerSupport/RunnerAXTree.swift; sourceTree = "<group>"; };
-		B1494624CDDA406095CE1002 = { isa = PBXBuildFile; fileRef = B1494624CDDA406095CE1001; };
 		F326E15101D0902D09F4E5B4 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CommandServer.swift"; sourceTree = "<group>"; };
 		446D3333D8E8C94D84B53DB1 = { isa = PBXBuildFile; fileRef = F326E15101D0902D09F4E5B4; };
 		54DED3607002025AD4396CA6 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "XCTestStateTimeout.swift"; sourceTree = "<group>"; };
@@ -23,32 +38,12 @@
 		C8DA1C47B1F6AA59C9F9D622 = { isa = PBXBuildFile; fileRef = A8421CBA324523D9D79928AB; };
 		664B6D8B15D706482E0FAB90 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LiveSessionTests+Gestures.swift"; sourceTree = "<group>"; };
 		F864B9B2C1811A839A892D7C = { isa = PBXBuildFile; fileRef = 664B6D8B15D706482E0FAB90; };
-		2111932A63B88EF5367FE1C4 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/IPhoneUseCore/RunnerSupport/ScreenGeometry.swift"; sourceTree = "<group>"; };
-		681C0D948F5C6A5BEC6BDA79 = { isa = PBXBuildFile; fileRef = 2111932A63B88EF5367FE1C4; };
-		A3D083FCADB1573C7E91DC04 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/IPhoneUseCore/RunnerSupport/CoordinateGesture.swift"; sourceTree = "<group>"; };
-		9FFEF2104E514F58E3608C2E = { isa = PBXBuildFile; fileRef = A3D083FCADB1573C7E91DC04; };
-		E75347E005499C5EC16A4C67 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/IPhoneUseCore/RunnerSupport/ScreenImage.swift"; sourceTree = "<group>"; };
-		41939D0431F559932EF32B72 = { isa = PBXBuildFile; fileRef = E75347E005499C5EC16A4C67; };
-		8244E93B9785891ACBF38CFB = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/IPhoneUseCore/RunnerSupport/ScreenGuard+Comparison.swift"; sourceTree = "<group>"; };
-		435DCD02C449D753B42743CA = { isa = PBXBuildFile; fileRef = 8244E93B9785891ACBF38CFB; };
 		A0000000000000000000001D = { isa = PBXBuildFile; fileRef = A0000000000000000000001E; };
 		A0000000000000000000001E = { isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RunnerStartupGuard.m; sourceTree = "<group>"; };
 		A0000000000000000000001F = { isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RunnerStartupGuard.h; sourceTree = "<group>"; };
 		A0000000000000000000001A = { isa = PBXBuildFile; fileRef = A0000000000000000000001B; };
 		A0000000000000000000001B = { isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RunnerPinchEvent.m; sourceTree = "<group>"; };
 		A0000000000000000000001C = { isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RunnerPinchEvent.h; sourceTree = "<group>"; };
-		A00000000000000000000018 /* RunnerTextInput.swift in Sources */ = { isa = PBXBuildFile; fileRef = A00000000000000000000019; };
-		A00000000000000000000019 /* RunnerTextInput.swift */ = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/IPhoneUseCore/RunnerSupport/RunnerTextInput.swift; sourceTree = "<group>"; };
-		A00000000000000000000016 /* NativeCaretGuard.swift in Sources */ = {
-			isa = PBXBuildFile;
-			fileRef = A00000000000000000000017;
-		};
-		A00000000000000000000017 /* NativeCaretGuard.swift */ = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = ../Sources/IPhoneUseCore/RunnerSupport/NativeCaretGuard.swift;
-			sourceTree = "<group>";
-		};
 
 		A00000000000000000000013 /* Assets.xcassets in Resources */ = {
 			isa = PBXBuildFile;
@@ -65,36 +60,6 @@
 			buildActionMask = 2147483647;
 			files = (A00000000000000000000013);
 			runOnlyForDeploymentPostprocessing = 0;
-		};
-		A00000000000000000000011 /* XCTestDiagnostics.swift in Sources */ = {
-			isa = PBXBuildFile;
-			fileRef = A00000000000000000000012;
-		};
-		A00000000000000000000012 /* XCTestDiagnostics.swift */ = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = ../Sources/IPhoneUseCore/RunnerSupport/XCTestDiagnostics.swift;
-			sourceTree = "<group>";
-		};
-		A0000000000000000000000F /* ScreenGuard.swift in Sources */ = {
-			isa = PBXBuildFile;
-			fileRef = A00000000000000000000010;
-		};
-		A00000000000000000000010 /* ScreenGuard.swift */ = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = ../Sources/IPhoneUseCore/RunnerSupport/ScreenGuard.swift;
-			sourceTree = "<group>";
-		};
-		A0000000000000000000000D /* FrameStability.swift in Sources */ = {
-			isa = PBXBuildFile;
-			fileRef = A0000000000000000000000E;
-		};
-		A0000000000000000000000E /* FrameStability.swift */ = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = ../Sources/IPhoneUseCore/RunnerSupport/FrameStability.swift;
-			sourceTree = "<group>";
 		};
 		A00000000000000000000001 /* LiveSessionTests.swift in Sources */ = {
 			isa = PBXBuildFile;
@@ -115,7 +80,7 @@
 		};
 		A00000000000000000000004 = {
 			isa = PBXGroup;
-			children = (B1494624CDDA406095CE1003, B1494624CDDA406095CE1004, F326E15101D0902D09F4E5B4, 54DED3607002025AD4396CA6, BE3DB226688532724E6CC7F2, 15E5FA160BBBA1ED3887F7CD, A8421CBA324523D9D79928AB, 664B6D8B15D706482E0FAB90, 2111932A63B88EF5367FE1C4, A3D083FCADB1573C7E91DC04, E75347E005499C5EC16A4C67, 8244E93B9785891ACBF38CFB, A0000000000000000000001E, A0000000000000000000001F, A0000000000000000000001B, A0000000000000000000001C, A00000000000000000000019, B1494624CDDA406095CE1006, B1494624CDDA406095CE1001, A00000000000000000000017, A00000000000000000000002, A0000000000000000000000E, A00000000000000000000010, A00000000000000000000012, A00000000000000000000014, A00000000000000000000005);
+			children = (B1494624CDDA406095CE1003, B1494624CDDA406095CE1004, F326E15101D0902D09F4E5B4, 54DED3607002025AD4396CA6, BE3DB226688532724E6CC7F2, 15E5FA160BBBA1ED3887F7CD, A8421CBA324523D9D79928AB, 664B6D8B15D706482E0FAB90, A0000000000000000000001E, A0000000000000000000001F, A0000000000000000000001B, A0000000000000000000001C, A00000000000000000000002, A00000000000000000000014, A00000000000000000000005);
 			sourceTree = "<group>";
 		};
 		A00000000000000000000005 /* Products */ = {
@@ -127,10 +92,11 @@
 		A00000000000000000000006 /* IPhoneUseTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = A0000000000000000000000B;
-			buildPhases = (A00000000000000000000008, A00000000000000000000015);
+			buildPhases = (A00000000000000000000008, C1494624CDDA406095CE1004, A00000000000000000000015);
 			buildRules = ();
 			dependencies = ();
 			name = IPhoneUseTests;
+			packageProductDependencies = (C1494624CDDA406095CE1002);
 			productName = IPhoneUseTests;
 			productReference = A00000000000000000000003;
 			productType = "com.apple.product-type.bundle.ui-testing";
@@ -147,6 +113,7 @@
 			knownRegions = (en, Base);
 			mainGroup = A00000000000000000000004;
 			productRefGroup = A00000000000000000000005;
+			packageReferences = (C1494624CDDA406095CE1001);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (A00000000000000000000006);
@@ -154,7 +121,7 @@
 		A00000000000000000000008 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
-			files = (B1494624CDDA406095CE1005, 446D3333D8E8C94D84B53DB1, AF267514A41C4EC79BE70029, 7AE441227E0B18A6A47F1412, 202E6C0EBB9D2A7556DA7A39, C8DA1C47B1F6AA59C9F9D622, F864B9B2C1811A839A892D7C, 681C0D948F5C6A5BEC6BDA79, 9FFEF2104E514F58E3608C2E, 41939D0431F559932EF32B72, 435DCD02C449D753B42743CA, A0000000000000000000001D, A0000000000000000000001A, A00000000000000000000018, B1494624CDDA406095CE1007, B1494624CDDA406095CE1002, A00000000000000000000016, A00000000000000000000001, A0000000000000000000000D, A0000000000000000000000F, A00000000000000000000011);
+			files = (B1494624CDDA406095CE1005, 446D3333D8E8C94D84B53DB1, AF267514A41C4EC79BE70029, 7AE441227E0B18A6A47F1412, 202E6C0EBB9D2A7556DA7A39, C8DA1C47B1F6AA59C9F9D622, F864B9B2C1811A839A892D7C, A0000000000000000000001D, A0000000000000000000001A, A00000000000000000000001, );
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A00000000000000000000009 /* Debug target */ = {

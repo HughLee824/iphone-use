@@ -1,3 +1,4 @@
+import IPhoneUseRunnerSupport
 import Foundation
 
 // The host depends on these few operations, not XCTest objects or an agent-facing Runner protocol.

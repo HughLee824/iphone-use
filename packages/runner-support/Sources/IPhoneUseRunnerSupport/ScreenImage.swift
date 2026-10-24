@@ -2,12 +2,12 @@ import Foundation
 import CoreGraphics
 import ImageIO
 
-struct ScreenImage {
-    let image: CGImage
+public struct ScreenImage {
+    public let image: CGImage
 
-    init(image: CGImage) { self.image = image }
+    public init(image: CGImage) { self.image = image }
 
-    init(png: Data) throws {
+    public init(png: Data) throws {
         guard let source = CGImageSourceCreateWithData(png as CFData, nil),
             let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
             let width = properties[kCGImagePropertyPixelWidth] as? Int,
@@ -23,7 +23,7 @@ struct ScreenImage {
         self.image = image
     }
 
-    func validateMapping(to screen: ScreenRect) throws {
+    public func validateMapping(to screen: ScreenRect) throws {
         // Full-screen iPhone captures only; never stretch a mismatched image onto old coordinates.
         let scaleX = Double(image.width) / screen.width, scaleY = Double(image.height) / screen.height
         guard scaleX >= 1, scaleY >= 1, abs(scaleX - scaleY) <= 0.01 else {
@@ -33,7 +33,7 @@ struct ScreenImage {
 
     // Deterministic box averages for the coarse, unmasked global bands only.
     // Keep native field pixels and protected-region comparison unchanged.
-    func areaRGB(rect: ScreenRect, screen: ScreenRect, columns: Int, rows: Int) throws -> Data {
+    public func areaRGB(rect: ScreenRect, screen: ScreenRect, columns: Int, rows: Int) throws -> Data {
         let scaleX = Double(image.width) / screen.width, scaleY = Double(image.height) / screen.height
         let pixels = CGRect(
             x: (rect.originX - screen.originX) * scaleX, y: (rect.originY - screen.originY) * scaleY,
@@ -72,7 +72,7 @@ struct ScreenImage {
         return result
     }
 
-    func rgb(rect: ScreenRect, screen: ScreenRect, columns: Int, rows: Int) throws -> Data {
+    public func rgb(rect: ScreenRect, screen: ScreenRect, columns: Int, rows: Int) throws -> Data {
         let scaleX = Double(image.width) / screen.width, scaleY = Double(image.height) / screen.height
         let pixels = CGRect(
             x: (rect.originX - screen.originX) * scaleX, y: (rect.originY - screen.originY) * scaleY,

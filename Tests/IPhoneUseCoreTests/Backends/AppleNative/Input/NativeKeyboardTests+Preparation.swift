@@ -1,3 +1,4 @@
+@testable import IPhoneUseRunnerSupport
 import XCTest
 import AppleNativeBridge
 @testable import IPhoneUseCore

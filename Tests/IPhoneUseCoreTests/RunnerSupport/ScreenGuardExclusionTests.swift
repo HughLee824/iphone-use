@@ -1,3 +1,4 @@
+@testable import IPhoneUseRunnerSupport
 import XCTest
 import CoreGraphics
 @testable import IPhoneUseCore

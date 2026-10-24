@@ -1,8 +1,16 @@
 import Foundation
 
 // Shared by the Runner and host tests. Capture is independent of presentation budgets.
-enum RunnerAXTree {
-    struct Access<Element, Snapshot> {
+public enum RunnerAXTree {
+    public struct Access<Element, Snapshot> {
+        public init(
+            snapshot: @escaping (Element) throws -> Snapshot,
+            children: @escaping (Snapshot) -> [Snapshot],
+            bind: @escaping (Element, Snapshot) throws -> Element
+        ) {
+            self.snapshot = snapshot; self.children = children; self.bind = bind
+        }
+
         let snapshot: (Element) throws -> Snapshot
         let children: (Snapshot) -> [Snapshot]
         let bind: (Element, Snapshot) throws -> Element
@@ -10,7 +18,7 @@ enum RunnerAXTree {
 
     // Text edits may change both AX value and the text-derived label. Only the
     // selected leaf's content may change, after identity has been checked.
-    static func validationAttributes(
+    public static func validationAttributes(
         _ step: [String: Any], leafToken: String?, allowingContentChange: Bool,
         value: Any?, label: String
     ) -> [String: Any] {
@@ -23,7 +31,7 @@ enum RunnerAXTree {
         return attributes
     }
 
-    static func flatten<Node>(_ root: Node, children: (Node) -> [Node]) -> [(node: Node, parent: Int?)] {
+    public static func flatten<Node>(_ root: Node, children: (Node) -> [Node]) -> [(node: Node, parent: Int?)] {
         var result: [(node: Node, parent: Int?)] = []
         var pending: [(node: Node, parent: Int?)] = [(root, nil)]
         while let entry = pending.popLast() {
@@ -36,7 +44,7 @@ enum RunnerAXTree {
         return result
     }
 
-    enum Failure: String, Error {
+    public enum Failure: String, Error {
         case invalidPath = "invalid_action"
         case pathChanged = "target_path_changed"
         case targetChanged = "target_changed"
@@ -45,7 +53,7 @@ enum RunnerAXTree {
 
     // Walk the live snapshot, then bind that exact AX identity. Query child order
     // is not assumed to match snapshot child order (including across windows).
-    static func resolve<Element, Snapshot>(
+    public static func resolve<Element, Snapshot>(
         root: Element, path: [[String: Any]], access: Access<Element, Snapshot>,
         sameIdentity: (Snapshot, Snapshot) throws -> Bool,
         matches: (Snapshot, [String: Any]) throws -> Bool,
@@ -93,22 +101,24 @@ enum RunnerAXTree {
 
 // Observation-local opaque references. Retain identities only for comparison;
 // callers must still capture a fresh tree. Taking consumes the whole observation.
-struct RunnerAXReferences<Identity> {
-    enum Failure: String, Error { case stale = "stale_target_reference" }
+public struct RunnerAXReferences<Identity> {
+    public enum Failure: String, Error { case stale = "stale_target_reference" }
+    public init() {}
+
     private var identities: [String: Identity] = [:]
 
-    mutating func register(_ identity: Identity) -> String {
+    public mutating func register(_ identity: Identity) -> String {
         let token = UUID().uuidString
         identities[token] = identity
         return token
     }
 
-    func identity(for token: String?) throws -> Identity {
+    public func identity(for token: String?) throws -> Identity {
         guard let token, let identity = identities[token] else { throw Failure.stale }
         return identity
     }
 
-    mutating func take() -> Self {
+    public mutating func take() -> Self {
         let previous = self
         self = Self()
         return previous

@@ -2,44 +2,48 @@ import Foundation
 import CoreGraphics
 import ImageIO
 
-struct ScreenGuard: Codable {
-    static let algorithm = "srgb-grid-v1"
-    static let maskedAlgorithm = "srgb-area-excluded-rect-v2"
-    static let dynamicAlgorithm = "bounded-overlay-contrast-v1"
+public struct ScreenGuard: Codable {
+    public static let algorithm = "srgb-grid-v1"
+    public static let maskedAlgorithm = "srgb-area-excluded-rect-v2"
+    public static let dynamicAlgorithm = "bounded-overlay-contrast-v1"
     static let maximumRegions = 5
-    static let pixelTolerance = 8
+    public static let pixelTolerance = 8
     static let globalColumns = 32
     static let globalRows = 64
     static let regionSide = 48
 
-    struct Policy: Codable {
+    public struct Policy: Codable {
         // Conservative engineering defaults, not calibrated probabilities of target correctness.
-        var maxScreenChange = 0.01
-        var maxRegionChange = 0.0
-        var valid: Bool {
+        public var maxScreenChange = 0.01
+        public var maxRegionChange = 0.0
+        public init(maxScreenChange: Double = 0.01, maxRegionChange: Double = 0) {
+            self.maxScreenChange = maxScreenChange; self.maxRegionChange = maxRegionChange
+        }
+
+        public var valid: Bool {
             [maxScreenChange, maxRegionChange].allSatisfy { $0.isFinite && (0...1).contains($0) }
                 && maxRegionChange <= maxScreenChange
         }
     }
 
-    struct Region: Codable {
-        let rect: ScreenRect
-        let rgb: Data
+    public struct Region: Codable {
+        public let rect: ScreenRect
+        public let rgb: Data
     }
 
-    enum Failure: String, Error {
+    public enum Failure: String, Error {
         case invalidGuard = "invalid_screen_guard"
         case invalidImage = "screen_guard_image_unavailable"
         case contextChanged = "screen_context_changed"
     }
 
     // A baseline failure happens before any live comparison or input dispatch.
-    struct DynamicBaselineFailure: Error {
-        let component: String
-        let rect: ScreenRect
+    public struct DynamicBaselineFailure: Error {
+        public let component: String
+        public let rect: ScreenRect
 
-        var code: String { "dynamic_\(component)_unusable" }
-        var message: String {
+        public var code: String { "dynamic_\(component)_unusable" }
+        public var message: String {
             """
             Input was not sent: the dynamic \(component) rectangle has insufficient visible shape features in\
              the baseline screenshot. Check screenshot-to-screen-point mapping and tightly bound the complete\
@@ -47,7 +51,7 @@ struct ScreenGuard: Codable {
              this; do not loosen thresholds.
             """
         }
-        var diagnostics: [String: Any] {
+        public var diagnostics: [String: Any] {
             [
                 "stage": "baseline_preparation", "component": component,
                 "reason": "insufficient_shape_features", "coordinateSpace": "screen_points",
@@ -56,28 +60,28 @@ struct ScreenGuard: Codable {
         }
     }
 
-    struct Check {
-        let screenChange: Double
-        let regionChanges: [Double]
-        let policy: Policy
-        var dynamicMatches: [Bool]?
-        var fieldPixelsMatch: Bool?
-        var fieldCaretMatch = false
-        var caretObservationID: String?
-        var fieldAppearanceMatch = false
-        var caretRect: ScreenRect?
-        var caretExclusionRect: ScreenRect?
-        var ignoredRect: ScreenRect?
-        var rawScreenChange: Double?
-        var regionsAccepted: Bool {
+    public struct Check {
+        public let screenChange: Double
+        public let regionChanges: [Double]
+        public let policy: Policy
+        public var dynamicMatches: [Bool]?
+        public var fieldPixelsMatch: Bool?
+        public var fieldCaretMatch = false
+        public var caretObservationID: String?
+        public var fieldAppearanceMatch = false
+        public var caretRect: ScreenRect?
+        public var caretExclusionRect: ScreenRect?
+        public var ignoredRect: ScreenRect?
+        public var rawScreenChange: Double?
+        public var regionsAccepted: Bool {
             regionChanges.allSatisfy { $0 <= policy.maxRegionChange }
         }
-        var accepted: Bool {
+        public var accepted: Bool {
             if let dynamicMatches { return dynamicMatches.count == 2 && dynamicMatches.allSatisfy { $0 } }
             return screenChange <= policy.maxScreenChange
                 && (regionsAccepted && fieldPixelsMatch != false || fieldCaretMatch || fieldAppearanceMatch)
         }
-        var result: [String: Any] {
+        public var result: [String: Any] {
             var result: [String: Any] = [
                 "algorithm": ignoredRect == nil ? ScreenGuard.algorithm : ScreenGuard.maskedAlgorithm,
                 "accepted": accepted, "screenChange": screenChange,
@@ -118,23 +122,23 @@ struct ScreenGuard: Codable {
         }
     }
 
-    let algorithm: String
-    let context: ScreenContext
-    let pixelWidth: Int
-    let pixelHeight: Int
-    let policy: Policy
+    public let algorithm: String
+    public let context: ScreenContext
+    public let pixelWidth: Int
+    public let pixelHeight: Int
+    public let policy: Policy
     let globalRGB: Data
-    let regions: [Region]
-    let ignoredRect: ScreenRect?
+    public let regions: [Region]
+    public let ignoredRect: ScreenRect?
     let unmaskedRGB: [Data]?
-    let dynamicOverlay: [OverlayGlyph]?
+    public let dynamicOverlay: [OverlayGlyph]?
 
     // Explicitly selected control + independent page landmark. Local contrast
     // retains stroke geometry while removing slowly varying video brightness,
     // including behind translucent controls. No search, alignment or tolerance
     // widening: both templates must match at their original coordinates.
-    struct OverlayGlyph: Codable {
-        let rect: ScreenRect
+    public struct OverlayGlyph: Codable {
+        public let rect: ScreenRect
         let contrast: Data
         static let side = 64
         static let radius = 4
@@ -187,7 +191,7 @@ struct ScreenGuard: Codable {
         }
     }
 
-    init(
+    public init(
         png: Data, context: ScreenContext, rects: [ScreenRect], policy: Policy,
         ignoring ignoredRect: ScreenRect? = nil,
         dynamicRects: [ScreenRect]? = nil

@@ -48,7 +48,7 @@ sample 1 的 keyboard AX y=861，超出屏幕高度 844；sample 2、3 的 keybo
 
 ## 代码链路
 
-1. `Sources/IPhoneUseCore/RunnerSupport/RunnerTextTransaction.swift` 在 `sendText` 返回后设 `insertionAcknowledged=true`，随后立即进入 `verifying_result` 并调用 `validate(true)`。
+1. `packages/runner-support/Sources/IPhoneUseRunnerSupport/RunnerTextTransaction.swift` 在 `sendText` 返回后设 `insertionAcknowledged=true`，随后立即进入 `verifying_result` 并调用 `validate(true)`。
 2. `Runner/LiveSessionTests+Input.swift` 的 `actionTarget` 重新采集完整根快照并逐层验证。允许自身文本修改只影响目标叶节点 label/value；frame 仍逐分量要求误差不超过 0.5 pt。
 3. depth 16 身份相同，但 frame 偏差远超阈值，`RunnerAXTree.resolve` 抛出 `target_changed`。异常中止事务，未重新发送文本。
 4. `Runner/LiveSessionTests+Commands.swift` 的 `waitForStableFrame()` 位于 `perform(command)` 成功返回之后。末尾验证在 `perform` 内已经抛出，所以这段等待不会执行，也无法帮助本次末尾 AX 验证。
