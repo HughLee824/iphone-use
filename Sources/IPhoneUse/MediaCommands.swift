@@ -64,3 +64,19 @@ struct Preview: ParsableCommand {
         }
     }
 }
+
+struct PreviewServiceHost: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "_preview-service", shouldDisplay: false)
+    @Option var directory: String
+    @Option var port: Int
+    mutating func run() throws { try runPreviewService(directory: URL(fileURLWithPath: directory), port: port) }
+}
+
+struct PreviewRevoke: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "preview-revoke",
+        abstract: "Revoke a device preview URL. Explicitly stop/start preview to obtain a new URL.")
+    @Option(help: "Exact hardware UDID of the device whose preview URL should be revoked.") var device: String
+    @Option(help: "Preview service port; defaults to config preview-port.") var port: Int?
+    mutating func run() throws { try output { try revokePreview(device: device, port: port) } }
+}

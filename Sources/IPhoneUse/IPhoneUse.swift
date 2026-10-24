@@ -24,7 +24,7 @@ struct IPhoneUse: ParsableCommand {
             Pinch.self, LongPress.self, Swipe.self, Home.self, TypeText.self, TextPrepare.self,
             TextFinish.self,
             Press.self, RecordStart.self, RecordStop.self, Preview.self, Disconnect.self, Host.self,
-            AuthorizationMonitor.self
+            AuthorizationMonitor.self, PreviewServiceHost.self, PreviewRevoke.self
         ])
     @OptionGroup var options: SessionOptions
 }
