@@ -9,6 +9,7 @@ struct HostConfiguration: Codable {
     var nativeEndpointInventory: String?
     var modeSource: String?
     var startupPreviewPort: Int?
+    var startupPreviewOptional: Bool?
 
     var modeSelection: ModeSelection {
         ModeSelection(
