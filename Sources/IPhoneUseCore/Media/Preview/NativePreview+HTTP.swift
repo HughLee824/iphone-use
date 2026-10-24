@@ -141,7 +141,7 @@ extension NativePreview {
             """
             HTTP/1.1 \(code)\r\nContent-Type: \(type)\r\nContent-Length:\
              \(data.count)\r\nX-Preview-Generation: \(generation)\r\n\
-                 \(headers)Cache-Control: \(cache)\r\nReferrer-Policy:\
+            \(headers)Cache-Control: \(cache)\r\nReferrer-Policy:\
              no-referrer\r\nX-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'none';\
              img-src 'self' blob:; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self';\
              frame-ancestors 'none'\r\nConnection: close\r\n\r\n

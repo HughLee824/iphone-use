@@ -125,4 +125,23 @@ final class PreviewServiceTests: XCTestCase {
         })
     }
 
+    func testGenerationHeaderSurvivesActualHTTPParsingWithoutFoldingOtherHeaders() throws {
+        let service = try service(), source = try NativePreview(port: 0)
+        defer { source.close() }
+        let entry = try service.queue.sync {
+            try service.registry.attach(device: "phone", owner: UUID().uuidString, url: source.url,
+                                        now: ProcessInfo.processInfo.systemUptime)
+        }
+        let done = expectation(description: "parsed headers")
+        let url = "http://127.0.0.1:\(service.port)/v/\(entry.token)/state"
+        URLSession.shared.dataTask(with: try XCTUnwrap(URL(string: url))) { data, response, _ in
+            let http = response as? HTTPURLResponse
+            let state = try? jsonObject(data ?? Data())
+            XCTAssertEqual(http?.value(forHTTPHeaderField: "X-Preview-Generation"), state?["generation"] as? String)
+            XCTAssertEqual(http?.value(forHTTPHeaderField: "Cache-Control"), "no-store")
+            done.fulfill()
+        }.resume()
+        wait(for: [done], timeout: 4)
+    }
+
 }
