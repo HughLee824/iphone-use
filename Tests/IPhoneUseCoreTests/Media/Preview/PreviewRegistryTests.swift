@@ -38,6 +38,10 @@ final class PreviewRegistryTests: XCTestCase {
 
     func testRevocationInvalidatesOldTokenAndLeaseButNotOtherDevice() throws {
         let root = try directory(), registry = try PreviewRegistry(directory: root)
+        XCTAssertThrowsError(try registry.revoke(device: "unknown-phone")) {
+            XCTAssertEqual(($0 as? IPhoneUseError)?.code, "preview_not_found")
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("entries.json").path))
         let old = try registry.entry(device: "phone"), other = try registry.entry(device: "other")
         let owner = UUID().uuidString
         _ = try registry.attach(device: "phone", owner: owner, url: sourceURL(), now: 0)

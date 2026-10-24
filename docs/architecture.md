@@ -17,7 +17,8 @@ flowchart LR
     Host <-->|explicit recording / preview| Media[Owned native media stream]
     Media --> Decode[Shared decoded frames]
     Decode --> Preview[Latest JPEG / loopback HTTP]
-    Preview --> Browser[Read-only local browser]
+    Preview --> Service[Persistent device-bound preview service]
+    Service --> Browser[Read-only local browser]
     Decode --> Recording[Recording pixel subscriber / MP4]
 ```
 
@@ -54,7 +55,7 @@ The CLI's optional action `--observe` composes two existing host requests and re
 
 ## Shared native preview and recording
 
-An explicit `preview` request starts a read-only HTTP listener on loopback and acquires the session-owned media stream if needed. Control stays on HID or XCTest. A recording started while preview is active subscribes to the same decoded pixels, rather than restarting the stream; stopping one consumer retains media for the other. Disconnect and idle expiry clean up both. Browser HTTP requests do not renew the session or produce observations.
+An explicit `preview` request starts or reuses a read-only loopback viewer service and acquires the session-owned media stream if needed. The service persists device-scoped random capabilities under the private configuration directory; it accepts authenticated source registration over a private Unix socket and never persists source URLs or frames. Source leases, post-response ownership checks and browser decode-generation checks isolate reconnections. Token revocation requires an explicit preview restart. Control stays on HID or XCTest. A recording started while preview is active subscribes to the same decoded pixels, rather than restarting the stream; stopping one consumer retains media for the other. Disconnect and idle expiry clean up both media consumers and detach the source. The separate preview service retains a device-bound waiting page across sessions; browser HTTP requests do not renew the session or produce observations.
 
 `NativePreview` keeps only the latest JPEG and uses two bounded CPU conversion slots; superseded results are discarded. The source target is 30 fps, a 960-pixel longest edge and JPEG quality 0.7. Receiver and snapshot decode queues use `userInitiated` QoS, with separate queue-wait/decode timing. Core Image exports JPEGs directly; conversion and compression are reported as one combined duration. When preview already has a decoded frame, the host prepares the encoder before subscribing and starts the recording clock after preparation. This prevents cold encoder setup from filling the bounded pixel queue; it does not enlarge the queue or discard admitted frames. The recording writer releases encoder resources before complete file validation. Resource pressure can still cause stalls or recording backpressure; stable 30 fps has not passed acceptance.
 

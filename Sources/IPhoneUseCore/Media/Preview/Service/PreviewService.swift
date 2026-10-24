@@ -14,6 +14,7 @@ final class PreviewService {
     let session: URLSession
     var lastActivity = ProcessInfo.processInfo.systemUptime
     private var server: JSONServer?
+    var onStop: (() -> Void)?
 
     init(directory: URL, port: UInt16) throws {
         self.directory = directory; self.requestedPort = port
@@ -32,21 +33,33 @@ final class PreviewService {
         let ready = DispatchSemaphore(value: 0)
         var failure: NWError?
         listener.stateUpdateHandler = { state in
-            if case .ready = state { ready.signal() }
-            if case .failed(let error) = state { failure = error; ready.signal() }
+            switch state {
+            case .ready: ready.signal()
+            case .failed(let error), .waiting(let error): failure = error; ready.signal()
+            default: break
+            }
         }
         listener.newConnectionHandler = { [weak self] in self?.accept($0) }
         listener.start(queue: queue)
         guard ready.wait(timeout: .now() + 4) == .success, failure == nil else {
             listener.cancel()
-            throw IPhoneUseError("preview_port_in_use", "Cannot bind preview port \(port); no process was stopped")
+            if let failure, case .posix(.EADDRINUSE) = failure {
+                throw IPhoneUseError("preview_port_in_use", "Preview port \(port) is occupied; no process was stopped")
+            }
+            throw IPhoneUseError(
+                "preview_listen_failed", "Cannot open preview listener: \(String(describing: failure))")
         }
         let socket = directory.appendingPathComponent("ipc.sock").path
         try? FileManager.default.removeItem(atPath: socket)
         let server = try JSONServer(path: socket); self.server = server
         server.onRequest = { [weak self] request, reply in
             guard let self else { return }
-            self.queue.async { reply(self.control(request), {}) }
+            self.queue.async {
+                let response = self.control(request)
+                reply(response) {
+                    if request["op"] as? String == "stop", response["ok"] as? Bool == true { self.onStop?() }
+                }
+            }
         }
         server.start { ready.signal() }
         guard ready.wait(timeout: .now() + 4) == .success else {
@@ -68,7 +81,9 @@ final class PreviewService {
             }
             let now = ProcessInfo.processInfo.systemUptime
             lastActivity = now
-            if request["op"] as? String == "ping" { response["ok"] = true; return response }
+            if ["ping", "stop"].contains(request["op"] as? String ?? "") {
+                response["ok"] = true; return response
+            }
             guard let device = request["device"] as? String else {
                 throw IPhoneUseError("invalid_device_id", "Expected hardware UDID")
             }
@@ -113,9 +128,10 @@ private func servePreview(directory: URL, port: Int) throws {
     try SessionPaths.secureDirectory(directory)
     let lock = try DeviceLock(root: directory, device: "service")
     let service = try PreviewService(directory: directory, port: PreviewConfiguration.validate(port: port))
+    let done = DispatchSemaphore(value: 0)
+    service.onStop = { done.signal() }
     try service.start()
     defer { service.stop(); withExtendedLifetime(lock) {} }
-    let done = DispatchSemaphore(value: 0)
     let signalQueue = DispatchQueue(label: "iphone-use.preview.signals")
     let signals = [SIGINT, SIGTERM].map { number -> DispatchSourceSignal in
         signal(number, SIG_IGN)

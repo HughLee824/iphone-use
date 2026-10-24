@@ -99,3 +99,10 @@ The obsolete XCTest attachment recording experiment is not a supported test path
 ## Publish results, keep raw evidence local
 
 A public acceptance summary should identify the exact revision/package, environment, scenarios, outcomes and remaining limitations. Do not paste a chronological terminal diary. Convert reusable cases into sanitized fixtures and regression tests. Store build receipts, screenshots, complete AX trees and session logs in `.local/`; report selected facts without personal content, device IDs, signing data or machine paths. Release-specific evidence belongs with the corresponding release or pull request.
+
+
+## Stable preview reconnect acceptance
+
+Device-free regression tests cover persisted device capabilities, lease ownership/expiry, daemon restart without source restoration, HTTP read-only/Host/Origin boundaries, explicit service stop, CLI revocation, delayed responses after replacement/revocation, and actual generation-header parsing. Browser tests suspend image decoding across generation changes, verify old candidates are discarded, clear pixels on disconnect/revocation, and reset frame/gesture cursors. These tests do not establish physical-device performance.
+
+On 2026-10-24 the development CLI with the generation-header fix was validated on a USB-connected iPhone 12 Pro (iOS 27.0.1) in Runner mode using the existing signed Runner; Runner source/protocol was unchanged. The original browser tab was migrated once from a legacy URL to a stable device URL. Without further navigation or reload, it displayed live video, cleared its image on disconnect, and resumed live video after a new device session. Tab identity and URL remained identical; session and source generation changed. The decoded browser image was checked visually and via its DOM dimensions. Owned device sessions were disconnected with acknowledged Runner/media/tunnel cleanup. This is reconnect acceptance, not a new sustained-fps or recording acceptance claim. Private receipts and binary hashes remain under `.local/`.

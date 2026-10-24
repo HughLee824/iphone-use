@@ -113,7 +113,9 @@ final class PreviewRegistry {
     }
 
     func revoke(device: String) throws {
-        let entry = try entry(device: device)
+        guard let entry = entries.first(where: { $0.device == device }) else {
+            throw IPhoneUseError("preview_not_found", "No preview entry for this hardware UDID on this port")
+        }
         let next = entries.map { $0.device == device ? Entry(device: device, token: UUID().uuidString) : $0 }
         try persist(next); entries = next
         if let source = sources[entry.device] { detach(device: entry.device, owner: source.owner) }

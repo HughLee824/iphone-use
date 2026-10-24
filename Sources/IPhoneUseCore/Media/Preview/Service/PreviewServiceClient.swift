@@ -77,3 +77,11 @@ public func revokePreview(device: String, port: Int?) throws -> [String: Any] {
     try client.call("revoke", fields: ["device": device])
     return ["ok": true, "result": ["state": "revoked", "requiresPreviewRestart": true]]
 }
+
+public func stopPreviewService(port: Int?) throws -> [String: Any] {
+    let fields = try PreviewConfiguration().startFields(port: port)
+    let selectedPort = fields["port"] as? Int ?? PreviewConfiguration.defaultPort
+    let client = try PreviewServiceClient(port: PreviewConfiguration.validate(port: selectedPort))
+    try client.call("stop") // Never start a service merely to stop it.
+    return ["ok": true, "result": ["state": "stop_requested", "port": selectedPort]]
+}

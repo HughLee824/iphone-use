@@ -134,12 +134,13 @@ final class NativePreview {
 
     func status(for options: NativePreviewOptions) throws -> [String: Any] {
         let result = status()
+        let viewerURL = result["url"] as? String ?? url
         if let failure = publication?.failure { throw IPhoneUseError("preview_binding_lost", failure) }
         if options.explicitPort, result["port"] as? Int != Int(options.port) {
             throw IPhoneUseError(
                 "preview_already_running",
                 """
-                Preview is already running at \(url). Use its URL, or run preview --stop before starting\
+                Preview is already running at \(viewerURL). Use its URL, or run preview --stop before starting\
                  preview --port \(options.port) --no-open. The existing preview was not changed.
                 """
             )
