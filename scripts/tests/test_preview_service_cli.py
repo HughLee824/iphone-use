@@ -1,4 +1,5 @@
 """Exercise the real preview daemon and private IPC without connecting a phone."""
+import fcntl
 import http.server
 import json
 import os
@@ -31,9 +32,26 @@ class PreviewServiceCLITests(unittest.TestCase):
         self.addCleanup(self.stop)
 
     def stop(self):
+        try:
+            self.control("stop")
+        except (OSError, ValueError):
+            pass
         if self.process and self.process.poll() is None:
             self.process.terminate()
             self.process.wait(timeout=6)
+        # Also reap daemon ownership when ensureRunning launched the process.
+        lock = self.directory / "device-service.lock"
+        if lock.is_file():
+            with lock.open("rb") as stream:
+                deadline = time.monotonic() + 6
+                while True:
+                    try:
+                        fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except BlockingIOError:
+                        if time.monotonic() >= deadline:
+                            self.fail("Preview daemon did not release ownership during cleanup")
+                        time.sleep(.02)
 
     def start(self):
         self.process = subprocess.Popen([str(CLI), "_preview-service", "--directory", str(self.directory),
@@ -120,6 +138,75 @@ class PreviewServiceCLITests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(json.loads(result.stdout)["error"]["code"], "preview_port_in_use")
             self.assertEqual(occupied.getsockname()[1], self.port)
+
+    def revoke_client(self, device="fixture-phone"):
+        process = subprocess.Popen([str(CLI), "preview-revoke", "--device", device,
+                                    "--port", str(self.port)], env=self.env,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+        def cleanup():
+            if process.poll() is None:
+                process.terminate()
+            process.communicate(timeout=8)
+
+        self.addCleanup(cleanup)
+        return process
+
+    def test_concurrent_cold_and_warm_clients_share_one_service(self):
+        for phase in ["cold", "warm"]:
+            with self.subTest(phase=phase):
+                clients = [self.revoke_client(f"missing-phone-{index}") for index in range(8)]
+                for client in clients:
+                    out, err = client.communicate(timeout=25)
+                    self.assertEqual(json.loads(out)["error"]["code"], "preview_not_found", out + err)
+                self.assertTrue(self.control("ping")["ok"])
+                self.assertEqual(self.directory.stat().st_mode & 0o777, 0o700)
+                self.assertEqual((self.directory / "authorization").stat().st_mode & 0o777, 0o600)
+        # Startup probes must not unlink the daemon's ownership lock.
+        with (self.directory / "device-service.lock").open("rb") as stream:
+            with self.assertRaises(BlockingIOError):
+                fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def test_stop_fences_registration_and_client_waits_for_exit_before_restart(self):
+        self.start()
+        owner = str(uuid.uuid4())
+        source = f"http://127.0.0.1:19999/{uuid.uuid4()}/"
+        attached = self.control("attach", device="fixture-phone", owner=owner, url=source)
+        self.assertTrue(attached["ok"], attached)
+        entries = (self.directory / "entries.json").read_bytes()
+        with socket.socket(socket.AF_UNIX) as pending_stop:
+            pending_stop.settimeout(3)
+            pending_stop.connect(str(self.directory / "ipc.sock"))
+            request = {"id": str(uuid.uuid4()), "version": 1, "op": "stop",
+                       "authorization": (self.directory / "authorization").read_text()}
+            pending_stop.sendall(json.dumps(request).encode() + b"\n")
+            data = b""
+            while b"\n" not in data:
+                chunk = pending_stop.recv(4096)
+                self.assertTrue(chunk, "Service closed before acknowledging stop")
+                data += chunk
+            self.assertTrue(json.loads(data.split(b"\n")[0])["ok"])
+            # Keep the reply connection open: the service is draining, not exited.
+            for operation in ["ping", "attach", "renew", "revoke"]:
+                result = self.control(operation, device="fixture-phone", owner=owner, url=source)
+                self.assertEqual(result["error"]["code"], "preview_service_stopping", result)
+            self.assertEqual((self.directory / "entries.json").read_bytes(), entries)
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                urllib.request.urlopen(attached["url"] + "state", timeout=3)
+            self.assertEqual(error.exception.code, 503)
+            restarting = self.revoke_client()
+            time.sleep(.2)
+            self.assertIsNone(restarting.poll(), "Client must wait for the stopping daemon")
+            self.assertIsNone(self.process.poll())
+        self.process.wait(timeout=6)
+        out, err = restarting.communicate(timeout=15)
+        self.assertEqual(restarting.returncode, 0, out + err)
+        self.assertTrue(self.control("ping")["ok"])
+        self.assertEqual(self.control("renew", device="fixture-phone", owner=owner)["error"]["code"],
+                         "preview_binding_lost")
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(attached["url"] + "state", timeout=3)
+        self.assertEqual(error.exception.code, 404)
 
 
 if __name__ == "__main__":

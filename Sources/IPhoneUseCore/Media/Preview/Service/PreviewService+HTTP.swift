@@ -28,6 +28,7 @@ extension PreviewService {
     }
 
     private func respond(_ request: String, on connection: NWConnection) {
+        guard !isStopping else { send(connection, code: 503); return }
         let lines = request.components(separatedBy: "\r\n"), host = "127.0.0.1:\(port)"
         let parts = (lines.first ?? "").split(separator: " ")
         guard parts.count == 3, parts[0] == "GET",
@@ -72,6 +73,7 @@ extension PreviewService {
         session.dataTask(with: request) { [weak self, weak connection] data, response, error in
             guard let self, let connection else { return }
             self.queue.async {
+                guard !self.isStopping else { self.send(connection, code: 503); return }
                 // Re-check authorization and ownership AFTER the asynchronous upstream response.
                 guard self.registry.entry(token: entry.token)?.device == entry.device else {
                     self.send(connection, code: 404); return

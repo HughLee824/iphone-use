@@ -74,8 +74,8 @@ final class PreviewServiceTests: XCTestCase {
         let client = try PreviewServiceClient(port: service.port, directory: service.directory)
         XCTAssertEqual(try client.call("ping")["ok"] as? Bool, true)
     }
-    func testDelayedSourceResponseIsRejectedAfterReplacementOrRevocation() throws {
-        for revoke in [false, true] {
+    func testDelayedSourceResponseIsRejectedAfterReplacementRevocationOrStop() throws {
+        for action in ["replace", "revoke", "stop"] {
             let service = try service(), source = try NativePreview(port: 0)
             defer { source.close() }
             let owner = UUID().uuidString
@@ -94,14 +94,17 @@ final class PreviewServiceTests: XCTestCase {
                 ProcessInfo.processInfo.systemUptime < deadline { Thread.sleep(forTimeInterval: 0.01) }
             XCTAssertFalse(source.queue.sync { source.waitingGestures.isEmpty })
             try service.queue.sync {
-                if revoke { try service.registry.revoke(device: "phone") } else {
+                if action == "stop" {
+                    _ = service.control(["op": "stop", "version": 1,
+                                         "authorization": service.registry.authorization])
+                } else if action == "revoke" { try service.registry.revoke(device: "phone") } else {
                     service.registry.detach(device: "phone", owner: owner)
                     _ = try service.registry.attach(device: "phone", owner: UUID().uuidString, url: source.url,
                                                     now: ProcessInfo.processInfo.systemUptime)
                 }
             }
             wait(for: [done], timeout: 4)
-            XCTAssertEqual(status, revoke ? 404 : 409)
+            XCTAssertEqual(status, action == "stop" ? 503 : (action == "revoke" ? 404 : 409))
         }
     }
 

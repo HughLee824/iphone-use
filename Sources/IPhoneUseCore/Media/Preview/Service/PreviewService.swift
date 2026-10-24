@@ -13,6 +13,7 @@ final class PreviewService {
     var connections: [ObjectIdentifier: NWConnection] = [:]
     let session: URLSession
     var lastActivity = ProcessInfo.processInfo.systemUptime
+    private(set) var isStopping = false // Access only on queue, including idle/signal shutdown.
     private var server: JSONServer?
     var onStop: (() -> Void)?
 
@@ -68,20 +69,36 @@ final class PreviewService {
     }
 
     func stop() {
+        queue.sync { beginStopping() }
         listener.cancel(); server?.stopAccepting(); session.invalidateAndCancel()
         queue.sync { connections.values.forEach { $0.cancel() }; connections.removeAll() }
+    }
+
+    func beginStopping() { isStopping = true }
+
+    func stopIfIdle(now: Double) {
+        guard !isStopping, now - lastActivity > 600 else { return }
+        beginStopping()
+        onStop?()
+    }
+
+    private func admit(_ request: [String: Any]) throws {
+        guard request["authorization"] as? String == registry.authorization,
+            request["version"] as? Int == 1 else {
+            throw IPhoneUseError("preview_service_unauthorized", "Invalid preview service credential or version")
+        }
+        guard !isStopping else {
+            throw IPhoneUseError("preview_service_stopping", "Preview service is stopping; wait for it to exit")
+        }
+        lastActivity = ProcessInfo.processInfo.systemUptime
     }
 
     func control(_ request: [String: Any]) -> [String: Any] {
         var response: [String: Any] = ["id": request["id"] ?? NSNull(), "ok": false]
         do {
-            guard request["authorization"] as? String == registry.authorization,
-                request["version"] as? Int == 1 else {
-                throw IPhoneUseError("preview_service_unauthorized", "Invalid preview service credential or version")
-            }
-            let now = ProcessInfo.processInfo.systemUptime
-            lastActivity = now
+            try admit(request)
             if ["ping", "stop"].contains(request["op"] as? String ?? "") {
+                if request["op"] as? String == "stop" { beginStopping() }
                 response["ok"] = true; return response
             }
             guard let device = request["device"] as? String else {
@@ -91,9 +108,9 @@ final class PreviewService {
             switch request["op"] as? String {
             case "attach":
                 let entry = try registry.attach(
-                    device: device, owner: owner, url: request["url"] as? String ?? "", now: now)
+                    device: device, owner: owner, url: request["url"] as? String ?? "", now: lastActivity)
                 response["url"] = "http://127.0.0.1:\(port)/v/\(entry.token)/"
-            case "renew": try registry.renew(device: device, owner: owner, now: now)
+            case "renew": try registry.renew(device: device, owner: owner, now: lastActivity)
             case "detach": registry.detach(device: device, owner: owner)
             case "revoke": try registry.revoke(device: device)
             default: throw IPhoneUseError("invalid_request", "Unknown preview service operation")
@@ -136,12 +153,15 @@ private func servePreview(directory: URL, port: Int) throws {
     let signals = [SIGINT, SIGTERM].map { number -> DispatchSourceSignal in
         signal(number, SIG_IGN)
         let source = DispatchSource.makeSignalSource(signal: number, queue: signalQueue)
-        source.setEventHandler { done.signal() }; source.resume(); return source
+        source.setEventHandler {
+            service.queue.async { service.beginStopping(); done.signal() }
+        }
+        source.resume(); return source
     }
     let timer = DispatchSource.makeTimerSource(queue: service.queue)
     timer.schedule(deadline: .now() + 60, repeating: 60)
     timer.setEventHandler {
-        if ProcessInfo.processInfo.systemUptime - service.lastActivity > 600 { done.signal() }
+        service.stopIfIdle(now: ProcessInfo.processInfo.systemUptime)
     }
     timer.resume(); done.wait(); timer.cancel(); signals.forEach { $0.cancel() }
 }

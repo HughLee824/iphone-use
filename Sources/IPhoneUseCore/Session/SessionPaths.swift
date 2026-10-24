@@ -33,11 +33,7 @@ public struct SessionPaths {
 
     static func secureDirectory(_ url: URL) throws {
         let files = FileManager.default
-        if !files.fileExists(atPath: url.path) {
-            try files.createDirectory(
-                at: url, withIntermediateDirectories: true,
-                attributes: [.posixPermissions: 0o700])
-        }
+        try createPrivateDirectory(url)
         let attributes = try files.attributesOfItem(atPath: url.path)
         guard attributes[.type] as? FileAttributeType == .typeDirectory,
             (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(),
@@ -47,5 +43,21 @@ public struct SessionPaths {
                 "unsafe_state_directory",
                 "Session directory must be owned by this user with mode 0700: \(url.path)")
         }
+    }
+
+    private static func createPrivateDirectory(_ url: URL) throws {
+        // mkdir applies permissions atomically. Foundation's create-then-chmod
+        // window lets a concurrent client observe an unsafe intermediate mode.
+        if mkdir(url.path, 0o700) == 0 { return }
+        let code = errno
+        if code == EEXIST { return } // Validate existing directories without repairing their permissions.
+        if code == ENOENT, url.deletingLastPathComponent().path != url.path {
+            try createPrivateDirectory(url.deletingLastPathComponent())
+            guard mkdir(url.path, 0o700) == 0 || errno == EEXIST else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+            return
+        }
+        throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
     }
 }

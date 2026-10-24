@@ -166,6 +166,8 @@ python3 scripts/device/preview-soak.py --url "$PREVIEW_URL" --pid "$HOST_PID" \
 
 设备入口和服务凭据保存在 `~/.iphone-use/previews/<port>/`（受 `IPHONE_USE_CONFIG_DIR` 控制），目录为 0700、凭据文件为 0600。只持久化凭据，不保存媒体来源或画面。服务在没有有效页面请求或 IPC 活动 10 分钟后退出；重新启用预览会按需启动。可用 `preview-service-stop [--port PORT]` 显式停止该端口的服务；返回 `stop_requested` 表示退出请求已接收，不等同于设备会话清理。服务崩溃后的旧来源不会自动重新注册，需明确停止/启动预览；仍已加载的页面可恢复，服务不存在时主动刷新可能显示浏览器连接失败页。
 
+同一端口的并发启动会有界等待共享启动锁，随后复查并复用服务；不会把启动竞争报告为设备占用。服务接受停止请求或决定空闲退出时立即进入停止状态，拒绝新的来源注册和续租，返回 `preview_service_stopping`。新启动等待旧服务释放所有权后再创建替代服务；等待超时返回 `preview_service_busy`，不会强制结束旧进程。等待只重试只读探测，不重放注册或撤销操作。
+
 撤销入口使用 `devices` 返回的硬件 UDID；该端口没有对应入口时返回 `preview_not_found`，不会报告撤销成功：
 
 ```sh

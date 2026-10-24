@@ -20,16 +20,51 @@ final class PreviewServiceClient {
         }
         try SessionPaths.secureDirectory(self.directory)
         // Serialize credential creation with service startup and other clients.
-        let lock = try DeviceLock(root: self.directory, device: "startup")
+        let lock = try Self.startupLock(directory: self.directory)
         defer { withExtendedLifetime(lock) {} }
         authorization = try PreviewRegistry(directory: self.directory).authorization
     }
 
     func ensureRunning() throws {
         if (try? call("ping")) != nil { return }
-        let lock = try DeviceLock(root: directory, device: "startup")
+        let lock = try Self.startupLock(directory: directory)
         defer { withExtendedLifetime(lock) {} }
-        if (try? call("ping")) != nil { return }
+        if try waitForService() { return }
+        try launchService()
+    }
+
+    static func startupLock(directory: URL, timeout: TimeInterval = 15) throws -> DeviceLock {
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+        repeat {
+            do { return try DeviceLock(root: directory, device: "startup") } catch {
+                guard (error as? IPhoneUseError)?.code == "device_busy" else { throw error }
+            }
+            if ProcessInfo.processInfo.systemUptime >= deadline { break }
+            Thread.sleep(forTimeInterval: 0.05)
+        } while true
+        throw IPhoneUseError("preview_service_busy", "Timed out waiting for another preview service startup")
+    }
+
+    // A failed ping does not prove the old daemon has exited. Its ownership lock
+    // fences shutdown (including the stop response drain) before we spawn a replacement.
+    private func waitForService() throws -> Bool {
+        let deadline = ProcessInfo.processInfo.systemUptime + 6
+        repeat {
+            if (try? call("ping")) != nil { return true }
+            do {
+                let lock = try DeviceLock(root: directory, device: "service")
+                withExtendedLifetime(lock) {}
+                return false
+            } catch {
+                guard (error as? IPhoneUseError)?.code == "device_busy" else { throw error }
+            }
+            if ProcessInfo.processInfo.systemUptime >= deadline { break }
+            Thread.sleep(forTimeInterval: 0.05)
+        } while true
+        throw IPhoneUseError("preview_service_busy", "Preview service is stopping or unresponsive; try again later")
+    }
+
+    private func launchService() throws {
         let errorURL = directory.appendingPathComponent("startup-error.json")
         try? FileManager.default.removeItem(at: errorURL)
         let logURL = directory.appendingPathComponent("service.log")
@@ -46,6 +81,7 @@ final class PreviewServiceClient {
             if (try? call("ping")) != nil { return }
             Thread.sleep(forTimeInterval: 0.1)
         }
+        if process.isRunning { process.terminate() } // Only the child launched by this attempt.
         if let data = try? Data(contentsOf: errorURL), let error = try? jsonObject(data) {
             throw IPhoneUseError(error["code"] as? String ?? "preview_service_failed",
                                  error["message"] as? String ?? "Preview service failed to start")
