@@ -10,7 +10,6 @@ final class ReportRecorder: NativeTransport {
     let log: URL
     private(set) var contactBarriers = 0
     private(set) var moveBarriers = 0
-    private(set) var keyboardCreated = false
     private(set) var keyboardBarriers = 0
     private(set) var selectAllReleases = 0
     private(set) var pasteBarriers = 0
@@ -34,12 +33,10 @@ final class ReportRecorder: NativeTransport {
         _ = try? handle.seekToEnd(); data.append(10); try? handle.write(contentsOf: data)
     }
     func request(_ message: [String: Any], timeout: TimeInterval) throws -> [String: Any] {
-        let reply = try base.request(message, timeout: timeout)
-        if (message["payload"] as? [String: Any])?["createService"] != nil, let id = reply["serviceID"] {
-            keyboardCreated = true
-            record(["event": "keyboard_created", "serviceID": id])
-        }
-        return reply
+        try base.request(message, timeout: timeout)
+    }
+    func canInterruptBeforeKey(_ hid: NativeHIDAdapter?) -> Bool {
+        hid?.keyboardStatus["prepared"] as? Bool == true && keyboardBarriers == 0
     }
     func send(_ message: [String: Any], timeout: TimeInterval) throws {
         let payload = message["payload"] as? [String: Any]
@@ -150,10 +147,10 @@ struct ContactFaultHost {
         try SessionHost(config: config, paths: paths, backend: backend).run()
     }
 
-    static func require(_ value: Bool) throws {
+    static func require(_ value: Bool, line: UInt = #line) throws {
         if !value {
             throw IPhoneUseError(
-                "self_test_failed", "Fault checkpoint did not match the required successful report barriers")
+                "self_test_failed", "Fault checkpoint did not match the required report barriers at line \(line)")
         }
     }
     static func send(_ recorder: ReportRecorder, x column: UInt16) throws {
@@ -199,26 +196,30 @@ struct ContactFaultHost {
                 }
             }
         }
-        return NativeHIDAdapter(
+        weak var preparedAdapter: NativeHIDAdapter?
+        let adapter = NativeHIDAdapter(
             transport: recorder, cancellation: cancellation,
             wait: { duration in
                 if recorder.ready(for: mode) { inject() }
                 Thread.sleep(forTimeInterval: duration)
             },
             uptime: {
-                // type reads uptime after both pasteboard preflights and before its
-                // first cancellation check/report. tap does not use this injected clock.
-                if mode == "signal-before-key", recorder.keyboardCreated, recorder.keyboardBarriers == 0 {
+                // Inventory discovery alone must not arm a fault during startup.
+                // The prepared keyboard reaches this clock before its first report.
+                if mode == "signal-before-key", recorder.canInterruptBeforeKey(preparedAdapter) {
                     inject()
                 }
                 return ProcessInfo.processInfo.systemUptime
             })
+        preparedAdapter = adapter
+        return adapter
     }
     static func checkInterruptedPaste(log: URL) throws {
         for mode in ["signal-before-key", "signal-after-select-all", "close-hid-after-paste"] {
             let transport = FakeTransport(), cancellation = NativeCancellation()
             let reports = ReportRecorder(transport, log: log)
             var now: TimeInterval = 0, injected = false
+            weak var preparedAdapter: NativeHIDAdapter?
             let hid = NativeHIDAdapter(
                 transport: reports, cancellation: cancellation,
                 wait: { duration in
@@ -229,12 +230,16 @@ struct ContactFaultHost {
                     now += duration
                 },
                 uptime: {
-                    if mode == "signal-before-key", reports.keyboardCreated, reports.keyboardBarriers == 0 {
+                    if mode == "signal-before-key", reports.canInterruptBeforeKey(preparedAdapter) {
                         injected = true; cancellation.cancel()
                     }
                     return now
                 })
-            try hid.prepare(); try hid.prepareKeyboard()
+            preparedAdapter = hid
+            try hid.prepare()
+            try require(!reports.canInterruptBeforeKey(hid) && !injected)
+            try hid.prepareKeyboard()
+            try require(reports.canInterruptBeforeKey(hid) && !injected && reports.keyboardBarriers == 0)
             do {
                 _ = try hid.paste(mode: "replace")
                 throw IPhoneUseError("self_test_failed", "Interrupted paste unexpectedly completed")
@@ -244,6 +249,10 @@ struct ContactFaultHost {
                 try require(mode == "signal-before-key" && error.code == "native_cancelled")
             }
             try require(injected)
+            try require(transport.unexpectedRequests == 0)
+            try require(transport.keyboardDestinations.allSatisfy { $0 == FakeTransport.keyboardID })
+            let expectedReports = mode == "signal-before-key" ? 0 : (mode == "signal-after-select-all" ? 3 : 7)
+            try require(transport.keyboardDestinations.count == expectedReports)
             if mode == "signal-before-key" { try require(reports.keyboardBarriers == 0) }
             if mode == "signal-after-select-all" {
                 try require(
@@ -258,29 +267,21 @@ struct ContactFaultHost {
         }
     }
     static func printHelp() {
-        print("ContactFaultHost DEVICE_ID \(modes.joined(separator: "|")) NEW_EVIDENCE_DIRECTORY")
-        print(
-            """
+        print("""
+            ContactFaultHost DEVICE_ID \(modes.joined(separator: "|")) NEW_EVIDENCE_DIRECTORY
             Starts only the native host. Inspect and archive a Probe screenshot before a separate\
              tap/swipe/type. Move modes wait for 12 changed-position send barriers, not a timer. No input\
              is replayed.
-            """
-        )
-        print("ContactFaultHost --self-test checks fault arming with a fake transport; no device access.")
-        print(
-            """
+            ContactFaultHost --self-test checks fault arming with a fake transport; no device access.
             Text modes: use type with --method paste on Probe. signal-before-key interrupts at the\
              text-entry clock read after clipboard preflights but before any keyboard report; do not use\
              swipe with this mode. signal-after-select-all requires replace; close-hid-after-paste closes\
              only this client's HID channel after the Command-V send barrier, before release. Neither\
              confirms device delivery.
-            """
-        )
+            """)
     }
     static func checkKeyboardBarriers(log: URL, failed: ReportRecorder) throws {
         let keyboard = ReportRecorder(FakeTransport(), log: log)
-        _ = try keyboard.request(["payload": ["createService": [:]]], timeout: 1)
-        try require(keyboard.keyboardCreated && !keyboard.ready(for: "signal-before-key"))
         func key(_ keys: [UInt8]) throws {
             try keyboard.send(
                 ["payload": ["send": ["_0": NativeKeyboard.report(keys, timestamp: 1)]]], timeout: 1)
@@ -308,6 +309,7 @@ struct ContactFaultHost {
         defer { try? FileManager.default.removeItem(at: directory) }
         let log = directory.appendingPathComponent("events.jsonl")
         FileManager.default.createFile(atPath: log.path, contents: nil)
+        try checkKeyboardDiscovery(log: log)
         let fake = FakeTransport(), recorder = ReportRecorder(FakeTransport(), log: log)
         let failed = ReportRecorder(fake, log: log)
         try require(modes.allSatisfy { !recorder.ready(for: $0) })
@@ -332,48 +334,67 @@ struct ContactFaultHost {
         try require(failed.moveBarriers == 0 && !failed.ready(for: "close-hid-after-move"))
         try checkKeyboardBarriers(log: log, failed: failed)
         try checkInterruptedPaste(log: log)
-        print(
-            """
-            PASS: first contact, stationary updates and failed sends cannot arm MOVE faults; 12\
-             changed-position send barriers can. Host fake transport only.
-            """
-        )
-        print(
-            """
-            PASS: text faults require a released Command-A or queued Command-V; failed keyboard reports cannot\
-             arm them. Before-key mode is reserved for the text-entry clock checkpoint.
-            """
-        )
-        print(
-            """
-            PASS: actual HID adapter stops before keys, after released selection, and after paste with\
-             uncertain release; no body replay. Fake cancellation only, not OS-signal acceptance.
-            """
-        )
+        print("PASS: touch/move barriers, built-in keyboard discovery, and all three interrupted-paste checkpoints.")
+        print("Fake transport only; no device or OS-signal validation. Failed sends do not arm faults; no replay.")
+    }
+}
+
+extension ContactFaultHost {
+    static func checkKeyboardDiscovery(log: URL) throws {
+        for inventory in [[], [FakeTransport.keyboard, FakeTransport.keyboard]] {
+            let transport = FakeTransport(), cancellation = NativeCancellation()
+            let recorder = ReportRecorder(transport, log: log)
+            transport.services = [transport.services[0]] + inventory
+            let hid = NativeHIDAdapter(transport: recorder, cancellation: cancellation, wait: { _ in })
+            try hid.prepare()
+            do {
+                try hid.prepareKeyboard()
+                throw IPhoneUseError("self_test_failed", "Missing or ambiguous keyboard unexpectedly prepared")
+            } catch let failure as ActionFailure {
+                try require(failure.code == "native_keyboard_unavailable" && !failure.possiblyExecuted)
+            }
+            try require(!recorder.canInterruptBeforeKey(hid))
+            try require(recorder.keyboardBarriers == 0 && transport.keyboardDestinations.isEmpty)
+            try require(transport.unexpectedRequests == 0)
+        }
     }
 }
 
 final class FakeTransport: NativeTransport {
     var fail = false
-    var services: [[String: Any]] = [
-        ["_ServiceID": 987, "PrimaryUsagePage": 13, "PrimaryUsage": 4, "UniversalControlBuiltIn": true]
+    static let keyboardID: UInt64 = 761
+    static let keyboard: [String: Any] = [
+        "_ServiceID": keyboardID, "PrimaryUsagePage": 0, "PrimaryUsage": 0,
+        "DeviceTypeHint": "Keyboard", "Product": "CoreDevice keyboard",
+        "_CoreDevice_codablePropertyStorage": [
+            "Transport": ["string": "CoreDevice"],
+            "_CoreDevice_originalUsages": ["array": [
+                ["dictionary": ["DeviceUsagePage": ["int": 1], "DeviceUsage": ["int": 6]]]
+            ]]
+        ]
     ]
+    var services: [[String: Any]] = [
+        ["_ServiceID": 987, "PrimaryUsagePage": 13, "PrimaryUsage": 4, "UniversalControlBuiltIn": true],
+        keyboard
+    ]
+    private(set) var unexpectedRequests = 0
+    private(set) var keyboardDestinations: [UInt64] = []
     func request(_ message: [String: Any], timeout: TimeInterval) throws -> [String: Any] {
         let payload = message["payload"] as? [String: Any] ?? [:]
         if payload["connectedServices"] != nil { return ["connectedServices": services] }
-        if let create = payload["createService"] as? [String: Any],
-            let properties = create["_0"] as? [String: Any] {
-            let id = (validatedValue(properties["_ServiceID"], as: ASNativeUnsigned.self)).value
-            services.append([
-                "_ServiceID": id, "Product": "CD-" + (validatedValue(properties["Product"], as: String.self))
-            ])
-            return ["serviceID": id]
-        }
-        return ["serviceID": 1]
+        unexpectedRequests += 1
+        throw IPhoneUseError("self_test_request", "Only built-in service discovery is expected")
     }
     func send(_ message: [String: Any], timeout: TimeInterval) throws {
+        guard let payload = message["payload"] as? [String: Any], let send = payload["send"] as? [String: Any] else {
+            unexpectedRequests += 1
+            throw IPhoneUseError("self_test_request", "Only HID reports are expected; services must not be removed")
+        }
+        if let report = send["_0"] as? Data, report.count == 39,
+            let destination = send["_1"] as? ASNativeUnsigned {
+            keyboardDestinations.append(destination.value)
+        }
         if fail { throw TransportError(description: "test failed send", possiblySent: true) }
     }
     func cancel() { fail = true }
-
 }
