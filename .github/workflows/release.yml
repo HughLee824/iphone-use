@@ -62,7 +62,7 @@ jobs:
           brew test iphone-use/acceptance/iphone-use
       - name: Generate the public formula
         run: python3 scripts/release/generate-homebrew.py ".build/releases/iphone-use-${VERSION}-macos-arm64.tar.gz" --output .build/releases/iphone-use.rb
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-assets
           if-no-files-found: error
