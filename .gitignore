@@ -48,3 +48,6 @@ xcuserdata/
 /skills-lock.json
 
 # Public documentation lives in docs/; private notes and captures belong in .local/.
+
+# Isolated design-time dependencies
+/scripts/brand/node_modules/

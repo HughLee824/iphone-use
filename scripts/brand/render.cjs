@@ -1,6 +1,6 @@
 const path = require('node:path');
 const sharp = require('sharp');
-const root = process.argv[2] || __dirname;
+const root = process.argv[2] || path.resolve(__dirname, '../../assets/brand/iphone-use-final');
 async function main() {
   for (const name of ['mark', 'inverse', 'wordmark', 'wordmark-inverse', 'preview', 'construction']) {
     const width = name.includes('wordmark') ? 1400 : name === 'preview' ? 1400 : name === 'construction' ? 1500 : 1024;

@@ -9,7 +9,7 @@ import tempfile
 import xml.etree.ElementTree as ET
 from PIL import Image, ImageChops
 
-ROOT=Path(__file__).resolve().parent
+ROOT=Path(__file__).resolve().parents[2] / "assets/brand/iphone-use-final"
 
 def topology(im):
     w,h=im.size
@@ -46,7 +46,7 @@ def main():
     for name in ['mark.svg','inverse.svg','wordmark.svg','wordmark-inverse.svg']:
         assert not any(e.tag.rsplit('}',1)[-1] in ['image','text','mask','filter'] for e in ET.parse(ROOT/name).getroot().iter())
     with tempfile.TemporaryDirectory(prefix='iphone-use-logo-verify-') as folder:
-        subprocess.run([sys.executable,str(ROOT/'build.py'),'--out',folder],check=True,capture_output=True)
+        subprocess.run([sys.executable,str(Path(__file__).with_name('build.py')),'--out',folder],check=True,capture_output=True)
         for name in manifest['svg_sha256']:
             assert (ROOT/name).read_bytes()==(Path(folder)/name).read_bytes()
     alpha=Image.open(ROOT/'mark.png').getchannel('A')

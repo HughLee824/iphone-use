@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const sharp = require('sharp');
 
-const root = path.resolve(__dirname, '..');
+const root = path.resolve(__dirname, '../..');
 const brand = path.join(root, 'assets/brand');
 const source = path.join(brand, 'iphone-use-final');
 const sha256 = data => crypto.createHash('sha256').update(data).digest('hex');
@@ -88,7 +88,7 @@ async function main() {
     formats: ['SVG', 'PNG', 'ICO'],
     provenance: {
       approved_design: 'iphone-use-final/',
-      generator: 'scripts/export-brand-assets.cjs',
+      generator: 'scripts/brand/export-brand-assets.cjs',
       rasterizer: {sharp: sharp.versions.sharp, librsvg: sharp.versions.rsvg, density: 288},
       wordmark: {font: 'Geist', weight: 500, license: 'licenses/geist-OFL.txt', outlines: true},
       favicon: {viewBox: [8, 8, 144, 144], note: 'Same approved path; tighter framing only.'},

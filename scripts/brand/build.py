@@ -9,7 +9,7 @@ import math
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-ROOT=Path(__file__).resolve().parent
+ROOT=Path(__file__).resolve().parents[2] / "assets/brand/iphone-use-final"
 def n(v):return f'{v:.9f}'.rstrip('0').rstrip('.') or '0'
 def xy(p):return ' '.join(n(v) for v in p)
 def polar(center,r,angle):return [center[0]+r*math.cos(angle),center[1]+r*math.sin(angle)]

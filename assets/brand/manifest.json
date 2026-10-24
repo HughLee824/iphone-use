@@ -9,7 +9,7 @@
   ],
   "provenance": {
     "approved_design": "iphone-use-final/",
-    "generator": "scripts/export-brand-assets.cjs",
+    "generator": "scripts/brand/export-brand-assets.cjs",
     "rasterizer": {
       "sharp": "0.35.5",
       "librsvg": "2.63.2",

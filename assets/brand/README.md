@@ -55,15 +55,6 @@ Local design archives and generated preview images are not production inputs.
 
 ## Re-export
 
-From the repository root, with Node.js and `sharp` available:
+The isolated [brand toolchain](../../scripts/brand/README.md) pins Sharp and Pillow and keeps its dependencies separate from the published plugin. Follow that guide to install dependencies, regenerate the assets and validate the design kit.
 
-```sh
-node scripts/export-brand-assets.cjs
-```
-
-If `sharp` is installed outside the module search path, set
-`NODE_PATH=/path/to/node_modules`. This is a design-time dependency only.
-The exporter uses the approved SVG files, updates all production PNG/ICO assets,
-the Runner copy and [the SHA-256 manifest](manifest.json). It does not require a
-font download or modify approved geometry. To reconstruct the SVGs from their
-parameters, follow the [design kit instructions](iphone-use-final/README.md).
+The exporter uses the approved SVG files, updates production PNG/ICO assets, the Runner copy and [the SHA-256 manifest](manifest.json). It does not download fonts or alter approved geometry. Update the skill icon copies and the embedded preview favicon deliberately when changing the approved artwork; existing tests check their consistency.
