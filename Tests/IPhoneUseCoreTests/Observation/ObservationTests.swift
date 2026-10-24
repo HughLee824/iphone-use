@@ -5,7 +5,7 @@ import Foundation
 // Sanitized AX with a synthetic full-screen PNG, independent of local device artifacts.
 func observationFixture(_ name: String = "app.json") throws -> CapturedObservation {
     let fixture = try XCTUnwrap(
-        Bundle.module.url(forResource: name, withExtension: nil, subdirectory: "Fixtures/Observations"))
+        Bundle.module.url(forResource: name, withExtension: nil))
     var result = try jsonObject(Data(contentsOf: fixture))
     result["screenshotBase64"] = try screenPNG().base64EncodedString()
     result["axStatus"] = "available"

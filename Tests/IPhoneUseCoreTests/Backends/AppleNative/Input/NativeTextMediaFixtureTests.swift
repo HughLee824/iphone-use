@@ -12,7 +12,7 @@ final class NativeTextMediaFixtureTests: XCTestCase {
 
     private func fixture(_ name: String) throws -> Data {
         let url = try XCTUnwrap(
-            Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "Fixtures/NativeText"))
+            Bundle.module.url(forResource: name, withExtension: "png"))
         return try Data(contentsOf: url)
     }
 

@@ -12,7 +12,8 @@
 __pycache__/
 *.py[cod]
 
-# Local design drafts, previews, and export archives; final brand assets live in assets/brand.
+# Legacy output paths remain ignored; archives now live under .local/output/.
+# Final brand assets live in assets/brand.
 /output/
 /assets/brand/archive/
 /assets/brand/iphone-use-final/*.png
@@ -35,8 +36,9 @@ xcuserdata/
 !.env.example
 !.env.*.example
 
-# Local development notes, experiments, and device evidence
+# Local development notes, experiments, device evidence, and archived output/spikes
 /.local/
+# Keep the former experiment path ignored if an old tool recreates it.
 /spikes/
 /alignment.md
 

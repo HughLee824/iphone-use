@@ -110,7 +110,9 @@ Commit files needed to build, test, distribute, or understand the public project
 
 The plugin contains instructions and a preflight script; it does not add another runtime service. Edit `skills/iphone-use/`, then run `python3 scripts/sync-plugin.py` to update the committed distribution. CI rejects drift. The [public website](https://iphone-use.com) is maintained in the separate [iphone-use-website](https://github.com/HughLee824/iphone-use-website) repository and deployed through Cloudflare Workers Static Assets at `iphone-use.com`. The public client installation path is documented in [public access release](public-access-release.md).
 
-Test inputs belong under `Tests/IPhoneUseCoreTests/Fixtures` and are loaded through SwiftPM's resource bundle. Tests must pass in a fresh checkout without `spikes/`, private device captures, or files under `docs/examples`. Published examples should illustrate the current interface, use placeholder paths and IDs, and identify any omitted media.
+Test inputs belong under `Tests/IPhoneUseCoreTests/Fixtures` and are loaded through SwiftPM's resource bundle. `Package.swift` explicitly copies the JSON and PNG inputs; fixture documentation is excluded. Individual copies appear at the bundle root and preserve image bytes. Add new fixture files to the manifest deliberately. Tests must pass in a fresh checkout without `.local/`, private device captures, or files under `docs/examples`. Published examples should illustrate the current interface, use placeholder paths and IDs, and identify any omitted media.
+
+SwiftPM discovers source files within each target's conventional `Sources/<target>` or `Tests/<target>` directory. The root package uses only the bridge, Core, CLI and Core test targets; RunnerSupport has its own package and tests. Repository documentation, brand assets, scripts, the Runner Xcode project and local archives are outside those target roots and are not compiled or bundled by these manifests. Their presence in an editor's package navigator does not make them build inputs.
 
 ## Engineering checks
 
@@ -128,12 +130,13 @@ The [.gitignore](../.gitignore) separates local development material from the pu
 | --- | --- |
 | Swift/Xcode build output | `.build/`, `.swiftpm/`, `build/`, `DerivedData/`, `*.xcresult/`, `*.xcarchive/`, `*.dSYM/`, `*.ipa` |
 | Personal notes, investigation logs and raw device evidence | `.local/` |
-| Early device experiments and evidence | `spikes/` |
+| Archived early device experiments and evidence | `.local/spikes/` |
+| Archived design drafts, previews and video projects | `.local/output/`; final public brand assets live in `assets/brand/`. |
 | Original observation drafts and captures | `.local/`; only curated examples and sanitized test fixtures stay public. |
 | Machine settings and caches | `.DS_Store`, `xcuserdata/`, `*.xcuserstate`, `__pycache__/`, Python bytecode, `*.log` |
 | Signing and environment files | `*.mobileprovision`, `*.provisionprofile`, `*.p12`, `*.pfx`, `*.p8`, `.env*` except `.env.example` and `.env.*.example` |
 
-New private notes and device records should go under `.local/`. Share only intentionally curated, sanitized excerpts; do not add broad exceptions for raw evidence directories.
+New private notes and device records should go under `.local/`. The former root `output/` and `spikes/` directories have been archived there; their old paths remain ignored so older tools cannot accidentally add generated files. Share only intentionally curated, sanitized excerpts; do not add broad exceptions for raw evidence directories.
 
 Ignore rules do not remove files already tracked by Git. Use `git rm --cached` for a file that should remain on disk but leave the repository, and commit that change. An ordinary removal affects later commits; earlier commits still contain their original contents.
 
