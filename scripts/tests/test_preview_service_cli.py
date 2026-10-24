@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -250,6 +251,56 @@ class PreviewServiceCLITests(unittest.TestCase):
             self.assertLess(time.monotonic() - started, 10)
             self.assertFalse((self.directory / "service.log").exists())
             self.assertFalse((self.directory / "ipc.sock").exists())
+
+    def test_cli_stop_holds_startup_lock_until_exit_before_concurrent_restart(self):
+        self.directory.mkdir(parents=True, mode=0o700)
+        authorization = self.directory / "authorization"
+        authorization.write_text(str(uuid.uuid4()))
+        authorization.chmod(0o600)
+        fixture = Path(__file__).parent / "fixtures/preview_process.py"
+        peer = subprocess.Popen([sys.executable, str(fixture), "delayed-stop", str(self.directory)],
+                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+        def cleanup(process):
+            if process.poll() is None:
+                process.kill()  # Only processes owned by this test.
+            process.communicate(timeout=5)
+
+        self.addCleanup(cleanup, peer)
+
+        def await_marker(name):
+            deadline = time.monotonic() + 5
+            while not (self.directory / name).exists():
+                self.assertIsNone(peer.poll(), f"Fixture exited before {name}")
+                self.assertLess(time.monotonic(), deadline, f"Fixture did not reach {name}")
+                time.sleep(.02)
+
+        await_marker("ready")
+        stopping = subprocess.Popen([str(CLI), "preview-service-stop", "--port", str(self.port)],
+                                    env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(cleanup, stopping)
+        await_marker("acknowledged")
+        with (self.directory / "device-startup.lock").open("rb") as lock:
+            with self.assertRaises(BlockingIOError):
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        restarting = self.revoke_client("missing-after-stop")
+        time.sleep(.2)
+        self.assertIsNone(stopping.poll(), "An acknowledgment must not be reported as process exit")
+        self.assertIsNone(restarting.poll())
+        self.assertFalse((self.directory / "service.log").exists())
+        peer.stdin.write("exit\n")
+        peer.stdin.flush()
+        out, err = stopping.communicate(timeout=8)
+        self.assertEqual(stopping.returncode, 0, out + err)
+        result = json.loads(out)["result"]
+        self.assertEqual(result["state"], "stopped")
+        self.assertTrue(result["stopAccepted"])
+        self.assertTrue(result["exited"])
+        peer.communicate(timeout=3)
+        self.assertEqual(peer.returncode, 0)
+        out, err = restarting.communicate(timeout=10)
+        self.assertEqual(json.loads(out)["error"]["code"], "preview_not_found", out + err)
+        self.assertTrue(self.control("ping")["ok"])
 
 
 if __name__ == "__main__":
