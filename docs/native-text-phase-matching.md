@@ -24,7 +24,7 @@ The rectangle must lie inside the complete field, be no wider than four screen p
 
 No second frame is needed to infer a background or blink phase. The current image never replaces the action's baseline. Both clipboard stages use the same original assertion.
 
-Full-field appearance rules are unchanged: direct channel tolerance 8, four isolated differences up to 16; bounded differences up to 32 only at existing corresponding 5×5 edges; remaining low-contrast differences have a total cap and connected components no larger than 2×2 native pixels. Full details remain in the field guard implementation and historical validation. These are engineering tolerances, not a guarantee to detect every microscopic text edit.
+Full-field appearance rules are unchanged: direct channel tolerance 8, four isolated differences up to 16; bounded differences up to 32 only at existing corresponding 5×5 edges; remaining low-contrast differences have a total cap and connected components no larger than 2×2 native pixels. Full details remain in the field guard implementation and regression tests. These are engineering tolerances, not a guarantee to detect every microscopic text edit.
 
 ## Errors and receipts
 

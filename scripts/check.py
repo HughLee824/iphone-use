@@ -61,6 +61,7 @@ def main():
     args = parser.parse_args()
     if args.jobs < 1:
         parser.error("--jobs must be positive")
+    run([sys.executable, "scripts/check-docs.py"])
     run(["xcodebuild", "-version"])
     run(["swift", "--version"])
     run(["swiftlint", "version"])

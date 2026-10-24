@@ -39,15 +39,5 @@ xcuserdata/
 /.local/
 /spikes/
 /alignment.md
-/docs/analysis/
-/docs/v0.1-plan.md
-/docs/cli-vs-mcp.md
-/docs/agent-interface.md
-/docs/session-host.md
 
-# Retired observation drafts and raw captures (sanitized fixtures live in Tests)
-/docs/examples/observe/observe.compact.example.txt
-/docs/examples/observe/observe.example.json
-/docs/examples/observe/spike-observe.json
-/docs/examples/observe/spike-system-alert.json
-/docs/examples/observe/xctest-debug-description.txt
+# Public documentation lives in docs/; private notes and captures belong in .local/.

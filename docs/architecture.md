@@ -56,9 +56,9 @@ The CLI's optional action `--observe` composes two existing host requests and re
 
 An explicit `preview` request starts a read-only HTTP listener on loopback and acquires the session-owned media stream if needed. Control stays on HID or XCTest. A recording started while preview is active subscribes to the same decoded pixels, rather than restarting the stream; stopping one consumer retains media for the other. Disconnect and idle expiry clean up both. Browser HTTP requests do not renew the session or produce observations.
 
-`NativePreview` keeps only the latest JPEG and uses two bounded CPU conversion slots; superseded results are discarded. The source target is 30 fps, a 960-pixel longest edge and JPEG quality 0.7. Receiver and snapshot decode queues use `userInitiated` QoS, with separate queue-wait/decode and conversion/compression timing. When preview already has a decoded frame, the host prepares the encoder before subscribing and starts the recording clock after preparation. This prevents cold encoder setup from filling the bounded pixel queue; it does not enlarge the queue or discard admitted frames. The recording writer releases encoder resources before complete file validation. Resource pressure can still cause stalls or recording backpressure; stable 30 fps has not passed acceptance.
+`NativePreview` keeps only the latest JPEG and uses two bounded CPU conversion slots; superseded results are discarded. The source target is 30 fps, a 960-pixel longest edge and JPEG quality 0.7. Receiver and snapshot decode queues use `userInitiated` QoS, with separate queue-wait/decode timing. Core Image exports JPEGs directly; conversion and compression are reported as one combined duration. When preview already has a decoded frame, the host prepares the encoder before subscribing and starts the recording clock after preparation. This prevents cold encoder setup from filling the bounded pixel queue; it does not enlarge the queue or discard admitted frames. The recording writer releases encoder resources before complete file validation. Resource pressure can still cause stalls or recording backpressure; stable 30 fps has not passed acceptance.
 
-Periodic orientation checks use system metadata and low-frequency PNG negative evidence. They do not supply action pixels or coordinates. Rotation ends the current recording segment and rebinds preview after owned-stream cleanup; recovery can be delayed. The experimental CPU orientation-probe change was reverted; the probe retains its default CIContext. See [local preview](local-preview-prototype.md) for the current implementation, lifecycle, usage and limitations, and [acceptance history](local-preview-validation.md) for version-specific evidence.
+Periodic orientation checks use system metadata and low-frequency PNG negative evidence. They do not supply action pixels or coordinates. Rotation ends the current recording segment and rebinds preview after owned-stream cleanup; recovery can be delayed. See [local preview](local-preview.md) for the current implementation, lifecycle, usage and limitations, and [testing](testing.md) for validation procedures.
 
 ## Repository layout
 
@@ -114,7 +114,7 @@ Test inputs belong under `Tests/IPhoneUseCoreTests/Fixtures` and are loaded thro
 
 ## Engineering checks
 
-Run `python3 scripts/check.py` from a full-Xcode macOS environment with SwiftLint and Node.js 22+. Local development, CI and draft releases use this same device-free entry point. It runs strict lint, builds the CLI, runs the independent shared-package and Core Swift tests plus Objective-C runtime doubles, supplies the built CLI path to Python integration tests, runs all Node test files, builds the unsigned iOS Runner, and checks/packages the plugin. A missing CLI is an error in this full check, rather than a silently skipped integration suite. Build concurrency defaults to two jobs (`--jobs` can override it).
+Run `python3 scripts/check.py` from a full-Xcode macOS environment with SwiftLint and Node.js 22+. Local development, CI and draft releases use this same device-free entry point. It checks documentation links, runs strict lint, builds the CLI, runs the independent shared-package and Core Swift tests plus Objective-C runtime doubles, supplies the built CLI path to Python integration tests, runs all Node test files, builds the unsigned iOS Runner, and checks/packages the plugin. A missing CLI is an error in this full check, rather than a silently skipped integration suite. Build concurrency defaults to two jobs (`--jobs` can override it).
 
 Core directory grouping does not introduce additional Swift module boundaries. The shared package is the one extracted module: dependencies run from Core and Runner to it, never back to either consumer. Its public declarations are the repository-internal cross-module contract, not a separately versioned SDK. Keep type extensions together and assign files by responsibility, not by `Native`/`Runner` prefixes. `SessionBackend` belongs to both adapters; media implementation is shared by both modes. Resource fixtures remain at the Core test target root and load through `Bundle.module`. AX/path, transaction and XCTest-default tests run independently in the shared package; tests that exercise host serialization, observations or native capture remain in Core. Root `swift test` does not run dependency-package tests; `scripts/check.py` runs both suites explicitly.
 
@@ -127,14 +127,13 @@ The [.gitignore](../.gitignore) separates local development material from the pu
 | Local material | Location or pattern |
 | --- | --- |
 | Swift/Xcode build output | `.build/`, `.swiftpm/`, `build/`, `DerivedData/`, `*.xcresult/`, `*.xcarchive/`, `*.dSYM/`, `*.ipa` |
-| Personal notes and working copies | `.local/`, `alignment.md`, `docs/analysis/` |
+| Personal notes, investigation logs and raw device evidence | `.local/` |
 | Early device experiments and evidence | `spikes/` |
-| Retired design discussions | `docs/agent-interface.md`, `docs/cli-vs-mcp.md`, `docs/session-host.md`, `docs/v0.1-plan.md` |
-| Original observation drafts and captures | The retired sample paths explicitly listed in `.gitignore`; curated output stays public. |
+| Original observation drafts and captures | `.local/`; only curated examples and sanitized test fixtures stay public. |
 | Machine settings and caches | `.DS_Store`, `xcuserdata/`, `*.xcuserstate`, `__pycache__/`, Python bytecode, `*.log` |
 | Signing and environment files | `*.mobileprovision`, `*.provisionprofile`, `*.p12`, `*.pfx`, `*.p8`, `.env*` except `.env.example` and `.env.*.example` |
 
-New private notes and device records should go under `.local/`. Original development files can remain at their ignored paths for local use. Share only intentionally curated, sanitized excerpts; do not add broad exceptions for raw evidence directories.
+New private notes and device records should go under `.local/`. Share only intentionally curated, sanitized excerpts; do not add broad exceptions for raw evidence directories.
 
 Ignore rules do not remove files already tracked by Git. Use `git rm --cached` for a file that should remain on disk but leave the repository, and commit that change. An ordinary removal affects later commits; earlier commits still contain their original contents.
 
@@ -147,7 +146,7 @@ Packaged Runner preparation is stored in `~/Library/Application Support/iphone-u
 See [installation](install.md), [onboarding](onboarding.md), and [release tooling](release-setup.md) for setup, renewal, and distribution.
 
 
-### Runner 路径定位与完整 AX 采集
+## Runner 路径定位与完整 AX 采集
 
 `observationVersion=4` 通过 `snapshotWithParameters:error:` 显式请求 `snapshotKeyHonorModalViews=false` 的标准属性快照，不读取查询对象缓存的根快照。每次观察和动作校验都重新请求。导出不再固定截断为 200 个节点；宿主保存返回树的全部节点，展示仍受 60 行 / 8 KiB 预算约束，`inspect` 在缓存上查询和分页。既有传输大小与时间限制继续生效，超限明确失败，不静默返回部分树。App 未向 XCTest 暴露的节点无法凭此补齐；非模态采集也不代表所有节点可操作，执行前仍检查上下文、enabled 和 hittable。
 
@@ -159,4 +158,4 @@ See [installation](install.md), [onboarding](onboarding.md), and [release toolin
 
 文本操作使用 `hasKeyboardFocus` 判断绑定元素是否已获键盘焦点，不使用表示 UI 焦点的 `hasFocus`。需要聚焦时只点击一次，随后重新采集和校验路径、身份及键盘焦点。定位光标后、清空后、插入前和插入后均重新验证；自身修改文本后仅允许叶节点 label/value 内容变化。焦点切换创建了新控件时停止，要求新观察，不能迁移旧命令。替换/追加还验证清空结果和最终完整值。`textExecution` 回执记录阶段、聚焦、键盘事件尝试次数和插入确认；部分执行或结果不确定时不重放。运行时接口不可用时明确失败，不退回按名字或位置猜测。以上逻辑不含 App 名称、bundle ID 或特定页面分支。
 
-自身聚焦、定位、清空、插入之后，事务内允许仅几何差异的有界只读收敛：每阶段最多 5 秒、6 次完整解析，间隔最多 100 ms。先完成全路径身份及非几何属性、绑定和最新根复核，再分类几何差异；身份/路径错误不会被移动的祖先掩盖。每次重新采集，最终仍要求原 frame 的 0.5 pt 容差，返回最新根中的叶快照。超时为 `text_geometry_unsettled`，不重放输入。回执记录累计读取/几何重查次数、超时和最近阶段耗时；Apple 同步调用不能被期限硬中断。实现与三类真机验收见 [输入事务收敛验证](runner-text-convergence-verification.md)。
+自身聚焦、定位、清空、插入之后，事务内允许仅几何差异的有界只读收敛：每阶段最多 5 秒、6 次完整解析，间隔最多 100 ms。先完成全路径身份及非几何属性、绑定和最新根复核，再分类几何差异；身份/路径错误不会被移动的祖先掩盖。每次重新采集，最终仍要求原 frame 的 0.5 pt 容差，返回最新根中的叶快照。超时为 `text_geometry_unsettled`，不重放输入。回执记录累计读取/几何重查次数、超时和最近阶段耗时；Apple 同步调用不能被期限硬中断。实现与三类真机验收见 [测试指南](testing.md#recorded-refactor-acceptance)。

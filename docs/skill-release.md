@@ -25,9 +25,3 @@ npm 的版本详情、安装索引及 tarball 可能分批可见。验证脚本�
 - 使用 GitHub-hosted runner 与 Node 24，npm 至少 11.5.1；发布 job 只有必要的 `contents: read`、`actions: read` 和 `id-token: write` 权限。无需复制本机登录凭据，也不设置 `NODE_AUTH_TOKEN`。
 
 新 trusted publisher 必须在 npm 要求的期限内完成首次发布，因此在 PR 合并、准备正式运行时配置。具体规则以 [npm 官方 Trusted Publishing 文档](https://docs.npmjs.com/trusted-publishers/)为准。
-
-## 0.1.12 的历史例外
-
-2026-10-17，`iphone-use-skill@0.1.12` 在 PR #25 尚未合并时由本机直接提交 npm。这是一次发布流程错误，不是上述 CI 工作流产物；不能补称它具有 GitHub Actions 发布来源，也不能重新发布同版本来补造历史。
-
-该 tgz 的 SHA-1 为 `36d6c4d4b7e88314f83f5f65430162e4ac3ce829`，内容与功能分支 `b24654c` 中的打包源逐文件一致。该提交的 CI 与 Cursor Runner 真机导航验收通过；这些检查不能替代 CI 发布身份。后续新版本按本页流程发布，已有版本的撤回或废弃需单独决定。

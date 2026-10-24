@@ -49,15 +49,11 @@ iphone-use --session "$SESSION" swipe o7 --from-x 315 --from-y 685 --to-x 315 --
 
 支持截图坐标的 tap、double-tap、long-press、pinch、swipe，以及指定完整字段的原生 type/press。只允许一个矩形，必须完全位于屏幕内、面积不超过屏幕的 25%，并与全部保护区域不相交：触点周围、滑动走廊、双指路径、完整输入框及额外 `--protect` 都不能被排除。25% 是首版范围限制，不是正确率保证。如果视频挡住了滑动走廊，应基于新图选择视频外路径，不能让后端移除路径保护。
 
-选框应包含截图中动画的实际边缘；媒体图的边缘像素可能超出控件的逻辑边界。Probe 验收中，紧贴控件边界的选框仍留下变化，将显式选框向外包含 1 屏幕点后区域外变化为 0。这是该样本的选框修正，不是通用自动扩框规则；后端不会按差异自动扩大矩形，面积和保护区域限制仍然适用。
-
 未指定时仍使用原 `srgb-grid-v1`。指定时使用 `srgb-area-excluded-rect-v2`：将矩形外画面分成最多四个互不重叠的矩形，各自先裁剪，再对每个网格单元覆盖的全部原生 sRGB 像素取整数平均，按原 32×64 全局网格密度向上取整分配行列；以剩余画面面积加权计算变化比例，分母不含排除区域。网格单元按原生像素整数边界分区，余数像素也被计入；每个裁剪区域最多处理 1600 万像素，超出时拒绝比较。旧版高质量插值会把极窄的残留动画边缘放大成整格变化，新版不会自动扩大排除框。完整整屏比较仍记录为 `rawScreenChange`，实际接纳使用排除后的 `screenChange`。保护区域仍使用原始图及 48×48 网格，默认整屏 0.01、局部 0、颜色容差 8 不变。
 
 结果同时记录 `ignoredRect`、`rawScreenChange` 和 `exclusionScope=global_comparison_only`。标准与新版 Runner 共用此实现；宿主核对 Runner 的算法、矩形及排除范围回执。旧 Runner 不认识新的算法名，会在输入前拒绝，使用此参数前需构建配套 Runner，不能把旧 Runner 的拒绝当作动作执行。未使用参数的旧路径保持兼容。额外指纹仍受原报文预算约束，过大请求明确拒绝。
 
 此选项只排除动画内容，不保证区域内发生的变化无业务意义，也不能识别视觉上相同的页面替换。不要圈住身份、价格、确认对象等决定动作含义的信息；对这些信息应继续保护。局部媒体噪声采用下述独立比较，不据视频样本放宽局部阈值。动作后的 Runner 判稳不因该选项改变，不能据动作前通过保证视频页面在动作后会被判稳。
-
-本轮实现及实际视频帧对照见[动态页面保护验证](dynamic-screen-guard-validation.md)。
 
 ### 默认比较
 
@@ -68,7 +64,7 @@ iphone-use --session "$SESSION" swipe o7 --from-x 315 --from-y 685 --to-x 315 --
 3. 每个网格单元任意颜色通道的差值大于 8/255 即算变化。变化比例是变化单元数除以总单元数，不是原始像素面积比例，更不是“页面相同的概率”。
 4. 自动保护触摸起点周围 64×64 点；swipe 另保护起终点包围框向外扩展 16 点的区域。保护区域裁剪到屏幕，额外 `--protect` 使用引用可见部分。最多五块局部区域，完整命令受已有 60 KB 宿主预算/64 KiB Runner 请求限制约束。
 5. Runner 保留前台 App 和 App/System Alert 范围检查；屏幕和 scope 的 frame 最多容忍 0.5 点差异，orientation、键盘数量和截图像素尺寸必须一致。不相符则在输入前拒绝。AX 的完整重采样和 type/identifier/label 查询不再进入 tap/swipe 路径；这些动作的 XCTest 内部行为不在此保证内。
-6. Runner 采集一张新截图，与命令携带的原始基准比较。整屏和每一块保护区域都通过各自阈值后，才进入标记 `execution.started` 的输入调用。Runner 不长期保存原始截图或 AX 树。
+6. Runner 采集一张新截图，与命令携带的原始基准比较。整屏和每一块保护区域都通过各自阈值后，才进入标记 `execution.started` 的输入调用。Runner 不用历史截图代替本次采集；文本操作另保留观察对应的 AX 身份用于校验。
 
 默认整屏阈值 0.01、局部阈值 0，属于保守工程初值，不是经过多 App 校准的安全值。局部 0 仍允许颜色噪声底限内的变化和降采样无法分辨的变化。
 
@@ -78,9 +74,9 @@ iphone-use --session "$SESSION" swipe o7 --from-x 315 --from-y 685 --to-x 315 --
 
 原生媒体手势专用的 `native-gesture-edge-v1`、`regionAppearanceMatches` 和相关诊断已移除。坐标手势仍要求整屏及每一块保护区域通过上述网格规则；像素底限、全局/局部阈值、显式视频排除范围没有扩大。文字输入保留完整字段和显式观察绑定的光标区域校验，Apple PNG 不会消除实际光标或动画变化。
 
-标准观察和 HID 输入不依赖常驻媒体流；自有媒体只为显式录屏启动，并保留录屏期间的几何校验。方向改变后拒绝旧坐标，录屏方向证据失效时结束片段、确认自有流停止后重取 Apple PNG。详见 [Apple PNG 统一来源](native-apple-png-observation.md)。
+标准观察和 HID 输入不依赖常驻媒体流；自有媒体只为显式预览或录屏启动，并保留录屏期间的几何校验。方向改变后拒绝旧坐标，录屏方向证据失效时结束片段、确认自有流停止后重取 Apple PNG。详见 [原生后端](apple-native-backend.md#screenshots-and-input)。
 
-现有归一化像素 SHA-256 保留，用于精确帧身份和动作后稳定证据校验；相似度网格是额外的参考特征，不通过 SHA-256 字符差异衡量画面变化，Runner 动作后可返回尚未稳定的动态观察，见[动态页面](dynamic-pages-and-preview.md)；标准模式使用独立的[15 秒有界判稳](native-post-action-stability.md)。
+现有归一化像素 SHA-256 保留，用于精确帧身份和动作后稳定证据校验；相似度网格是额外的参考特征，不通过 SHA-256 字符差异衡量画面变化，Runner 动作后可返回尚未稳定的动态观察，见[Runner 执行结果](actions.md#执行结果)；标准模式使用独立的[15 秒有界判稳](actions.md#动作后观察)。
 
 ## 结果与失败
 
@@ -89,9 +85,9 @@ iphone-use --session "$SESSION" swipe o7 --from-x 315 --from-y 685 --to-x 315 --
 - 超阈值：`screen_changed`、`not_dispatched`、`requiresObservation=true`，已知没有发送输入；原引用失效。
 - 上下文变化或采样/指纹不可用：同样在输入前拒绝，返回具体 reason 并要求重新 observe；缺失证据不是零变化。
 - 参数、坐标、保护引用不合法：宿主或 Runner 拒绝，不发送输入。
-- 输入后的失败、丢失响应、画面不稳定：沿用 unknown 和不重发规则，不把动作前的通过证据当成动作完成。
+- 输入后的执行失败、丢失响应或无法取得足够观察：沿用 unknown 和不重发规则，不把动作前的通过证据当成动作完成。
 
-设备协议现在是 observationVersion=2、actionVersion=9、launchVersion=2、screenGuardVersion=1、frameStabilityVersion=2。actionVersion=9 增加 Runner 编辑按键及 key/keyModifiers 回执核对，见 [Runner 编辑按键](runner-editing-keys.md)。actionVersion=8 增加全屏保护的 Runner Home；Home 确认按键完成，不承诺目的画面判稳。launchVersion=2 增加 Runner terminate/relaunch。actionVersion=7 增加 Runner 长按、双击和双指轨迹；actionVersion=6 增加 Runner append 和 text_view LF 多行检查；此前 actionVersion=5 增加显式滑动速度与两端停留，见 [可控拖动](actions.md#可控拖动)。旧 Runner 在 connect 时返回 runner_needs_rebuild，发布用户需要安装配套 Runner 并 setup，源码开发者需要重新 build-runner，不静默忽略新参数或回退到无校验坐标输入。
+CLI 与 Runner 在连接时协商协议和能力。不兼容时返回 runner_needs_rebuild；发布包用户安装配套版本并 setup，源码开发者重新 build-runner 并显式安装新 App。不静默忽略新参数或回退到无校验坐标输入。
 
 ## 验证边界与剩余风险
 
@@ -105,8 +101,20 @@ AX 与截图的 observe 采集不是原子的，动作前采样与触摸也不�
 
 frameStabilityVersion=2 使用动作后的容差判稳（色差、受限光标例外与最短观察窗口）；输入前 screenGuardVersion=1 的规则不变。见 [执行结果](actions.md#执行结果)。
 
-2026-10-03 的 `.7` 边缘误拒绝及面积平均修正见[动画边缘回归](video-rim-area-validation.md)。
-
 ## 全屏动态画面的覆盖控件
 
-两种模式新增显式坐标 tap 的 `--dynamic-target` 与 `--dynamic-anchor`，采用 `bounded-overlay-contrast-v1` 校验原位置的目标形状和独立页面锚点。该分支不要求视频背景不变；默认整屏规则、其他动作与文字校验不变。范围、限制及真机证据见[动态页面与预览连续性](dynamic-pages-and-preview.md)。
+两种模式新增显式坐标 tap 的 `--dynamic-target` 与 `--dynamic-anchor`，采用 `bounded-overlay-contrast-v1` 校验原位置的目标形状和独立页面锚点。该分支不要求视频背景不变；默认整屏规则、其他动作与文字校验不变。具体用法及边界如下。
+
+默认整屏校验保留。需要点击视频上的返回、暂停等可见控件时，两种模式新增显式、有限范围的校验：
+
+```sh
+"$IPHONE_USE_CLI" --session "$SESSION" tap oN --x X --y Y \
+  --dynamic-target TARGET_X,TARGET_Y,TARGET_W,TARGET_H \
+  --dynamic-anchor ANCHOR_X,ANCHOR_Y,ANCHOR_W,ANCHOR_H --observe
+```
+
+坐标来自当前原图，单位是 `screen_points`。目标框完整包住图标或文字，最大 96×96；另选一个能辨认页面的标签或控件作为锚点，最大 256×96；两框不能重叠，点击必须在目标框内。只支持坐标单击，不支持元素引用、滑动、双击，也不能与 ignore/protect 或放宽阈值组合。
+
+`bounded-overlay-contrast-v1` 比较原坐标处两个局部形状，去除局部平均亮度以容忍视频明暗和半透明控件；不搜索其他位置，不自动扩大范围。`screenChange` 仍报告实际整屏变化，但此模式的接受依据是两个局部匹配，`validationScope=explicit_target_and_anchor`，不是整屏不变。
+
+这不是语义识别或 App 身份证明。控件消失、移动、遮挡、低对比度、文字变化和强背景纹理仍可拒绝；应检查新画面后作决定，不自动重放。不要用无关状态栏图标充当页面锚点，也不要用于提交、支付或破坏性操作。旋转后重新观察并选框。无法选出可靠控件和锚点时应停止，不能靠杀 App 恢复。

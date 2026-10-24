@@ -1,6 +1,6 @@
 # Agent 插件与通用 skill
 
-> 工作流 0.1.13 新增通用 adapter，与 Cursor/OpenCode 的独立 npm 安装器共用同一 skill。Codex、Claude Code、DeepSeek Harness 保留插件入口。CLI 与 skill 分别升级；安装、模型加载及真机任务的验收范围分别记录。
+> 各客户端共享同一份 skill；CLI 与 skill 分别升级。安装、模型实际加载及真机任务需分别验证。
 
 
 [公开网站](https://iphone-use.com) → [安装 CLI](install.md) → 安装本页插件 → [选择模式并连接](first-task.md#connect-in-standard-mode) → 首个真机任务。完整英文路径见 [First task](first-task.md)。
@@ -9,7 +9,7 @@
 
 ## 先检查环境
 
-新安装使用已发布的 CLI。旧 `agentsoma` formula 用户先断开会话、卸载旧 formula，再安装新 formula；遇到 Tap Trust 拒绝时按[单公式信任提示](install.md#homebrew-单公式信任)处理，不默认信任整个 Tap。
+新安装使用已发布的 CLI，安装和升级步骤见[安装指南](install.md)。
 
 ```sh
 brew install HughLee824/tap/iphone-use
@@ -19,7 +19,7 @@ iphone-use --version
 
 正式版及开发工作流的环境以 [first-task](first-task.md) 为准：标准模式已验收 Apple Silicon / macOS 27、Xcode 27、iOS 27；需要设备信任、Developer Mode 和解锁。**只有 Runner 模式需要开发签名与 setup**。包内只读 `scripts/preflight.sh` 检查一次 CLI、Xcode 和输出能力，随后复用检测结果。
 
-本地候选包不在 PATH 时，通过 `IPHONE_USE_CLI=/absolute/path/to/bin/iphone-use sh /absolute/path/to/skill/scripts/preflight.sh --candidate` 检查；源码 `development` 版本使用 `--source`。设备调用继续使用同一个可执行文件。不要为了通过版本检查切到另一个已安装版本。preflight 的兼容版本下限仍为 CLI 0.1.0，但新安装应使用已发布的 iPhone-use 0.3.3；旧 AgentSoma 0.1.0 的版本号不能证明它支持标准模式。
+本地候选包不在 PATH 时，通过 `IPHONE_USE_CLI=/absolute/path/to/bin/iphone-use sh /absolute/path/to/skill/scripts/preflight.sh --candidate` 检查；源码 `development` 版本使用 `--source`。设备调用继续使用同一个可执行文件。不要为了通过版本检查切到另一个已安装版本。preflight 的兼容版本下限仍为 CLI 0.1.0，新安装应从正式发布渠道选择兼容版本；实际能力以所用 CLI 的帮助和会话返回值为准。
 
 安装后重启原本已打开的客户端，使其取得更新的 PATH。插件安装成功不等于 signing/setup 成功。免费 Personal Team 和全新 Mac 配置仍未验收；详见[前置条件和签名](first-task.md#before-you-start)。
 
@@ -80,7 +80,7 @@ dsh --profile desktop --dump-config
 
 若桌面安装尚未将 `dsh` 加入 PATH，可将上面的 `dsh` 替换为 `"/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"`。使用当前桌面 runtime 附带的 CLI，避免另一个版本的 `npx` 命令管理同一 profile。
 
-仓库根目录的 `package.json` 直接暴露现有 `plugins/iphone-use` bundle，无需子目录参数、额外仓库、安装脚本或本地构建。根清单由 `scripts/sync-plugin.py` 从插件清单生成，发布的 npm 包只包含公开插件文件。Git 来源跟随仓库默认分支；需要固定版本时可指定已经存在的提交 SHA。npm 来源可用 `dsh-iphone-use@0.1.13` 固定版本。
+仓库根目录的 `package.json` 直接暴露现有 `plugins/iphone-use` bundle，无需子目录参数、额外仓库、安装脚本或本地构建。根清单由 `scripts/sync-plugin.py` 从插件清单生成，发布的 npm 包只包含公开插件文件。Git 来源跟随仓库默认分支；需要固定版本时可指定已经存在的提交 SHA。npm 来源可用 `dsh-iphone-use@VERSION` 固定版本。
 
 重启 Harness 并开始新会话，要求“使用 iphone-use skill 打开我的 iPhone 设置，进入通用，读图验证并断开”。注册名称为 `iphone-use`，不使用 Codex/Claude 的冒号命名空间。模型通过 `skill` 工具加载指引，截图使用 **read_image**，文本参考文件使用 **read**。完整差异见 [DeepSeek adapter](../skills/iphone-use/references/deepseek-harness.md)。
 
@@ -98,12 +98,6 @@ npm 接受发布后若验证失败，不可重发同版本。先检查公开包�
 
 更新第三方插件时，先在 Plugin Manager 卸载，再通过原来源重装；或使用 `dsh plugin --profile desktop remove dsh-iphone-use` 后执行对应安装命令，再重启 Harness。这些操作只管理插件，不卸载 CLI。
 
-2026-10-17 本地验证：使用桌面版附带的 Harness 0.2.1-rc.1，在隔离的 `DSH_HOME` 中分别安装本地目录与 npm tarball，`--dump-config` 确认插件层；使用真实 Cordis 和 SkillRegistry 验证迁移后的包可注册、加载并卸载 skill，参考文件仍从包内解析。npm 文件清单、ZIP 自包含与可复现检查已通过。这不包含模型驱动的真机操作或 Plugin Manager 图标的视觉验收。
-
-2026-10-17 公开分发验证：从完整 GitHub 仓库地址安装到全新的隔离 profile，解析到提交 `54cd0d59505a4e0b788698161a0f445b8d2b6171`、插件版本 `0.1.10`。真实 Harness runtime 验证 skill 注册、包内参考文件/脚本/图标/语言资源读取和释放；CLI 卸载后配置层与包目录均已移除。[对应 CI](https://github.com/HughLee824/iphone-use/actions/runs/39015577838)通过。
-
-同日通过纯包名 `dsh-iphone-use` 从官方 npm registry 安装到另一全新 profile/cache，解析到 `0.1.10`，通过相同的真实 runtime 检查，CLI 卸载后配置层与包目录均已移除。公开 tarball 的 SHA-1 为 `ef57fc351371f57ebe16b65604a211bfb8fcd351`，SHA-512 integrity 与发布前打包文件及安装后的 lockfile 一致。两种来源均未使用本地目录或本地 tarball 代替公开下载。
-
 npm 发布命令成功返回后，仍须确认公开 registry 的 `latest` 和 tarball 已可用再执行包名安装验收。发布前扫描期间可能暂时出现 `0.0.0-stage` 占位版本；该版本不是可用插件，不能据此认定发布验收通过。
 
 ## 通用 skill（Cursor / OpenCode）
@@ -119,7 +113,7 @@ npx iphone-use-skill uninstall --agent cursor
 
 OpenCode 使用 `--agent opencode`。默认安装到当前项目 `.cursor/skills/iphone-use` 或 `.opencode/skills/iphone-use`；可指定 `--project /absolute/project/path`。加 `--global` 才写入用户专用目录 `~/.cursor/skills/iphone-use` 或 `$XDG_CONFIG_HOME/opencode/skills/iphone-use`（XDG 默认 `~/.config`）。即使全局安装，也应从实际工作项目运行检查，以覆盖项目副本。安装器不会写共享的 `.agents/skills`，不会修改插件清单、配置或缓存。
 
-相同内容重复安装直接返回 `already-installed`；不同内容要求显式 `update`，禁止降级。扫描目标客户端的已知用户级、祖先项目级和嵌套项目级 skill 目录，发现同名 `iphone-use` 或旧 `agentsoma` 时打印路径并拒绝安装/更新。嵌套分类目录、已知兼容目录和符号链接别名也参与检查。未管理目录、本地改动/新增文件和链接目标不会被覆盖或卸载；没有强制覆盖参数。`check` 发现冲突或本地改动退出 2，扫描/操作异常退出 1，完成且无冲突退出 0。
+相同内容重复安装直接返回 `already-installed`；不同内容要求显式 `update`，禁止降级。扫描目标客户端的已知用户级、祖先项目级和嵌套项目级 skill 目录，发现同名 `iphone-use` 时打印路径并拒绝安装/更新。嵌套分类目录、已知兼容目录和符号链接别名也参与检查。未管理目录、本地改动/新增文件和链接目标不会被覆盖或卸载；没有强制覆盖参数。`check` 发现冲突或本地改动退出 2，扫描/操作异常退出 1，完成且无冲突退出 0。
 
 指定 Codex、Claude Code、DeepSeek Harness 作为安装目标会被拒绝并提示使用现有插件，避免同一个客户端增加第二份 skill。这些插件可以与独立安装在 Cursor/OpenCode 专用目录中的 skill 共存。安装器无法枚举组织下发、远程、自定义目录或显式加载的插件；在新会话检查实际 skill 列表，保留一个启用来源。扫描失败不会被视为无冲突。迁移必须显式处理已有来源，安装器不自动卸载或禁用其他工具管理的内容。
 
@@ -139,7 +133,7 @@ OpenCode 使用 `--agent opencode`。默认安装到当前项目 `.cursor/skills
 
 ## 默认实时预览
 
-工作流 0.1.19 在 CLI 支持时默认使用 `connect --device UDID --reuse`。新聊天可发现同一设备的健康连接，无需 handoff 或手工 session ID；已有预览保持原 URL，短任务结束后保留借用的连接。准备阶段需明确保留连接与预览，两次任务顺序执行，并使用相同的 `IPHONE_USE_STATE_DIR`（或默认状态目录）。模式冲突、多个候选、未完成的剪贴板事务或不可用连接会拒绝复用，可用 `sessions --device UDID` 诊断；不会自动关闭旧连接或延长其空闲超时。
+当前工作流在 CLI 支持时默认使用 `connect --device UDID --reuse`。新聊天可发现同一设备的健康连接，无需 handoff 或手工 session ID；已有预览保持原 URL，短任务结束后保留借用的连接。准备阶段需明确保留连接与预览，两次任务顺序执行，并使用相同的 `IPHONE_USE_STATE_DIR`（或默认状态目录）。模式冲突、多个候选、未完成的剪贴板事务或不可用连接会拒绝复用，可用 `sessions --device UDID` 诊断；不会自动关闭旧连接或延长其空闲超时。
 
 三个客户端共用同一份生命周期：任务所属会话连接成功后，在首次操作前默认启动一次预览。**Codex 执行 `preview --no-open`，再在内置浏览器打开返回的 URL；Claude Code 和 DeepSeek Harness 执行 `preview`，由 CLI 打开 Mac 默认浏览器。**不改变 CLI `connect` 本身，standard 和 runner 行为一致。
 
@@ -152,12 +146,12 @@ OpenCode 使用 `--agent opencode`。默认安装到当前项目 `.cursor/skills
 
 示例：“用 runner 打开设置并进入通用，让我在电脑上看操作过程”；或“打开设置并进入通用，不要预览”。首次默认开页无需再问一次偏好，但仍遵守客户端命令权限。
 
-安装、冲突处理和 Cursor 模型驱动真机结果见[通用 skill 验收记录](universal-skill-acceptance.md)。
+安装和冲突处理见上方通用 skill 说明；设备任务的验收方法见[测试指南](testing.md)。
 维护者通过 [CI 发布流程](skill-release.md)发布新的 npm skill 版本，本机仅用于验收。
 
 ## 升级生效与卸载
 
-新插件身份为 `iphone-use@iphone-use`。启用前停用旧 AgentSoma 插件，避免同一手机任务重复匹配；若曾另行安装 `~/.codex/skills/agentsoma`，还需在 Codex 的技能配置中单独停用这份独立 skill，插件停用不会影响它；确认新插件可用后再按需移除旧插件。CLI 与插件版本号独立：本分支的插件/通用 skill 工作流版本为 0.1.13。只升级 Homebrew 不会更新插件。各端更新插件后需开始新会话，确认安装缓存中的 workflow version 为 0.1.13，并包含 `dynamic_or_transitioning` 和 `--dynamic-target` 指引。旧会话不会自动替换已加载的 skill；不要修改已发布版本的附件。
+插件身份为 `iphone-use@iphone-use`。避免同时启用多份操作同一设备的 skill；插件与独立安装的 skill 应按各自安装方式管理。CLI 与插件版本号独立。只升级 Homebrew 不会更新插件。各端更新插件后需开始新会话，核对安装缓存中的 manifest 与 SKILL.md 工作流版本是否对应所选发布版本。旧会话不会自动替换已加载的 skill；不要修改已发布版本的附件。
 
 先断开活跃设备会话，再 `brew update` / `brew upgrade iphone-use`。插件另外更新：
 

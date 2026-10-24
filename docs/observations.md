@@ -31,7 +31,7 @@ iphone-use --session "$SESSION" inspect o2 --offset 20
 
 调用方已知引用时应直接 `inspect oN:eN`，不要从整棵树逐页查几何信息；尚未找到目标时用查询。`inspect oN | rg TEXT` 仅搜索那一页输出。若截图已明确显示目标位置，可通过已有的受守卫约束坐标动作继续；不必为找到一个 AX 名称而反复读取无关页。
 
-[完整 CLI 输出样例](examples/observe/observe.cli.example.txt) 来自本次 Calculator 的 o4，未经改写。文件里的临时路径随会话关闭已失效；实验副本在下方证据目录。实际采集的部分正文如下：
+[CLI 输出样例](examples/observe/observe.cli.example.txt) 由 Calculator 观察整理而来，路径、ID 与时间戳均已脱敏替换，不附原始截图。下方仅展示格式，示例引用不能用于当前设备：
 
 ```text
 [e16] scroll_view "Last Expression"
@@ -54,7 +54,7 @@ iphone-use --session "$SESSION" inspect o2 --offset 20
 - 每个原始节点均有观察内引用，包含默认文本折叠掉的节点；`inspect oN` 可读取它们。引用分配和表示规则都在宿主，Runner 没有观察 ID、短引用或缓存策略。
 - 只缓存最近两次成功观察。新观察不会修改旧快照；第三次成功观察删除最早的 PNG 和 JSON。有效会话结束或空闲到期时删除观察缓存，诊断文件保持原有清理策略。
 - `inspect` 默认每页最多 20 个节点、8 KiB，`--offset` 是所选已采集子树内的节点偏移，下一页命令随输出返回。单个节点的详细 JSON 超过 4 KiB 时，输出指向完整缓存文件的提示。
-- 文本预算未展开的数据标明 `unexpanded`，可继续 inspect。Runner 的源采集仍最多 200 节点；`source_truncated=true` 和 `source_missing=true` 表示原快照没有采集到剩余节点，inspect 不能补取。
+- 文本预算未展开的数据标明 `unexpanded`，可继续 inspect。当前 Runner 导出 XCTest 返回的完整树，不再固定截断为 200 节点；传输或时间超限明确失败。`source_truncated` / `source_missing` 保留用于描述采集不完整的快照，inspect 只能读取已采集数据，不能补取 App 未暴露的节点。采集与精简展示分开，详见[完整 AX 采集](architecture.md#runner-路径定位与完整-ax-采集)。
 - PNG 与保留全部已导出节点属性的 snapshot.json 写入会话目录，文件 0600、目录 0700。JSON 不是完整 XCTest dictionaryRepresentation；缓存文件也不独立证明引用当前有效。
 
 ## 引用与生命周期

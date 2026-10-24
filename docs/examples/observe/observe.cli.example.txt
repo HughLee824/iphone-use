@@ -1,5 +1,5 @@
 observation=o4 refs=current scope=app target="com.apple.calculator" foreground="com.apple.calculator"
-screenshot="/private/tmp/agentsoma-501/example-session/observations/o4/screen.png" pixels=1170x2532 screen_points={"height":844,"width":390,"x":0,"y":0}
+screenshot="/private/tmp/iphone-use-501/example-session/observations/o4/screen.png" pixels=1170x2532 screen_points={"height":844,"width":390,"x":0,"y":0}
 ax=available source_truncated=false ax_started=1000.0 ax_finished=1000.1 screenshot_at=1000.2
 [e8] navigation_bar id="_TtGC7SwiftUI32NavigationStackHosting"
   [e9] button "History"
@@ -29,4 +29,4 @@ ax=available source_truncated=false ax_started=1000.0 ax_finished=1000.1 screens
   [e40] key "0"
   [e41] key "Point"
   [e42] key "Equals"
-snapshot="/private/tmp/agentsoma-501/example-session/observations/o4/snapshot.json" (cached source; inspect o4 for details)
+snapshot="/private/tmp/iphone-use-501/example-session/observations/o4/snapshot.json" (cached source; inspect o4 for details)

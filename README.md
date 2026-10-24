@@ -19,7 +19,7 @@ An agent needs local command execution and the ability to read PNG files. The de
 
 [Website](https://iphone-use.com) · [First iPhone task](docs/first-task.md) · [Client plugins](docs/plugins.md) · [Commands](#commands) · [Documentation](#documentation)
 
-AgentSoma is now **iPhone-use**. [CLI 0.2.1](https://github.com/HughLee824/iphone-use/releases/tag/v0.2.1), Homebrew and the website are public. The release includes the approved Runner Logo and separate plugin 0.1.6 ZIP; the Git marketplace plugin is 0.1.7 with the approved plugin/skill icons. CLI and plugin versions update independently. Public plugin installation and cache upgrades passed; these checks do not establish a new phone-task acceptance. See [channel status and migration](docs/rename-to-iphone-use.md).
+CLI and plugin channels update independently. These guides describe the current source; use [release notes](https://github.com/HughLee824/iphone-use/releases) and installed command help to check version-specific support.
 
 ## Control modes
 
@@ -88,7 +88,7 @@ iphone-use connect --device "$IOS_UDID" --mode runner
 
 `setup` does not change the default mode; use `iphone-use config set mode runner` for that. Source developers follow [signing setup](docs/onboarding.md#源码开发入口), run `build-runner`, then connect with its returned `.xctestrun`. Runner starts the installed app independently in the background and uses authenticated USB loopback communication; `connect` does not reinstall it or require WLAN access. Source-built apps must be explicitly installed before connecting. Runner observations allow `oN:eN` references where supported. Consult support fields and [action contracts](docs/actions.md) for mode-specific behavior.
 
-External agent plugins are optional; see [plugin installation](docs/plugins.md). Historical AgentSoma Runner-release acceptance and current standard-mode acceptance are recorded separately.
+External agent plugins are optional; see [plugin installation](docs/plugins.md). Source validation and physical acceptance are described in the [testing guide](docs/testing.md).
 
 ## Commands
 
@@ -122,7 +122,7 @@ Coordinates use **screen points**, not screenshot pixels. Swipe direction descri
 
 The current source supports a read-only browser view in both standard and runner modes, sharing the owned native video stream without Device Hub. Use a source build that includes `preview`; this does not establish availability in published CLI packages.
 
-The viewer selects the device appearance by exact `productType`: retained official artwork for 23 iPhone 11–16 models, and independently drawn parameterized frames for covered newer models including 17 / Air and 18 Pro / Pro Max. Missing assets or unknown models use a drawn frame; the plain-view toggle has been removed. Portrait and both landscape directions remain supported. The model name and connection indicator sit below the device; the fullscreen button has been removed. When official artwork is available, a temporary review button switches between official and drawn appearances. The page follows the system color scheme and keeps the video size and centre unchanged when switching appearances. All 32 supported identifiers have model-specific opening geometry calibrated against the corresponding retained PNG or public dimensional drawing; see the [calibration inventory](docs/preview-hardware-calibration.md). Restricted newer Apple artwork is not included. See [Product Bezels provenance and separate license](assets/preview/README.md).
+The viewer selects the device appearance by exact `productType`: retained official artwork for 23 iPhone 11–16 models, and independently drawn parameterized frames for covered newer models including 17 / Air and 18 Pro / Pro Max. Missing assets or unknown models use a drawn frame; the plain-view toggle has been removed. Portrait and both landscape directions remain supported. The model name and connection indicator sit below the device; the fullscreen button has been removed. Debug builds provide an appearance comparison button when official artwork is available; Release builds hide it. The page follows the system color scheme and keeps the video size and centre unchanged when switching appearances. All 32 supported identifiers have model-specific opening geometry calibrated against the corresponding retained PNG or public dimensional drawing; see the [calibration inventory](docs/preview-hardware-calibration.md). Restricted newer Apple artwork is not included. See [Product Bezels provenance and separate license](assets/preview/README.md).
 
 ```sh
 iphone-use --session "$SESSION" preview            # Open the browser
@@ -136,11 +136,11 @@ iphone-use --session "$SESSION" preview --stop
 
 CLI 0.3.12 adds `connect --progress`: newline-delimited `connection_progress` JSON events followed by the final connection result. Agents should relay confirmed authorization requests immediately and continue the same pending connection. Enter passcodes only on the iPhone. Confirmation requires a live device log associated with the exact launched Runner PID; timeouts, stalled video and unavailable logging never establish authorization.
 
-For Runner, `connect --device "$IOS_UDID" --mode runner --progress --preview` starts the preview page before authentication; `--port 9876` overrides the configured port. It returns a URL without opening a browser. The page shows conditional startup guidance, a prominent confirmed-authorization notice, and then live media on the same URL after authentication and connection complete. Omitting `--progress` preserves the single-JSON output contract. This dedicated screen is only for confirmed UI Automation authentication; Face ID and other app prompts remain visible in the live feed. See [connection progress and authorization](skills/iphone-use/references/connection-progress.md) and [acceptance scope](docs/runner-authorization-preview.md).
+For Runner, `connect --device "$IOS_UDID" --mode runner --progress --preview` starts the preview page before authentication; `--port 9876` overrides the configured port. It returns a URL without opening a browser. The page shows conditional startup guidance, a prominent confirmed-authorization notice, and then live media on the same URL after authentication and connection complete. Omitting `--progress` preserves the single-JSON output contract. This dedicated screen is only for confirmed UI Automation authentication; Face ID and other app prompts remain visible in the live feed. See [connection progress and authorization](skills/iphone-use/references/connection-progress.md) and [validation procedures](docs/testing.md).
 
 Preview defaults to port **8765**. Use `iphone-use config get preview-port` to inspect the default and `iphone-use config set preview-port 9876` to save a different port for the next start. A one-time `iphone-use --session "$SESSION" preview --port 9877 --no-open` takes precedence. If the port is occupied (`preview_port_in_use`), retry with another port in the same session. Stop an already running preview before changing its port.
 
-The target ceiling is 30 fps with a 960-pixel longest edge; stable 30 fps has not passed acceptance, and resource pressure can cause stalls. Rotation ends the recording segment and may take time to display correctly. There is no audio or browser input control. Closing the tab does not stop preview, and browser requests do not renew the session. Avoid connecting/previewing the same phone in Device Hub concurrently. See [usage, implementation and limitations](docs/local-preview-prototype.md) and [acceptance history](docs/local-preview-validation.md), including failed experiments.
+The target ceiling is 30 fps with a 960-pixel longest edge; stable 30 fps has not passed acceptance, and resource pressure can cause stalls. Rotation ends the recording segment and may take time to display correctly. There is no audio or browser input control. Closing the tab does not stop preview, and browser requests do not renew the session. Avoid connecting/previewing the same phone in Device Hub concurrently. See [usage, implementation and limitations](docs/local-preview.md) and [testing procedures](docs/testing.md).
 
 ## Agent integration
 
@@ -237,6 +237,8 @@ iPhone-use is in early development. Real-device validation covers the environmen
 
 ## Documentation
 
+[Documentation index](docs/README.md) includes public guides, command contracts and maintenance procedures.
+
 The complete first-task and architecture guides are in English; detailed command and signing guides are in Chinese. Both README versions cover the same getting-started workflow.
 
 | Guide | Contents |
@@ -247,7 +249,7 @@ The complete first-task and architecture guides are in English; detailed command
 | [Device and app discovery](docs/discovery.md) | Discovery commands, pagination, and CoreDevice diagnostics. |
 | [Observations](docs/observations.md) · [Sample output](docs/examples/observe/README.md) | Screenshots, AX text, cached queries, references, and examples. |
 | [Actions](docs/actions.md) · [Screen guard](docs/screen-guard.md) | Input semantics, controlled dragging, stability, and pre-dispatch checks. |
-| [Local browser preview](docs/local-preview-prototype.md) · [Acceptance history](docs/local-preview-validation.md) | Source preview in both modes, recording coexistence, performance and rotation limits. |
+| [Local browser preview](docs/local-preview.md) · [Testing](docs/testing.md) | Source preview in both modes, recording coexistence, performance and rotation limits. |
 | [Architecture and repository layout](docs/architecture.md) | Component responsibilities, session lifecycle, and tracked versus local files. |
 | [Release workflow](docs/release-setup.md) | Building, verifying, and distributing the CLI and Runner. |
 
