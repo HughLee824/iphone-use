@@ -30,8 +30,12 @@ public enum RunnerSetup {
         return manifest.releaseVersion
     }
 
-    public static func setup(device: String, profile: String?, identity: String?, team: String?, bundleID: String?)
-        throws -> [String: Any] {
+    public static func setup(
+        device: String, profile: String?, identity: String?, team: String?, bundleID: String?,
+        previewPort: Int? = nil, onProgress: (([String: Any]) -> Void)? = nil
+    ) throws -> [String: Any] {
+        let progress = RunnerSetupProgress(onProgress: onProgress)
+        progress.emit("checking", "Checking the packaged Runner, Xcode and device.")
         let package = try RunnerPackage.installed()
         _ = try SigningTool.require("/usr/bin/xcrun", ["--find", "xcodebuild"], code: "xcode_unavailable")
         let details = try CoreDevice.read(["device", "info", "details", "--device", device])
@@ -46,6 +50,7 @@ public enum RunnerSetup {
         let old = try? readRecord(device: udid, root: root)
         let bundleID = bundleID ?? old?.bundleID ?? "com.iphone-use.runner.xctrunner"
         try RunnerBuild.validateSigning(team: team, bundleID: bundleID)
+        progress.emit("signing", "Selecting development signing and preparing the packaged Runner.")
         let explicitProfile = profile.map { URL(fileURLWithPath: $0).standardizedFileURL }
         let savedProfile = old.map {
             root.appendingPathComponent("prepared/\($0.directory)/IPhoneUseRunner.app/embedded.mobileprovision")
@@ -66,16 +71,19 @@ public enum RunnerSetup {
                 package: package, profile: signing, identity: selectedIdentity,
                 target: Target(device: udid, bundleID: bundleID), root: root)
         }
-        let session = try deployAndVerify(
-            device: udid, products: root.appendingPathComponent("prepared/\(prepared.directory)"))
+        let products = root.appendingPathComponent("prepared/\(prepared.directory)")
+        progress.emit("installing", "Installing the prepared Runner on the iPhone.")
+        try deploy(device: udid, products: products)
+        let verification = try RunnerSetupVerification().run(
+            device: udid, products: products, previewPort: previewPort, progress: progress)
         try writeRecord(prepared, root: root)
+        progress.emit("completed", "Runner setup verified; the verification session and video source are closed.")
         return [
             "device": udid, "releaseVersion": package.manifest.releaseVersion, "runnerVersion": prepared.runnerVersion,
             "bundleId": bundleID, "team": signing.team,
             "profileExpires": ISO8601DateFormatter().string(from: signing.expires), "reused": reusable != nil,
-            "compiled": false, "verificationSession": session,
-            "verified": ["connection", "observation-capture", "disconnect"]
-        ]
+            "compiled": false
+        ].merging(verification) { _, value in value }
     }
 
     private static func reusableRecord(
@@ -93,7 +101,7 @@ public enum RunnerSetup {
         return reusable
     }
 
-    private static func deployAndVerify(device udid: String, products: URL) throws -> String {
+    private static func deploy(device udid: String, products: URL) throws {
         // Only explicit setup deploys the signed app. Ordinary connect reuses it
         // and verifies the live protocol without resetting per-app permissions.
         do {
@@ -106,32 +114,6 @@ public enum RunnerSetup {
                 ["device", "install", "app", "--device", udid],
                 trailingArguments: [products.appendingPathComponent("IPhoneUseRunner.app").path], timeout: 60)
         }
-        // Keep a prepared directory after an uncertain connection/cleanup failure: a host may still own it.
-        let connection = try SessionClient.connect(
-            device: udid, xctestrun: products.appendingPathComponent("Runner.xctestrun"), idleTimeout: IdleTimeout("3m")
-        )
-        guard let session = connection["session"] as? String else {
-            throw IPhoneUseError("setup_verification_failed", "Connection did not return a session")
-        }
-        var closed = false
-        defer { if !closed { _ = try? SessionClient.call(session: session, operation: "disconnect") } }
-        let observation = try SessionClient.call(session: session, operation: "observe")
-        guard observation["ok"] as? Bool == true else {
-            throw IPhoneUseError(
-                "setup_verification_failed",
-                """
-                Runner observation failed in session \(session):\
-                 \(observation["error"] ?? "no diagnostic returned")
-                """)
-        }
-        let cleanup = try SessionClient.call(session: session, operation: "disconnect")
-        guard cleanup["ok"] as? Bool == true else {
-            throw IPhoneUseError(
-                "setup_cleanup_failed",
-                "Runner verification did not close cleanly; inspect session \(session) before retrying")
-        }
-        closed = true
-        return session
     }
 
     public static func connect(

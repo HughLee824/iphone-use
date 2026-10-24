@@ -46,7 +46,7 @@ public enum SessionClient {
 
     public static func connect(
         device: String, xctestrun: URL, idleTimeout: IdleTimeout, modeSource: String = "explicit_runner",
-        previewPort: Int? = nil, onProgress: (([String: Any]) -> Void)? = nil
+        previewPort: Int? = nil, previewOptional: Bool = false, onProgress: (([String: Any]) -> Void)? = nil
     ) throws -> [String: Any] {
         guard FileManager.default.isReadableFile(atPath: xctestrun.path),
             xctestrun.pathExtension == "xctestrun"
@@ -57,7 +57,7 @@ public enum SessionClient {
         }
         return try connect(
             device: device, runnerPath: xctestrun.path, backend: "xctest", idleTimeout: idleTimeout,
-            modeSource: modeSource, previewPort: previewPort, onProgress: onProgress)
+            modeSource: modeSource, previewPort: previewPort, previewOptional: previewOptional, onProgress: onProgress)
     }
 
     public static func connectNative(
@@ -73,7 +73,8 @@ public enum SessionClient {
     private static func connect(
         device: String, runnerPath: String, backend: String, idleTimeout: IdleTimeout,
         endpointInventory: String? = nil,
-        modeSource: String, previewPort: Int? = nil, onProgress: (([String: Any]) -> Void)? = nil
+        modeSource: String, previewPort: Int? = nil, previewOptional: Bool = false,
+        onProgress: (([String: Any]) -> Void)? = nil
     ) throws -> [String: Any] {
         umask(0o077)
         let session = "s" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
@@ -83,7 +84,7 @@ public enum SessionClient {
             session: session, device: device, xctestrun: runnerPath,
             idleTimeoutSeconds: idleTimeout.seconds, backend: backend,
             nativeEndpointInventory: endpointInventory,
-            modeSource: modeSource, startupPreviewPort: previewPort)
+            modeSource: modeSource, startupPreviewPort: previewPort, startupPreviewOptional: previewOptional)
         try JSONEncoder().encode(config).write(to: paths.config, options: .atomic)
         FileManager.default.createFile(atPath: paths.log.path, contents: nil)
         let log = try FileHandle(forWritingTo: paths.log)

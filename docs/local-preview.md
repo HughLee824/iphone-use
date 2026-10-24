@@ -58,7 +58,13 @@ export SESSION="SESSION_FROM_CONNECT"
 
 端口占用返回 `preview_port_in_use`，不会自动换端口或结束占用者。Agent 可以在同一会话选择其他端口后显式重试，无需重连手机；Runner 和 standard 都在端口绑定成功后才开启预览所需的媒体，不会因端口冲突中断已有录屏。运行中的预览在没有显式 `--port` 时继续返回原 URL；显式指定不同端口返回 `preview_already_running`，需先 `preview --stop` 再启动，`--stop` 不能与 `--port` 混用。
 
-同一预览实例的地址保持不变，刷新网页或重复执行启动命令会沿用当前实例；停止后再启动或重连会话时应使用新返回的 URL。页面 favicon 使用项目官网同款 `assets/brand/favicon-64.png`，字节嵌入 CLI，通过当前随机路径下的本地接口提供，无需联网或依赖工作目录。
+同一配置目录、端口和设备的稳定地址可跨停止、重启及重连复用；客户端始终核对命令返回的 URL，只有地址实际改变（例如令牌撤销）时才导航原标签页。页面 favicon 使用项目官网同款 `assets/brand/favicon-64.png`，字节嵌入 CLI，通过当前随机路径下的本地接口提供，无需联网或依赖工作目录。
+
+### Setup 授权前预览
+
+发布包的 `setup --progress --preview [--port PORT]` 复用 Runner 连接的早期视频机制：安装完成后先开启 CoreDevice 视频，再启动 Runner 验证。进度记录中的 `previewURL` 可在等待授权时打开，手机认证由用户完成。交互式终端默认启用；重定向输出默认关闭，Agent 必须显式选择。预览失败通过 `previewError` 报告，不重试或抢占媒体，用户仍可直接在手机上授权。
+
+客户端记录并复用该设备的原标签页。setup 结束后视频源随验证会话清理，页面保留并清空旧帧；后续 `connect --progress --preview` 使用同一配置目录、端口和设备时返回同一 URL，无需重新开页。setup 不自动打开浏览器，也不遗留可操作的验证会话。
 
 ### Agent 手势提示
 

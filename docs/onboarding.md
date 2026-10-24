@@ -33,6 +33,17 @@ iphone-use setup --device "$IOS_UDID"
 iphone-use setup --device "$IOS_UDID" --profile "$DEVELOPMENT_PROFILE" --team "$APPLE_TEAM_ID"
 ```
 
+交互式终端中，setup 默认输出进度并在启动 Runner 前开启只读视频；不自动打开浏览器。脚本和 Agent 应显式使用：
+
+```sh
+iphone-use setup --device "$IOS_UDID" --progress --preview
+# 可选：--port 9876；不需要预览时使用 --progress --no-preview
+```
+
+`--progress` 输出 `setup_progress` 和原有 `connection_progress` NDJSON，最后一行是最终结果；读取早期 `previewURL` 后复用原标签页，不要等待 setup 结束才开页。`requiresUserAction=true` 时须在手机上完成认证，视频不依赖 Runner 授权。检查、重签和安装阶段不启动视频。预览不可用时通过 `previewError` 报告，仍继续一次 Runner 验证，用户可直接看手机完成授权；不会重放启动、抢占端口或切换设备。成功后返回 `preview.state=stopped` 和清理结果，临时会话及视频源均已释放，常驻只读页面保留并清空旧帧。失败时仍清理已有验证会话；清理未确认不能视为 setup 成功。
+
+重定向 stdout 时默认仍返回单份 JSON，不启用预览；`--no-progress` 可显式关闭进度，`--no-preview` 可关闭预览。显式 `--preview` 需要进度开启，`--port` 需要预览开启。命令不改写用户的默认模式或预览端口。旧 CLI 若没有这些参数，应保留原 setup 形式并在手机上处理认证。
+
 默认手机 App bundle ID 为 `com.iphone-use.runner.xctrunner`。若 profile 只授权自己的标识，首次 setup 添加 `--bundle-id com.example.iphone-use.xctrunner`；这里传的是 **App 的完整 bundle ID**，之后会保存复用。存在多个匹配开发证书时，用 `--identity` 传 `security find-identity -v -p codesigning` 中的证书 SHA-1。该标识用于本机选取私钥，不是私钥内容。
 
 setup 依次校验发布文件和 CLI 配对、设备版本、profile 的设备/bundle ID/有效期/证书匹配，复制并重签 Runner，通过 CoreDevice 在设备安装，随后独立后台启动并经 USB 本地通信验证握手、截图和正常退出。只有全部成功才更新该设备的准备记录。`compiled:false` 表示这条用户路径没有编译；`verified` 的截图项不代表已验证某个业务 App 的 AX 树或交互效果。

@@ -83,6 +83,7 @@ final class RunnerAuthorization {
     private var phase = "starting"
     private var authorization = "unknown"
     private var previewURL: String?
+    private var previewError: String?
     private var failure: String?
     private var stopped = false
 
@@ -172,6 +173,7 @@ final class RunnerAuthorization {
         lock.lock(); phase = "failed"; failure = message; persist(); lock.unlock()
     }
     func setPreviewURL(_ url: String) { lock.lock(); previewURL = url; persist(); lock.unlock() }
+    func setPreviewError(_ message: String) { lock.lock(); previewError = message; persist(); lock.unlock() }
     func snapshot() -> [String: Any] { lock.lock(); defer { lock.unlock() }; return facts() }
 
     private func facts() -> [String: Any] {
@@ -204,7 +206,8 @@ final class RunnerAuthorization {
                                 Waiting for Runner. If Enable UI Automation appears on the iPhone, complete\
                                  authentication there; waiting alone does not confirm a prompt.
                                 """)),
-            "previewURL": previewURL as Any? ?? NSNull()
+            "previewURL": previewURL as Any? ?? NSNull(),
+            "previewError": previewError as Any? ?? NSNull()
         ]
     }
     private func persist() { try? saveJSON(facts(), to: file) }

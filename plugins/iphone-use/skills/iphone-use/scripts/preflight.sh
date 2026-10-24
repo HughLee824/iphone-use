@@ -57,6 +57,11 @@ fi
 if text_help=$("$cli" text-prepare --help 2>/dev/null) && printf '%s\n' "$text_help" | grep -q -- '--field-rect'; then
   echo 'Scoped text preparation: available. Before the first input, text-prepare once; then inspect the returned screenshot and focus the field if needed.'
 fi
+if setup_help=$("$cli" setup --help 2>/dev/null) &&
+   printf '%s\n' "$setup_help" | grep -q -- '--preview' &&
+   printf '%s\n' "$setup_help" | grep -q -- '--progress'; then
+  echo 'Setup preview: available. For an authorized packaged Runner setup, use setup --progress --preview (or --no-preview when opted out); relay progress and reuse the original tab before authorization completes. Setup closes its verification session and video source.'
+fi
 connect_help=$("$cli" connect --help)
 if printf '%s\n' "$connect_help" | grep -q -- '--reuse'; then
   echo 'Session reuse: available. Use connect --reuse; record reused/lifecycle. Borrowed sessions and their preview remain running at task completion unless explicitly asked to disconnect. sessions lists existing endpoints.'

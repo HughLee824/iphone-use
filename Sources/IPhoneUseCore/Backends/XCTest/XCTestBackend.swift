@@ -79,7 +79,17 @@ final class XCTestBackend: SessionBackend {
         return try awaitRunner(runner, launched: launched)
     }
 
-    private func startConfiguredPreview() throws {
+    func startConfiguredPreview() throws {
+        do { try startPreviewBeforeRunner() } catch {
+            // Setup can still be verified using the physical screen. Never
+            // retry video, launch Runner twice, or swallow cancellation.
+            try recordingCancellation.check()
+            guard config.startupPreviewOptional == true else { throw error }
+            authorization.setPreviewError(String(describing: error))
+        }
+    }
+
+    private func startPreviewBeforeRunner() throws {
         if let port = config.startupPreviewPort {
             let options = NativePreviewOptions(
                 port: try PreviewConfiguration.validate(port: port), explicitPort: true)
@@ -87,7 +97,8 @@ final class XCTestBackend: SessionBackend {
             if let url = preview?["url"] as? String { authorization.setPreviewURL(url) }
             // CoreDevice video does not need XCTest authorization. Start it
             // before launching Runner and keep this stream throughout startup.
-            _ = try recording?.startPreview(options: options, duringStartup: true)
+            let status = try recording?.startPreview(options: options, duringStartup: true)
+            if let error = status?["error"] as? String { authorization.setPreviewError(error) }
         }
     }
 

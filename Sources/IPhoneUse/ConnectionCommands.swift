@@ -1,6 +1,7 @@
 import ArgumentParser
 import IPhoneUseCore
 import Foundation
+import Darwin
 
 struct BuildRunner: ParsableCommand {
     static let configuration = CommandConfiguration(
@@ -96,13 +97,7 @@ struct Connect: ParsableCommand {
             guard port == nil || preview else { throw ValidationError("connect --port requires --preview") }
             let previewPort =
                 preview ? try PreviewConfiguration().startFields(port: port)["port"] as? Int : nil
-            let report: (([String: Any]) -> Void)? =
-                progress
-                ? { value in
-                    if var data = try? jsonData(value) {
-                        data.append(10); FileHandle.standardOutput.write(data)
-                    }
-                } : nil
+            let report = progressReporter(enabled: progress)
             if reuse,
                 let existing = try SessionDiscovery.reuse(
                     device: device, mode: selection.mode,
@@ -190,14 +185,39 @@ struct Setup: ParsableCommand {
     @Option(help: "Apple development team ID to select.") var team: String?
     @Option(help: "Runner app's bundle ID on iPhone; saved for subsequent setup and connections.")
     var bundleID: String?
+    @Flag(inversion: .prefixedNo, help: "Stream setup and connection progress JSON lines; defaults on in a terminal.")
+    var progress: Bool?
+    @Flag(
+        inversion: .prefixedNo,
+        help: "Preview before authorization; defaults on in a terminal. Requires progress; never opens a browser.")
+    var preview: Bool?
+    @Option(help: "Port for setup preview; otherwise use the configured port (default 8765).") var port: Int?
 
     mutating func run() throws {
         try output {
-            [
+            let interactive = isatty(STDOUT_FILENO) == 1
+            let showProgress = progress ?? interactive
+            let showPreview = preview ?? (interactive && showProgress)
+            guard !showPreview || showProgress else {
+                throw ValidationError("setup --preview requires --progress")
+            }
+            guard port == nil || showPreview else { throw ValidationError("setup --port requires --preview") }
+            let previewPort = showPreview ? try PreviewConfiguration().startFields(port: port)["port"] as? Int : nil
+            return [
                 "ok": true,
                 "result": try RunnerSetup.setup(
-                    device: device, profile: profile, identity: identity, team: team, bundleID: bundleID)
+                    device: device, profile: profile, identity: identity, team: team, bundleID: bundleID,
+                    previewPort: previewPort, onProgress: progressReporter(enabled: showProgress))
             ]
+        }
+    }
+}
+
+private func progressReporter(enabled: Bool) -> (([String: Any]) -> Void)? {
+    guard enabled else { return nil }
+    return { value in
+        if var data = try? jsonData(value) {
+            data.append(10); FileHandle.standardOutput.write(data)
         }
     }
 }
