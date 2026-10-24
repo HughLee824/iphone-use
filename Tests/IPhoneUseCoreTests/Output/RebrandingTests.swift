@@ -10,18 +10,18 @@ final class RebrandingTests: XCTestCase {
         return root
     }
 
-    func testStateDirectoryUsesNewDefaultAndOnlyCurrentOverride() {
+    func testStateDirectoryUsesDefaultAndOnlyRecognizedOverride() {
         XCTAssertEqual(SessionPaths.stateRoot(environment: [:]).path, "/private/tmp/iphone-use-\(getuid())")
         XCTAssertEqual(
             SessionPaths.stateRoot(environment: ["IPHONE_USE_STATE_DIR": "/private/tmp/fixture"]).path,
             "/private/tmp/fixture")
         XCTAssertEqual(
-            SessionPaths.stateRoot(environment: ["AGENTSOMA_STATE_DIR": "/private/tmp/old"]),
+            SessionPaths.stateRoot(environment: ["OTHER_TOOL_STATE_DIR": "/private/tmp/old"]),
             SessionPaths.defaultRoot)
         XCTAssertEqual(
             SessionPaths.stateRoot(environment: [
                 "IPHONE_USE_STATE_DIR": "/private/tmp/new",
-                "AGENTSOMA_STATE_DIR": "/private/tmp/old"
+                "OTHER_TOOL_STATE_DIR": "/private/tmp/old"
             ]).path,
             "/private/tmp/new")
     }

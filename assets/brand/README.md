@@ -51,7 +51,6 @@ The approved assets are merged into this repository and deployed by the separate
 [iphone-use-website repository](https://github.com/HughLee824/iphone-use-website).
 Future asset edits still need to be copied and deployed there separately. Published
 0.2.0 release archives retain their original packaged icon.
-Previous AgentSoma assets remain available in [Git history](https://github.com/HughLee824/iphone-use/tree/8410e7d/assets/brand).
 Local design archives and generated preview images are not production inputs.
 
 ## Re-export

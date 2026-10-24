@@ -40,18 +40,18 @@ test('install, exact repeat and uninstall keep other clients and files untouched
   assert.ok(await readFile(join(f.home, '.codex/plugins/cache/iphone-use/iphone-use/0.1.11/skills/iphone-use/SKILL.md')));
 });
 
-test('global, ancestor, nested, quoted-name and legacy duplicates block installation', async (t) => {
-  for (const where of ['global', 'ancestor', 'nested', 'legacy', 'quoted']) {
+test('global, ancestor, nested, quoted-name and compatibility-root duplicates block installation', async (t) => {
+  for (const where of ['global', 'ancestor', 'nested', 'compatibility', 'quoted']) {
     const f = await fixture(t);
     const child = join(f.project, 'apps/web'); await mkdir(child, { recursive: true });
     const paths = {
       global: join(f.home, '.agents/skills/iphone-use'),
       ancestor: join(f.project, '.claude/skills/category/iphone-use'),
       nested: join(child, '.cursor/skills/category/iphone-use'),
-      legacy: join(f.home, '.codex/skills/agentsoma'),
+      compatibility: join(f.home, '.codex/skills/iphone-use'),
       quoted: join(f.home, '.cursor/skills/category/alias'),
     };
-    await skill(paths[where], where === 'legacy' ? 'agentsoma' : 'iphone-use');
+    await skill(paths[where]);
     if (where === 'quoted') await writeFile(join(paths[where], 'SKILL.md'), '---\nname: "iphone-use"\ndescription: test\n---\n');
     const project = where === 'ancestor' ? child : f.project;
     const report = await f.call('check', { project });

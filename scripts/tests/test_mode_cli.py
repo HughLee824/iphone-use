@@ -23,7 +23,7 @@ class ModeCLITests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="ip-isolated-", dir="/private/tmp") as temporary:
             root = Path(temporary)
             # Malformed current preferences and Runner records must not affect the isolated store.
-            existing = [root / ".iphone-use/config.json", root / ".agentsoma/config.json",
+            existing = [root / ".iphone-use/config.json", root / ".other-tool/config.json",
                         root / "Library/Application Support/iphone-use/devices/fixture.json"]
             for path in existing:
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -112,11 +112,11 @@ class ModeCLITests(unittest.TestCase):
                 self.assertEqual(reply["error"]["code"], "runner_not_built")
             self.assertFalse((Path(temporary) / ".iphone-use/config.json").exists())
 
-    def test_old_preferences_are_ignored_and_preserved(self):
+    def test_unrelated_preferences_are_ignored_and_preserved(self):
         for contents in ['{"version":1,"mode":"runner"}', 'invalid JSON']:
             with self.subTest(contents=contents), tempfile.TemporaryDirectory(prefix="ip-use-", dir="/private/tmp") as temporary:
                 home = Path(temporary)
-                old = home / ".agentsoma/config.json"
+                old = home / ".other-tool/config.json"
                 old.parent.mkdir(mode=0o700)
                 old.write_text(contents)
                 code, reply = self.call(["config", "get", "mode"], home)
@@ -137,7 +137,7 @@ class ModeCLITests(unittest.TestCase):
     def test_old_runner_preparation_is_ignored_and_preserved(self):
         with tempfile.TemporaryDirectory(prefix="ip-use-", dir="/private/tmp") as temporary:
             home = Path(temporary)
-            old = home / "Library/Application Support/AgentSoma/devices"
+            old = home / "Library/Application Support/OtherTool/devices"
             old.mkdir(parents=True)
             record = old / "old-device.json"
             record.write_text('{}')

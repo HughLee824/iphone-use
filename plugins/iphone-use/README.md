@@ -7,7 +7,7 @@ Eyes and hands for agents operating a real iPhone. This self-contained package s
 
 [Website](https://iphone-use.com) · [First task](https://github.com/HughLee824/iphone-use/blob/main/docs/first-task.md) · [中文安装指南](https://github.com/HughLee824/iphone-use/blob/main/docs/plugins.md)
 
-Install the CLI with `brew install HughLee824/tap/iphone-use`. Migrate from the old formula and resolve any Tap Trust refusal using the [installation guide](https://github.com/HughLee824/iphone-use/blob/main/docs/install.md#homebrew-单公式信任); trust only a reviewed formula, not the entire Tap by default. Installing this plugin does not install the CLI, log in to Apple, or provision a device. Read `skills/iphone-use/SKILL.md` for the environment check and task workflow. All referenced local files are included; the installed plugin does not depend on the maintainer's checkout.
+Install the CLI with `brew install HughLee824/tap/iphone-use`. See the [installation guide](https://github.com/HughLee824/iphone-use/blob/main/docs/install.md) for prerequisites and upgrades. Installing this plugin does not install the CLI, log in to Apple, or provision a device. Read `skills/iphone-use/SKILL.md` for the environment check and task workflow. All referenced local files are included; the installed plugin does not depend on the maintainer's checkout.
 
 From the public Git repository:
 
@@ -21,7 +21,7 @@ claude plugin marketplace add HughLee824/iphone-use
 claude plugin install iphone-use@iphone-use
 ```
 
-Disable the old AgentSoma plugin before enabling iPhone-use to avoid duplicate device instructions. CLI and plugin versions are independent. Start a new client session. Invoke `$iphone-use:iphone-use` in Codex or `/iphone-use:iphone-use` in Claude Code, followed by:
+Enable only one copy of the skill to avoid duplicate device instructions. CLI and plugin versions are independent. Start a new client session. Invoke `$iphone-use:iphone-use` in Codex or `/iphone-use:iphone-use` in Claude Code, followed by:
 
 > Open Settings on my iPhone, navigate to General, read the screenshot to verify the page, then disconnect. Do not change any settings.
 

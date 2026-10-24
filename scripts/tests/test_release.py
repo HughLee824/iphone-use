@@ -75,8 +75,8 @@ class ReleaseTests(unittest.TestCase):
                 tar.addfile(member, io.BytesIO(b""))
         Path(str(self.archive) + ".sha256").write_text(f"{sha256(self.archive.read_bytes())}  {self.archive.name}\n")
 
-    def test_legacy_command_is_rejected_even_when_identical(self):
-        self.write_archive(modify_files=lambda files: files.update({"bin/agentsoma": b"CLI"}))
+    def test_extra_command_is_rejected_even_when_identical(self):
+        self.write_archive(modify_files=lambda files: files.update({"bin/extra-command": b"CLI"}))
         with self.assertRaisesRegex(ValueError, "unexpected file"):
             inspect_archive(self.archive)
 
@@ -220,7 +220,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn('libexec.install "bin", "libexec"', formula)
         self.assertIn('bin.install_symlink libexec/"bin/iphone-use"', formula)
         self.assertNotIn("latest/download", formula)
-        self.assertNotIn("agentsoma", formula)
+        self.assertEqual(formula.count("bin.install_symlink"), 1)
         self.assertNotIn("conflicts_with", formula)
 
     def test_public_formula_rejects_dirty_candidate_but_local_test_can_install_it(self):

@@ -18,7 +18,7 @@ This package contains instructions and an installer, not the iPhone-use CLI. Ins
 
 - Identical managed installs are a no-op. Different payloads require explicit `update`.
 - Existing unmanaged directories, local edits/additions, links at the target, and linked destination parents are never overwritten or removed.
-- Installation/update checks same-name `iphone-use` and legacy `agentsoma` skills in the selected client's known local/global compatibility roots, ancestor roots up to the Git worktree root, and nested project roots. Nested skill category folders and symlink aliases are inspected. Conflicts block mutation and print their paths; there is no `--force` bypass.
+- Installation/update checks same-name `iphone-use` skills in the selected client's known local/global compatibility roots, ancestor roots up to the Git worktree root, and nested project roots. Nested skill category folders and symlink aliases are inspected. Conflicts block mutation and print their paths; there is no `--force` bypass.
 - Codex, Claude Code and DeepSeek Harness remain plugin-managed installation targets. Requests to add a standalone copy for these clients are rejected. Their plugin caches are not Cursor/OpenCode skill discovery roots and are not changed by this installer.
 - `check` prints JSON and exits 2 for conflicts or unmanaged/modified targets. Operational failures exit 1. A clean check (including no installation) exits 0.
 - Update/uninstall only touch this installer's unmodified, recorded files. A sibling lock serializes installer operations; if interrupted, inspect the destination and any `.iphone-use-stage-*` recovery directory before removing a stale `.iphone-use-install.lock`.

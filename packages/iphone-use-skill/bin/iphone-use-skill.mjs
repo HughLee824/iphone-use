@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const markerName = '.iphone-use-install.json';
 const owner = 'iphone-use-skill';
-const names = new Set(['iphone-use', 'agentsoma']);
+const names = new Set(['iphone-use']);
 const targets = {
   cursor: { project: '.cursor/skills', global: '.cursor/skills', roots: ['.cursor/skills', '.agents/skills', '.claude/skills', '.codex/skills'] },
   opencode: { project: '.opencode/skills', global: '.config/opencode/skills', roots: ['.opencode/skills', '.agents/skills', '.claude/skills'] },
