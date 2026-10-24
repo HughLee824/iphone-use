@@ -134,3 +134,51 @@ class GovernanceTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ActionlintInstallerTests(unittest.TestCase):
+    def test_archive_rejects_bad_digest_and_symlink_binary(self):
+        import hashlib
+        import io
+        import tarfile
+        installer = load('install-actionlint')
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            archive = directory / 'tool.tar.gz'
+            for symlink in (False, True):
+                with tarfile.open(archive, 'w:gz') as bundle:
+                    for name in ('actionlint', 'LICENSE.txt'):
+                        entry = tarfile.TarInfo(name)
+                        data = b'fixture'
+                        if name == 'actionlint' and symlink:
+                            entry.type = tarfile.SYMTYPE
+                            entry.linkname = '/tmp/untrusted'
+                            bundle.addfile(entry)
+                        else:
+                            entry.size = len(data)
+                            bundle.addfile(entry, io.BytesIO(data))
+                with self.assertRaisesRegex(ValueError, 'checksum'):
+                    installer.extract(archive, directory, '0' * 64)
+                digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+                if symlink:
+                    with self.assertRaisesRegex(ValueError, 'regular actionlint'):
+                        installer.extract(archive, directory, digest)
+                else:
+                    installer.extract(archive, directory, digest)
+                    self.assertEqual((directory / 'actionlint').read_bytes(), b'fixture')
+
+    def test_download_failure_does_not_execute_payload(self):
+        installer = load('install-actionlint')
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'scripts').mkdir()
+            (root / 'scripts/actionlint.json').write_text(json.dumps({
+                'version': '1.7.12', 'sha256': {'linux_amd64': '0' * 64}}))
+            with patch.object(installer, 'ROOT', root), patch.object(installer, 'platform_key', return_value='linux_amd64'), \
+                    patch('sys.argv', ['install-actionlint.py']), \
+                    patch.object(installer.subprocess, 'run', side_effect=subprocess.CalledProcessError(1, 'curl')), \
+                    patch.object(installer, 'version_of') as execute:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    installer.main()
+                execute.assert_not_called()
+                self.assertFalse((root / '.build/tools/actionlint-1.7.12').exists())

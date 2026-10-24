@@ -40,6 +40,8 @@ jobs:
           swift --version
       - name: Install SwiftLint
         run: python3 scripts/install-swiftlint.py
+      - name: Install Actionlint
+        run: python3 scripts/install-actionlint.py
       - name: Run shared engineering checks
         run: python3 scripts/check.py
       - name: Validate and package the client plugin

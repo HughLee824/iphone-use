@@ -37,3 +37,23 @@ class EngineeringChecksTests(unittest.TestCase):
                 CHECKS.main()
                 self.assertEqual(quick.call_count, quick_count)
                 self.assertEqual(native.call_count, native_count)
+
+    def test_acceptance_checks_only_run_help_and_fake_transport_self_test(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for layout in ('xcode', 'native'):
+                directory = root / layout
+                directory.mkdir()
+                for name in ('IPhoneUseCore', 'IPhoneUseRunnerSupport', 'AppleNativeBridge'):
+                    object_path = directory / f'{name}.o' if layout == 'xcode' else directory / f'{name}.build/source.o'
+                    object_path.parent.mkdir(exist_ok=True)
+                    object_path.touch()
+                if layout == 'native':
+                    (directory / 'Modules').mkdir()
+                with patch.object(CHECKS, 'ROOT', root), patch.object(CHECKS, 'run') as run:
+                    CHECKS.acceptance_checks(directory, 2)
+                    commands = [call.args[0] for call in run.call_args_list]
+                    self.assertIn('CODE_SIGNING_ALLOWED=NO', commands[0])
+                    self.assertEqual(commands[-2][1:], ['--help'])
+                    self.assertEqual(commands[-1][1:], ['--self-test'])
+                    self.assertEqual(len(commands), 4)

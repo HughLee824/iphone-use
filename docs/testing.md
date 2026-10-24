@@ -8,6 +8,7 @@ On a Mac with full Xcode selected, Python 3.9+ and Node.js 22+, install the pinn
 
 ```sh
 python3 scripts/install-swiftlint.py
+python3 scripts/install-actionlint.py
 python3 scripts/check.py
 ```
 
@@ -23,6 +24,8 @@ python3 -m unittest discover -s scripts/tests -p test_docs.py -v
 ```
 
 The link checker checks local Markdown destinations, heading anchors and HTML resource links in non-ignored repository Markdown. It cannot verify remote URLs, client behavior or the accuracy of prose. Keep English and Chinese entry points aligned. See [architecture](architecture.md#engineering-checks) for module and fixture conventions.
+
+The quick suite runs checksum-pinned Actionlint on the main and Homebrew template workflows. Embedded shell/Python lint integrations are disabled explicitly; this is workflow syntax and expression validation. The native suite also builds NativeTextProbe without signing and compiles ContactFaultHost against the current debug Core/RunnerSupport/bridge objects, then runs its fake-transport `--self-test`. None of these checks connects to a device.
 
 ## Prepare a physical test
 

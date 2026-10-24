@@ -68,6 +68,15 @@ def swiftlint_command():
 
 
 def quick_checks():
+    pin = json.loads((ROOT / "scripts/actionlint.json").read_text())
+    actionlint = ROOT / ".build/tools" / f"actionlint-{pin['version']}" / "actionlint"
+    if not actionlint.is_file():
+        raise RuntimeError("Run python3 scripts/install-actionlint.py before checks.")
+    if run([actionlint, "-version"], capture=True).splitlines()[0] != pin['version']:
+        raise RuntimeError("Actionlint version does not match scripts/actionlint.json")
+    workflows = sorted((ROOT / ".github/workflows").glob("*.yml"))
+    workflows += sorted((ROOT / "packaging").glob("*/.github/workflows/*.yml"))
+    run([actionlint, "-shellcheck=", "-pyflakes=", *workflows])
     run([sys.executable, "scripts/check-docs.py"])
     for pattern in ("test_docs.py", "test_governance.py", "test_engineering_checks.py"):
         run([sys.executable, "-m", "unittest", "discover", "-s", "scripts/tests", "-p", pattern, "-v"])
@@ -77,6 +86,33 @@ def quick_checks():
     run([sys.executable, "scripts/sync-plugin.py", "--archive", ".build/plugins"])
 
 
+def acceptance_checks(binary_directory, jobs):
+    run(["xcodebuild", "build", "-project", "scripts/NativeTextProbe.xcodeproj",
+         "-target", "NativeTextProbe", "-configuration", "Debug", "-sdk", "iphoneos",
+         "-jobs", str(jobs), "CODE_SIGNING_ALLOWED=NO",
+         f"SYMROOT={ROOT / '.build/check-probe/products'}",
+         f"OBJROOT={ROOT / '.build/check-probe/intermediates'}"])
+    directory = ROOT / ".build/acceptance-tools"
+    directory.mkdir(parents=True, exist_ok=True)
+    modulemap = directory / "module.modulemap"
+    header = ROOT / "Sources/AppleNativeBridge/include/AppleNativeBridge.h"
+    modulemap.write_text(f'module AppleNativeBridge {{ header "{header}" export * }}\n')
+    objects = []
+    for target in ("IPhoneUseCore", "IPhoneUseRunnerSupport", "AppleNativeBridge"):
+        combined = binary_directory / f"{target}.o"
+        inputs = [combined] if combined.is_file() else sorted((binary_directory / f"{target}.build").rglob("*.o"))
+        if not inputs:
+            raise RuntimeError(f"Missing debug objects for {target} in {binary_directory}")
+        objects.extend(inputs)
+    modules = binary_directory / "Modules"
+    binary = directory / "ContactFaultHost"
+    run(["xcrun", "swiftc", "-parse-as-library", "-I", modules if modules.is_dir() else binary_directory,
+         "-Xcc", f"-fmodule-map-file={modulemap}", "scripts/native-contact-fault-host.swift",
+         *objects, "-o", binary])
+    run([binary, "--help"])
+    run([binary, "--self-test"])
+
+
 def native_checks(jobs):
     run(["xcodebuild", "-version"])
     run(["swift", "--version"])
@@ -84,6 +120,7 @@ def native_checks(jobs):
     run(["swift", "build", "--jobs", str(jobs), "--product", "iphone-use"])
     binary_directory = Path(run(["swift", "build", "--show-bin-path"], capture=True))
     environment = require_cli(binary_directory / "iphone-use")
+    acceptance_checks(binary_directory, jobs)
     run(["swift", "test", "--package-path", "packages/runner-support", "--jobs", str(jobs)])
     run(["swift", "test", "--jobs", str(jobs)])
     runtime_checks()

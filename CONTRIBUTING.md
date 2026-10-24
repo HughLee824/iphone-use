@@ -8,6 +8,7 @@ Read the [architecture](docs/architecture.md) and [testing guide](docs/testing.m
 
 ```sh
 python3 scripts/install-swiftlint.py
+python3 scripts/install-actionlint.py
 python3 scripts/check.py
 ```
 

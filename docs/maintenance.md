@@ -21,6 +21,8 @@ The quick job runs on Linux and native checks run on the Xcode macOS image. The 
 
 ## Tool versions and generated content
 
+Actionlint is pinned with platform-specific archive SHA-256 values in `scripts/actionlint.json`. Install it with `python3 scripts/install-actionlint.py`; the quick suite requires that checkout-local version. It checks the repository and Homebrew template workflows. Upgrade the version and official checksums together.
+
 The SwiftLint pin includes an official portable-archive SHA-256 in [scripts/swiftlint.json](../scripts/swiftlint.json). Install with `python3 scripts/install-swiftlint.py`; it downloads with macOS system `curl` over verified HTTPS, verifies the archive before running the binary and checks the reported version. CI and local checks reject another version. Installation is checkout-local; do not change a user's global Homebrew tool to match CI.
 
 For a SwiftLint upgrade, inspect the official release, update both fields, then run strict lint and the full checks. Do not disable rules or mass-format unrelated files merely to make the upgrade pass. GitHub Actions are pinned by commit; review dependency PRs before updating those pins.

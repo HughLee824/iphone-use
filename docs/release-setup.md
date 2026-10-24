@@ -35,6 +35,7 @@ setup 将包复制到用户状态目录，改写为保存的 App bundle ID、嵌
 
 ```sh
 python3 scripts/install-swiftlint.py
+python3 scripts/install-actionlint.py
 python3 scripts/check.py
 python3 scripts/build-release.py --version 0.2.0-rc.1 --require-clean
 python3 scripts/verify-release.py .build/releases/iphone-use-0.2.0-rc.1-macos-arm64.tar.gz --require-clean
