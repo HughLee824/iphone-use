@@ -34,8 +34,8 @@ setup 将包复制到用户状态目录，改写为保存的 App bundle ID、嵌
 在 macOS/Xcode 主机的源码目录执行，需要 Python 3.9+；Python 仅用于维护者打包，不是用户运行依赖：
 
 ```sh
-swift test
-python3 -m unittest discover -s scripts/tests -v
+python3 scripts/install-swiftlint.py
+python3 scripts/check.py
 python3 scripts/build-release.py --version 0.2.0-rc.1 --require-clean
 python3 scripts/verify-release.py .build/releases/iphone-use-0.2.0-rc.1-macos-arm64.tar.gz --require-clean
 python3 scripts/generate-homebrew.py .build/releases/iphone-use-0.2.0-rc.1-macos-arm64.tar.gz --output .build/releases/iphone-use.rb

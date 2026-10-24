@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -14,7 +15,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  quick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+      - name: Validate pull request title
+        run: python3 scripts/check-pr-title.py --event "$GITHUB_EVENT_PATH"
+      - name: Run portable checks
+        run: python3 scripts/check.py --suite quick
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: client-plugins
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: true # Explicit public paths below include .build/plugins.
+          path: |
+            .build/plugins/*.zip
+            .build/plugins/*.zip.sha256
+  native:
+    needs: quick
     runs-on: xcode-27
     timeout-minutes: 20
     env:
@@ -32,15 +57,18 @@ jobs:
           xcodebuild -version
           swift --version
       - name: Install SwiftLint
-        run: brew list swiftlint >/dev/null 2>&1 || brew install swiftlint
+        run: python3 scripts/install-swiftlint.py
       - name: Run shared engineering checks
-        run: python3 scripts/check.py
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: client-plugins
-          if-no-files-found: error
-          retention-days: 7
-          include-hidden-files: true # Explicit public paths below include .build/plugins.
-          path: |
-            .build/plugins/*.zip
-            .build/plugins/*.zip.sha256
+        run: python3 scripts/check.py --suite native
+  test:
+    # Keep the protected status name and fail even when an upstream job was skipped.
+    if: always()
+    needs: [quick, native]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every check group
+        env:
+          QUICK_RESULT: ${{ needs.quick.result }}
+          NATIVE_RESULT: ${{ needs.native.result }}
+        run: test "$QUICK_RESULT" = success && test "$NATIVE_RESULT" = success

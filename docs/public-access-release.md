@@ -23,7 +23,7 @@ The shared check runs documentation links, strict SwiftLint, both Swift test sui
 
 ## Publish a plugin change
 
-1. Update the canonical skill, adapter or preflight. Bump the version in all three plugin manifests (Codex, Claude Code and DeepSeek Harness) and the SKILL.md workflow version whenever installed content changes.
+1. Update the canonical skill, adapter or preflight. Before release, use `python3 scripts/set-plugin-version.py X.Y.Z` to update the shared distribution version; follow [version policy](../CONTRIBUTING.md#versions-and-release-notes).
 2. Run `python3 scripts/sync-plugin.py` and the checks above. Inspect the diff and relocated ZIP contents, including local reference targets and license.
 3. Publish the reviewed commit to this public repository. Retain the source commit used for acceptance.
 4. From outside the checkout, add the **public repository** as the marketplace, install in each client, and confirm the cached version. Use [the documented client commands](plugins.md).

@@ -4,7 +4,7 @@
 
 ## 发布顺序
 
-1. 在功能分支修改唯一 skill 源及安装器，通过 PR 审阅合入 main。版本需与 `packages/iphone-use-skill/package.json` 一致；用 `scripts/sync-plugin.py` 同步插件副本。
+1. 在功能分支修改唯一 skill 源及安装器，通过 PR 审阅合入 main。发布前用 `python3 scripts/set-plugin-version.py X.Y.Z` 联动更新分发版本并同步副本；递增规则见 [CONTRIBUTING.md](../CONTRIBUTING.md#versions-and-release-notes)。
 2. 等待该 main 提交的 CI 成功。完成并记录相应的本地真机验收；云端安装测试不能替代真机证据。
 3. 在 GitHub Actions 选择 **Publish portable skill**，选择 main，输入源文件中已有的新版本。不允许从 PR/其他分支发布，也不在每次普通合并时自动发布。
 4. 工作流校验相同 SHA 的 main CI、版本、registry 未占用、生成文件同步和安装器测试；生成完整 tgz，测试该 tgz，然后通过 OIDC 发布，并等待 registry 提供相同 integrity 的包。

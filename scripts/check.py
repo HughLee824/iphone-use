@@ -5,6 +5,7 @@ Requires full Xcode, SwiftLint, Python 3 and Node.js. Builds finish before CLI
 integration tests start; no check is silently skipped because the CLI is absent.
 """
 import argparse
+import json
 import os
 from pathlib import Path
 import shlex
@@ -55,34 +56,57 @@ def runtime_checks():
             run([binary], environment=environment)
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--jobs", type=int, default=2, help="Swift/Xcode build concurrency (default: 2)")
-    args = parser.parse_args()
-    if args.jobs < 1:
-        parser.error("--jobs must be positive")
+def swiftlint_command():
+    pin = json.loads((ROOT / "scripts/swiftlint.json").read_text())
+    version = pin["version"]
+    local = ROOT / ".build/tools" / f"swiftlint-{version}" / "swiftlint"
+    command = str(local) if local.is_file() else "swiftlint"
+    actual = run([command, "version"], capture=True)
+    if actual != version:
+        raise RuntimeError(f"Expected SwiftLint {version}, got {actual}. Run python3 scripts/install-swiftlint.py.")
+    return command
+
+
+def quick_checks():
     run([sys.executable, "scripts/check-docs.py"])
+    for pattern in ("test_docs.py", "test_governance.py", "test_engineering_checks.py"):
+        run([sys.executable, "-m", "unittest", "discover", "-s", "scripts/tests", "-p", pattern, "-v"])
+    node_tests = sorted(str(path.relative_to(ROOT)) for path in (ROOT / "scripts/tests").glob("test_*.mjs"))
+    run(["node", "--test", *node_tests])
+    run([sys.executable, "scripts/sync-plugin.py", "--check"])
+    run([sys.executable, "scripts/sync-plugin.py", "--archive", ".build/plugins"])
+
+
+def native_checks(jobs):
     run(["xcodebuild", "-version"])
     run(["swift", "--version"])
-    run(["swiftlint", "version"])
-    run(["swiftlint", "lint", "--strict", "--no-cache"])
-    run(["swift", "build", "--jobs", str(args.jobs), "--product", "iphone-use"])
+    run([swiftlint_command(), "lint", "--strict", "--no-cache"])
+    run(["swift", "build", "--jobs", str(jobs), "--product", "iphone-use"])
     binary_directory = Path(run(["swift", "build", "--show-bin-path"], capture=True))
     environment = require_cli(binary_directory / "iphone-use")
-    run(["swift", "test", "--package-path", "packages/runner-support", "--jobs", str(args.jobs)])
-    run(["swift", "test", "--jobs", str(args.jobs)])
+    run(["swift", "test", "--package-path", "packages/runner-support", "--jobs", str(jobs)])
+    run(["swift", "test", "--jobs", str(jobs)])
     runtime_checks()
     run([sys.executable, "-m", "unittest", "discover", "-s", "scripts/tests", "-v"],
         environment=environment)
-    node_tests = sorted(str(path.relative_to(ROOT)) for path in (ROOT / "scripts/tests").glob("test_*.mjs"))
-    run(["node", "--test", *node_tests])
     run(["xcodebuild", "build-for-testing", "-project", "Runner/IPhoneUseRunner.xcodeproj",
          "-scheme", "IPhoneUseRunner", "-configuration", "Debug", "-sdk", "iphoneos",
          "-destination", "generic/platform=iOS", "-derivedDataPath", ".build/check-runner",
-         "-jobs", str(args.jobs), "CODE_SIGNING_ALLOWED=NO", "IPHONEOS_DEPLOYMENT_TARGET=17.0"])
-    run([sys.executable, "scripts/sync-plugin.py", "--check"])
-    run([sys.executable, "scripts/sync-plugin.py", "--archive", ".build/plugins"])
-    print("All device-free checks passed. Physical-device acceptance is separate.", flush=True)
+         "-jobs", str(jobs), "CODE_SIGNING_ALLOWED=NO", "IPHONEOS_DEPLOYMENT_TARGET=17.0"])
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--jobs", type=int, default=2, help="Swift/Xcode build concurrency (default: 2)")
+    parser.add_argument("--suite", choices=("all", "quick", "native"), default="all")
+    args = parser.parse_args()
+    if args.jobs < 1:
+        parser.error("--jobs must be positive")
+    if args.suite in ("all", "quick"):
+        quick_checks()
+    if args.suite in ("all", "native"):
+        native_checks(args.jobs)
+    print(f"Device-free checks passed: {args.suite}. Physical-device acceptance is separate.", flush=True)
 
 
 if __name__ == "__main__":

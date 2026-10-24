@@ -28,6 +28,8 @@ Start with [your first iPhone task](first-task.md). These documents describe the
 
 ## Contribute and maintain
 
+Start with [CONTRIBUTING.md](../CONTRIBUTING.md) for Git, PR and validation rules, [maintenance](maintenance.md) for repository settings, and [SECURITY.md](../SECURITY.md) for private reports.
+
 | Guide | Purpose |
 | --- | --- |
 | [Architecture](architecture.md) · [Native backend](apple-native-backend.md) | Module boundaries, Apple runtime adapters and failure semantics. |

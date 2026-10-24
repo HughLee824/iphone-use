@@ -4,13 +4,16 @@ Build and test the exact source you intend to distribute. Device-free checks, in
 
 ## Shared engineering checks
 
-On a Mac with full Xcode selected, SwiftLint, Python 3.9+ and Node.js 22+, run:
+On a Mac with full Xcode selected, Python 3.9+ and Node.js 22+, install the pinned SwiftLint and run:
 
 ```sh
+python3 scripts/install-swiftlint.py
 python3 scripts/check.py
 ```
 
 This is also the entry point for CI and release checks. It checks documentation links, runs strict SwiftLint, builds the CLI, runs the shared-package and Core Swift suites, Objective-C runtime doubles, Python integration tests and Node template tests, builds the unsigned iOS Runner, and checks/packages the plugin. `--jobs 2` is the default build concurrency. Missing tools or the required CLI fail the check. Root `swift test` alone does not run the dependency package's tests.
+
+CI runs portable checks on Linux first, then runs native checks on macOS. The required `test` gate runs even after failure or a skipped dependency and accepts only success from both groups. Locally, `--suite quick` and `--suite native` select these same groups; the default runs both. See [contribution rules](../CONTRIBUTING.md#development-and-validation).
 
 For documentation-only changes:
 

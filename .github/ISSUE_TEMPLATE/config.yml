@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/HughLee824/iphone-use/security/advisories/new
+    about: Send sensitive security findings privately.

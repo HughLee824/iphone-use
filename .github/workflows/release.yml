@@ -39,7 +39,7 @@ jobs:
           xcodebuild -version
           swift --version
       - name: Install SwiftLint
-        run: brew list swiftlint >/dev/null 2>&1 || brew install swiftlint
+        run: python3 scripts/install-swiftlint.py
       - name: Run shared engineering checks
         run: python3 scripts/check.py
       - name: Validate and package the client plugin

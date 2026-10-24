@@ -1,0 +1,32 @@
+name: Bug report
+description: Report a reproducible problem with sanitized evidence.
+body:
+  - type: markdown
+    attributes:
+      value: "For security vulnerabilities, use the private reporting link in SECURITY.md. Do not attach credentials, device identifiers or private phone content."
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: CLI/plugin version or commit, macOS, Xcode, iPhone model, iOS and standard/runner mode. Include installation source; omit device IDs.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the relevant commands and whether the issue reproduces with fresh observations. Do not replay uncertain input just to reproduce it.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+      description: Include sanitized error codes, action outcomes and whether the action visibly took effect.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Additional evidence
+      description: Sanitized logs or a minimal fixture, if needed. List any checks already attempted and their results.

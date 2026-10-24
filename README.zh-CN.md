@@ -244,6 +244,8 @@ iPhone-use 处于早期开发阶段。真机验收覆盖上述实测环境，不
 
 ## 参与贡献
 
+[贡献与 Git/PR 规范](CONTRIBUTING.md) · [安全问题报告](SECURITY.md)
+
 欢迎提交 issue、聚焦的 pull request 和可复现的设备问题报告。较大改动建议先通过 [issue](https://github.com/HughLee824/iphone-use/issues) 讨论范围。
 
 提交前运行与 [CI](.github/workflows/ci.yml) 一致的检查：
