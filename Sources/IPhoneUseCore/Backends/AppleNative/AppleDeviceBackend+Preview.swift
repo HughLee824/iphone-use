@@ -28,7 +28,9 @@ extension AppleDeviceBackend {
         else {
             throw IPhoneUseError("preview_unavailable", "Native control or media cleanup is not ready")
         }
-        let preview = try NativePreview(port: options.port, device: previewDevice); self.preview = preview
+        let preview = try NativePreview(
+            port: options.port, device: previewDevice, owner: PreviewOwner(device: cli.device))
+        self.preview = preview
         previewFailure = nil
         do {
             let facts = try NativeCaptureChecks.read(requireBacklight: false) { try cli.read($0) }

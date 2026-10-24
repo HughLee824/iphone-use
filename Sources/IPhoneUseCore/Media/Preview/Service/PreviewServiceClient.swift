@@ -30,6 +30,8 @@ final class PreviewServiceClient {
         let lock = try DeviceLock(root: directory, device: "startup")
         defer { withExtendedLifetime(lock) {} }
         if (try? call("ping")) != nil { return }
+        let errorURL = directory.appendingPathComponent("startup-error.json")
+        try? FileManager.default.removeItem(at: errorURL)
         let logURL = directory.appendingPathComponent("service.log")
         FileManager.default.createFile(atPath: logURL.path, contents: nil, attributes: [.posixPermissions: 0o600])
         let log = try FileHandle(forWritingTo: logURL)
@@ -43,6 +45,10 @@ final class PreviewServiceClient {
         while process.isRunning, ProcessInfo.processInfo.systemUptime < deadline {
             if (try? call("ping")) != nil { return }
             Thread.sleep(forTimeInterval: 0.1)
+        }
+        if let data = try? Data(contentsOf: errorURL), let error = try? jsonObject(data) {
+            throw IPhoneUseError(error["code"] as? String ?? "preview_service_failed",
+                                 error["message"] as? String ?? "Preview service failed to start")
         }
         throw IPhoneUseError("preview_service_unavailable", "Cannot start preview service; see \(logURL.path)")
     }

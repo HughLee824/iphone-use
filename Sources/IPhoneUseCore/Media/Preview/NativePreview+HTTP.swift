@@ -46,6 +46,13 @@ extension NativePreview {
             self.send(connection, code: "403 Forbidden", type: "text/plain", data: Data()); return
         }
         let path = String(parts[1]).components(separatedBy: "?")[0]
+        if !matchesGeneration(String(parts[1])) {
+            send(connection, code: "409 Conflict", type: "text/plain", data: Data()); return
+        }
+        route(path: path, target: String(parts[1]), on: connection)
+    }
+
+    private func route(path: String, target: String, on connection: NWConnection) {
         switch path {
         case "/\(self.token)/":
             self.send(connection, type: "text/html; charset=utf-8", data: Data(NativePreviewPage.html.utf8))
@@ -62,7 +69,7 @@ extension NativePreview {
         case "/\(self.token)/state":
             self.send(connection, type: "application/json", data: (try? jsonData(self.facts())) ?? Data())
         case "/\(self.token)/gestures":
-            let query = URLComponents(string: "http://localhost" + String(parts[1]))?.queryItems
+            let query = URLComponents(string: "http://localhost" + target)?.queryItems
             let after = query?.first(where: { $0.name == "after" })?.value.flatMap(Int.init)
             if let after, after == self.gestures.sequence {
                 self.waitingGestures[ObjectIdentifier(connection)] = (
@@ -72,9 +79,14 @@ extension NativePreview {
                 self.sendGestures(connection, after: after)
             }
         case "/\(self.token)/frame":
-            respondWithFrame(to: String(parts[1]), on: connection)
+            respondWithFrame(to: target, on: connection)
         default: self.send(connection, code: "404 Not Found", type: "text/plain", data: Data())
         }
+    }
+
+    private func matchesGeneration(_ target: String) -> Bool {
+        let query = URLComponents(string: "http://localhost" + target)?.queryItems
+        return query?.first(where: { $0.name == "generation" })?.value.map { $0 == generation } ?? true
     }
 
     private func sendFrame(_ connection: NWConnection) {
@@ -128,7 +140,8 @@ extension NativePreview {
         var response = Data(
             """
             HTTP/1.1 \(code)\r\nContent-Type: \(type)\r\nContent-Length:\
-             \(data.count)\r\n\(headers)Cache-Control: \(cache)\r\nReferrer-Policy:\
+             \(data.count)\r\nX-Preview-Generation: \(generation)\r\n\
+                 \(headers)Cache-Control: \(cache)\r\nReferrer-Policy:\
              no-referrer\r\nX-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'none';\
              img-src 'self' blob:; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self';\
              frame-ancestors 'none'\r\nConnection: close\r\n\r\n

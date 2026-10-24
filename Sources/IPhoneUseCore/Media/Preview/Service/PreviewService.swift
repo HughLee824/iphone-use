@@ -100,6 +100,15 @@ private final class PreviewNoRedirect: NSObject, URLSessionTaskDelegate {
 }
 
 public func runPreviewService(directory: URL, port: Int) throws {
+    do { try servePreview(directory: directory, port: port) } catch {
+        try? saveJSON(["code": (error as? IPhoneUseError)?.code ?? "preview_service_failed",
+                       "message": String(describing: error)],
+                      to: directory.appendingPathComponent("startup-error.json"))
+        throw error
+    }
+}
+
+private func servePreview(directory: URL, port: Int) throws {
     umask(0o077)
     try SessionPaths.secureDirectory(directory)
     let lock = try DeviceLock(root: directory, device: "service")

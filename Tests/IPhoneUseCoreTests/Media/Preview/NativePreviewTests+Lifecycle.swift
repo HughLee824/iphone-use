@@ -3,6 +3,20 @@ import CoreImage
 @testable import IPhoneUseCore
 
 extension NativePreviewTests {
+    func testBindingGenerationRejectsPreviousFrameAndGestureRequests() throws {
+        let preview = try NativePreview(port: 0)
+        defer { preview.close() }
+        let old = preview.status()["generation"] as? String
+        XCTAssertNotNil(old)
+        XCTAssertFalse(old?.contains(preview.token) ?? true, "Generation must not disclose source capability")
+        preview.suspend("source replaced")
+        XCTAssertNotEqual(preview.status()["generation"] as? String, old)
+        for resource in ["frame", "gestures", "bezel"] {
+            let url = try XCTUnwrap(URL(string: preview.url + resource + "?generation=" + (old ?? "")))
+            XCTAssertEqual(try get(url).0, 409)
+        }
+    }
+
     func testOccupiedPortFailsPromptlyAndRetryKeepsLoopbackProtection() throws {
         let occupied = try NativePreview(port: 0)
         defer { occupied.close() }

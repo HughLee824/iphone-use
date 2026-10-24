@@ -52,6 +52,7 @@ final class XCTestBackend: SessionBackend {
                 guard let self else { throw IPhoneUseError("backend_unavailable", "Runner is not connected") }
                 return try Self.decodePreviewGeometry(self.request("preview-geometry", timeout: 3))
             })
+        recording?.previewOwner = PreviewOwner(device: udid)
         let transport = RunnerUSBTransport(device: udid)
         _ = try transport.requireUSB(deadline: ProcessInfo.processInfo.systemUptime + 5)
         self.transport = transport

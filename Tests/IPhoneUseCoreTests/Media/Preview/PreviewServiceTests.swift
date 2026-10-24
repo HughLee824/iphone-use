@@ -74,4 +74,55 @@ final class PreviewServiceTests: XCTestCase {
         let client = try PreviewServiceClient(port: service.port, directory: service.directory)
         XCTAssertEqual(try client.call("ping")["ok"] as? Bool, true)
     }
+    func testDelayedSourceResponseIsRejectedAfterReplacementOrRevocation() throws {
+        for revoke in [false, true] {
+            let service = try service(), source = try NativePreview(port: 0)
+            defer { source.close() }
+            let owner = UUID().uuidString
+            let entry = try service.queue.sync {
+                try service.registry.attach(device: "phone", owner: owner, url: source.url,
+                                            now: ProcessInfo.processInfo.systemUptime)
+            }
+            let url = "http://127.0.0.1:\(service.port)/v/\(entry.token)/gestures?after=0"
+            let done = expectation(description: "late response")
+            var status = 0
+            URLSession.shared.dataTask(with: try XCTUnwrap(URL(string: url))) { _, response, _ in
+                status = (response as? HTTPURLResponse)?.statusCode ?? 0; done.fulfill()
+            }.resume()
+            let deadline = ProcessInfo.processInfo.systemUptime + 0.8
+            while source.queue.sync(execute: { source.waitingGestures.isEmpty }),
+                ProcessInfo.processInfo.systemUptime < deadline { Thread.sleep(forTimeInterval: 0.01) }
+            XCTAssertFalse(source.queue.sync { source.waitingGestures.isEmpty })
+            try service.queue.sync {
+                if revoke { try service.registry.revoke(device: "phone") } else {
+                    service.registry.detach(device: "phone", owner: owner)
+                    _ = try service.registry.attach(device: "phone", owner: UUID().uuidString, url: source.url,
+                                                    now: ProcessInfo.processInfo.systemUptime)
+                }
+            }
+            wait(for: [done], timeout: 4)
+            XCTAssertEqual(status, revoke ? 404 : 409)
+        }
+    }
+
+    func testPublicationReportsRevocationAndNeverReregistersItself() throws {
+        let service = try service(), source = try NativePreview(port: 0)
+        defer { source.close() }
+        let client = try PreviewServiceClient(port: service.port, directory: service.directory)
+        let publication = try PreviewPublication(client: client, device: "phone", owner: UUID().uuidString,
+                                                 sourceURL: source.url)
+        defer { publication.close() }
+        XCTAssertEqual(try get(publication.url).0, 200)
+        try client.call("revoke", fields: ["device": "phone"])
+        let deadline = ProcessInfo.processInfo.systemUptime + 3
+        while publication.failure == nil, ProcessInfo.processInfo.systemUptime < deadline {
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        XCTAssertNotNil(publication.failure)
+        XCTAssertEqual(try get(publication.url).0, 404)
+        XCTAssertNil(service.queue.sync {
+            service.registry.source(device: "phone", now: ProcessInfo.processInfo.systemUptime)
+        })
+    }
+
 }

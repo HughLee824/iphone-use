@@ -1,15 +1,32 @@
 extension NativePreviewPage {
     static let streamScript = """
-        let sequence = -1;
+        let sequence = -1, streamGeneration=null, displayEpoch=0;
+        function clearStream(generation=null){
+          streamGeneration=generation;displayEpoch++;sequence=-1;lastSequence=null;lastFrameAt=0;
+          screen.removeAttribute('src');screen.style.opacity=0;
+          if(objectURL)URL.revokeObjectURL(objectURL);objectURL=null;
+          gestureGeneration++;gestureCursor=null;clearGestures();setScreenCovered(true);
+        }
+        function acceptState(s,newerFrame=false){
+          if(typeof s.generation!=='string')throw Error('Missing preview generation');
+          if(s.generation!==streamGeneration)clearStream(s.generation);
+          if(s.state==='disconnected'||s.state==='stopped'){
+            clearStream(s.generation);showState(text.disconnected,'waiting');return;
+          }
+          renderHealth(s,newerFrame);
+        }
         // Decode off-DOM before replacing the visible image. Keep one displayed
         // frame and one candidate; a failed decode must retain the last good frame.
-        async function displayFrame(blob,frameRotation){
+        async function displayFrame(blob,frameRotation,frameGeneration=streamGeneration,epoch=displayEpoch){
           const nextURL=URL.createObjectURL(blob), next=screen.cloneNode(false);
           next.decoding='async';
           const decodeStarted=performance.now();
           try{
             next.src=nextURL;
             await next.decode();
+            if(frameGeneration!==streamGeneration||epoch!==displayEpoch){
+              URL.revokeObjectURL(nextURL);return null;
+            }
             const decodeWaitMs=performance.now()-decodeStarted,layoutStarted=performance.now();
             const nextRotation=frameRotation||rotation;
             const geometryChanged=next.naturalWidth!==screen.naturalWidth||next.naturalHeight!==screen.natura\
@@ -27,19 +44,22 @@ extension NativePreviewPage {
           }catch(error){URL.revokeObjectURL(nextURL);throw error;}
         }
         async function frames(){
-          const started=performance.now();let retry=0;
+          const started=performance.now(),epoch=displayEpoch,expected=streamGeneration;let retry=0;
+          if(expected===null){setTimeout(frames,250);return;}
           try{
-            const r=await fetch('frame?after='+sequence,{cache:'no-store',signal:AbortSignal.timeout(3000)});
+            const r=await fetch('frame?after='+sequence+'&generation='+encodeURIComponent(expected)\
+        ,{cache:'no-store',signal:AbortSignal.timeout(3000)});
             if(!r.ok)throw Error();
+            if(r.headers.get('X-Preview-Generation')!==expected||epoch!==displayEpoch)throw Error();
             sequence=Number(r.headers.get('X-Preview-Sequence'));
             const frameRotation=r.headers.get('X-Preview-Rotation');
             const age=Number(r.headers.get('X-Preview-Frame-Age-Ms'))\
         ,encodeMs=Number(r.headers.get('X-Preview-Encode-Ms'));
             const headersAt=performance.now(),blob=await r.blob(),received=performance.now();
-            const timing=await displayFrame(blob,frameRotation);
-            presented(sequence,age,started,{requestMs:received-started,bodyMs:received-headersAt,...timing\
+            const timing=await displayFrame(blob,frameRotation,expected,epoch);
+            if(timing)presented(sequence,age,started,{requestMs:received-started,bodyMs:received-headersAt,...timing\
         ,encodeMs});
-          }catch{failures++;screen.style.opacity=.25;retry=100;}
+          }catch{failures++;if(epoch===displayEpoch)clearStream();retry=250;}
           setTimeout(frames,retry);
         }
         function setScreenCovered(covered){
@@ -76,14 +96,14 @@ extension NativePreviewPage {
         async function health(){
           const frameBeforeRequest=lastFrameAt;
           try{
-            const r=await fetch('state',{cache:'no-store',signal:AbortSignal.timeout(3000)});if(!r.ok)throw\
-         Error();
+            const r=await fetch('state',{cache:'no-store',signal:AbortSignal.timeout(3000)});\
+        if(r.status===403||r.status===404)clearStream();if(!r.ok)throw Error();
             const s=await r.json();
             // A slow status response must not cover a frame decoded since this request began.
-            renderHealth(s,lastFrameAt!==frameBeforeRequest);
+            acceptState(s,lastFrameAt!==frameBeforeRequest);
           }catch{
             showState(text.disconnected,'error');
-            if(lastFrameAt===frameBeforeRequest)setScreenCovered(true);
+            if(lastFrameAt===frameBeforeRequest)clearStream();
           }
           setTimeout(health,1000);
         }

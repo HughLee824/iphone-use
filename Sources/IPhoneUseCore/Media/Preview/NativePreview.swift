@@ -19,6 +19,9 @@ final class NativePreview {
     var bindingGeneration = 0
     let listener: NWListener
     let token = UUID().uuidString
+    private let streamID = UUID().uuidString
+    var generation: String { "\(streamID):\(bindingGeneration)" }
+    private var publication: PreviewPublication?
     // This is a small JPEG, not a full-size video encode. CPU rendering avoids
     // queueing its resize/color conversion behind live video and file decoding.
     var contexts = (0..<2).map { _ in
@@ -53,6 +56,7 @@ final class NativePreview {
     init(
         port: UInt16 = UInt16(PreviewConfiguration.defaultPort), device: NativePreviewDevice = .unknown,
         connectionStatus: @escaping () -> [String: Any]? = { nil },
+        owner: PreviewOwner? = nil,
         encodeFrame: @escaping (NativeVideoSnapshot.Frame, NativeDisplay, CIContext) throws -> EncodedJPEG = {
             try NativePreview.encodeJPEG($0, display: $1, context: $2)
         }
@@ -60,9 +64,11 @@ final class NativePreview {
         self.device = device; self.bezel = NativePreviewBezel.load(device: device)
         self.connectionStatus = connectionStatus
         self.encodeFrame = encodeFrame
+        let publisher = try owner.map { _ in try PreviewServiceClient(port: port) }
+        try publisher?.ensureRunning()
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(
-            host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!)
+            host: "127.0.0.1", port: NWEndpoint.Port(rawValue: owner == nil ? port : 0)!)
         do { listener = try NWListener(using: parameters) } catch {
             throw Self.listenerError(error, port: port)
         }
@@ -98,6 +104,12 @@ final class NativePreview {
             }
             timer.resume(); self.timer = timer
         }
+        do {
+            if let publisher, let owner {
+                publication = try PreviewPublication(
+                    client: publisher, device: owner.device, owner: token, sourceURL: url)
+            }
+        } catch { close(); throw error }
     }
 
     private static func listenerError(_ error: Error, port: UInt16) -> IPhoneUseError {
@@ -122,6 +134,7 @@ final class NativePreview {
 
     func status(for options: NativePreviewOptions) throws -> [String: Any] {
         let result = status()
+        if let failure = publication?.failure { throw IPhoneUseError("preview_binding_lost", failure) }
         if options.explicitPort, result["port"] as? Int != Int(options.port) {
             throw IPhoneUseError(
                 "preview_already_running",
@@ -168,16 +181,23 @@ final class NativePreview {
         }
     }
 
-    func status() -> [String: Any] { queue.sync { facts() } }
+    func status() -> [String: Any] {
+        queue.sync {
+            var result = facts()
+            if let publication { result["url"] = publication.url; result["port"] = Int(publication.port) }
+            return result
+        }
+    }
 
     func facts() -> [String: Any] {
         let health = receiver?.health() ?? [:]
         let healthy = health["healthy"] as? Bool == true
+        let previewError = publication?.failure ?? error
         return [
             "state": closed
                 ? "stopped"
-                : (error != nil ? "unavailable" : (healthy && jpeg != nil ? "streaming" : "waiting")),
-            "device": device.facts, "bezel": bezel?.profile.facts as Any? ?? NSNull(),
+                : (previewError != nil ? "unavailable" : (healthy && jpeg != nil ? "streaming" : "waiting")),
+            "generation": generation, "device": device.facts, "bezel": bezel?.profile.facts as Any? ?? NSNull(),
             "connection": connectionStatus() as Any? ?? NSNull(),
             "url": url, "port": listener.port.map { Int($0.rawValue) } as Any? ?? NSNull(),
             "readOnly": true, "source": "owned_native_rtp", "maxFPS": 30,
@@ -191,7 +211,7 @@ final class NativePreview {
                 "maxTickGapMs": maxTickGapMs, "slowFrames": slowFrames
             ],
             "mediaHealthy": healthy, "rotation": display?.rotation as Any? ?? NSNull(),
-            "error": error as Any? ?? NSNull(), "media": health
+            "error": previewError as Any? ?? NSNull(), "media": health
         ]
     }
 
@@ -203,6 +223,7 @@ final class NativePreview {
             waiting.removeAll()
             waitingGestures.removeAll()
         }
+        publication?.close()
     }
 
 }

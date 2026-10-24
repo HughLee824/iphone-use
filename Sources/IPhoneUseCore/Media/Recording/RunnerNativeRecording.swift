@@ -62,6 +62,7 @@ final class RunnerNativeRecording {
     private var currentRecordingID: String?
     private var closed = false
     private var preview: NativePreview?
+    var previewOwner: PreviewOwner?
     var connectionStatus: () -> [String: Any]? = { nil }
     private var independentOrientationConflicts = 0
     private let previewContinuity = NativePreviewContinuity()
@@ -193,7 +194,7 @@ final class RunnerNativeRecording {
         if let preview { return try preview.status(for: options) }
         let preview = try NativePreview(
             port: options.port, device: connection?.previewDevice ?? previewDevice,
-            connectionStatus: connectionStatus)
+            connectionStatus: connectionStatus, owner: previewOwner)
         self.preview = preview
         return preview.status()
     }
