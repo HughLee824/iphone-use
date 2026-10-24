@@ -86,7 +86,7 @@ def main():
                         'rounded_corners_fit':True,'sampled_arc_clearance_from_phone_units':min_clearance,'boundary_sample_count':len(samples)},
             'raster_topology_alpha128_foreground8_background4':sizes,
             'recommended_min_canvas_px':24,'16px':'Curved cutout fragments at this threshold; do not use this master at 16px.',
-            'visual_review':'Preview, inverse, colored background, small-size samples and construction inspected.',
+            'visual_review':'not performed',
             'external_recognition_test':'not performed','print_proof':'not performed'}
     (ROOT/'validation.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report,indent=2))

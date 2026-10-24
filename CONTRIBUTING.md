@@ -12,9 +12,11 @@ python3 scripts/tools/install-actionlint.py
 python3 scripts/check.py
 ```
 
-The installer writes only under `.build/tools`; it does not replace a global installation. The check accepts either this local binary or an installed binary with the exact pinned version. Update the version and verified official archive checksum together in a dedicated tooling PR.
+Both installers write only under `.build/tools`; they do not replace global installations. SwiftLint checks accept either the checkout-local binary or a global binary with the exact pinned version. Actionlint checks require the checkout-local binary. Update the version and verified official archive checksum together in a dedicated tooling PR.
 
 `python3 scripts/check.py --suite quick` runs portable documentation, tooling, plugin and Node checks. `--suite native` runs SwiftLint, CLI builds, both Swift suites, Objective-C runtime tests, Python integration tests and the unsigned Runner build. The default runs both suites. CI keeps the required `test` gate dependent on successful quick and native checks; a quick-only local run is not full device-free acceptance.
+
+For brand tools, dependencies or artwork changes, also run the isolated [brand reproducibility check](scripts/brand/README.md). CI's native job installs its pinned dependencies and runs this additional check on every run.
 
 For device-facing changes, also validate the affected workflow with the exact CLI and explicitly installed Runner under test. Report actual commands, outcomes, skips and unverified cases. Do not infer device acceptance from a build, screenshot capture or a successful input receipt. Never replay uncertain input merely to make a test pass.
 

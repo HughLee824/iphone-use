@@ -12,6 +12,14 @@ python3 -m venv .build/brand-venv
 
 The npm lockfile pins Sharp 0.35.5 and its dependency tree; requirements.txt pins Pillow 11.3.0. Sharp uses the locked prebuilt packages, with install scripts disabled. Both dependency directories are ignored. Keep the pinned versions and lockfile together when upgrading; compare generated assets before accepting changes.
 
+Check reproducibility without updating the checkout:
+
+```sh
+.build/brand-venv/bin/python scripts/brand/check.py
+```
+
+CI runs this command in its macOS native job after installing the pinned dependencies, including on dependency-update PRs. The required `test` gate depends on this job. The check copies tracked brand files, the Runner icon and the four generation tools into a temporary directory, then builds, renders, verifies and exports there. Every tracked asset and manifest must remain byte-identical. Local renders and Apple bezel artwork are not copied. Temporary files are removed on success or failure. This check is separate from `scripts/check.py`, so ordinary engineering checks do not require brand dependencies.
+
 Rebuild and check the design kit:
 
 ```sh
@@ -20,7 +28,7 @@ npm run render --prefix scripts/brand
 .build/brand-venv/bin/python scripts/brand/verify.py
 ```
 
-The verifier rebuilds SVGs in a temporary directory, checks byte equality with the approved references and evaluates raster geometry. Generated previews and validation.json stay ignored. Automated geometry checks do not constitute visual, recognition or print acceptance.
+The verifier rebuilds SVGs in a temporary directory, checks byte equality with the approved references and evaluates raster geometry. Generated previews and validation.json stay ignored. Each report marks manual visual review as `not performed`; automated geometry checks do not constitute visual, recognition or print acceptance. Record any actual manual review separately with the reviewed revision.
 
 Export production assets:
 

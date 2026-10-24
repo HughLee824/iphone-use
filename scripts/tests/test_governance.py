@@ -132,10 +132,6 @@ class GovernanceTests(unittest.TestCase):
                 self.assertEqual(result.returncode == 0, quick == native == 'success')
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class ActionlintInstallerTests(unittest.TestCase):
     def test_archive_rejects_bad_digest_and_symlink_binary(self):
         import hashlib
@@ -182,3 +178,7 @@ class ActionlintInstallerTests(unittest.TestCase):
                     installer.main()
                 execute.assert_not_called()
                 self.assertFalse((root / '.build/tools/actionlint-1.7.12').exists())
+
+
+if __name__ == '__main__':
+    unittest.main()

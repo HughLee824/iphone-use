@@ -62,6 +62,12 @@ jobs:
         run: python3 scripts/tools/install-swiftlint.py
       - name: Run shared engineering checks
         run: python3 scripts/check.py --suite native
+      - name: Verify brand toolchain and reproducible assets
+        run: |
+          npm ci --prefix scripts/brand --ignore-scripts
+          python3 -m venv .build/brand-venv
+          .build/brand-venv/bin/python -m pip install -r scripts/brand/requirements.txt
+          .build/brand-venv/bin/python scripts/brand/check.py
   test:
     # Keep the protected status name and fail even when an upstream job was skipped.
     if: always()

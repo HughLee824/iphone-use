@@ -27,6 +27,8 @@ The link checker checks local Markdown destinations, heading anchors and HTML re
 
 The quick suite runs checksum-pinned Actionlint on the main and Homebrew template workflows. Embedded shell/Python lint integrations are disabled explicitly; this is workflow syntax and expression validation. The native suite also builds NativeTextProbe without signing and compiles ContactFaultHost against the current debug Core/RunnerSupport/bridge objects, then runs its fake-transport `--self-test`. None of these checks connects to a device.
 
+CI's native job additionally installs the pinned [brand dependencies](../scripts/brand/README.md) and runs `.build/brand-venv/bin/python scripts/brand/check.py`. It rebuilds, renders, verifies and exports in a temporary directory and requires byte equality with tracked brand assets and the Runner icon. Brand-tool, artwork and dependency changes should run this separate command locally too; `scripts/check.py` covers the checker’s regression tests but does not install or require Sharp/Pillow. Automated reports never establish manual visual acceptance.
+
 ## Prepare a physical test
 
 Use a disposable field or unsaved draft. Record the source commit, CLI version/build, Mac/Xcode/iOS versions, device model and selected mode. Build a fresh CLI and follow [source Runner setup](onboarding.md#源码开发入口) to build, **explicitly install**, and connect the newly signed Runner. Supplying a new `.xctestrun` to `connect` does not install its app. Confirm the running app belongs to the installation being tested; a compatible handshake alone does not prove its binary is fresh.
