@@ -24,8 +24,8 @@ final class RunnerAXTreeTests: XCTestCase {
 
     private func resolve(_ root: Node, path: [[String: Any]]) throws -> Node {
         try RunnerAXTree.resolve(
-            root: root, path: path, snapshot: { $0 }, children: { $0.children },
-            bind: { _, selected in selected }, sameIdentity: { $0 === $1 }, matches: matches).0
+            root: root, path: path, access: .init(snapshot: { $0 }, children: { $0.children },
+            bind: { _, selected in selected }), sameIdentity: { $0 === $1 }, matches: matches).0
     }
 
     func testDuplicateUnlabelledTextViewsResolveWithinTheirOwnBranches() throws {
@@ -69,7 +69,7 @@ final class RunnerAXTreeTests: XCTestCase {
         let root = Node("app", children: [field, other], type: 2)
         XCTAssertThrowsError(try RunnerAXTree.resolve(
             root: root, path: [step(root, index: 0), step(field, index: 0)],
-            snapshot: { $0 }, children: { $0.children }, bind: { _, _ in other },
+            access: .init(snapshot: { $0 }, children: { $0.children }, bind: { _, _ in other }),
             sameIdentity: { $0 === $1 }, matches: matches)) {
                 XCTAssertEqual($0 as? RunnerAXTree.Failure, .targetChanged)
             }
@@ -86,10 +86,10 @@ final class RunnerAXTreeTests: XCTestCase {
         let queryResults = [summary, search]
         let result = try RunnerAXTree.resolve(
             root: root, path: [step(root, index: 0), step(firstWindow, index: 0), step(search, index: 0)],
-            snapshot: { $0 }, children: { $0.children }, bind: { _, selected in
+            access: .init(snapshot: { $0 }, children: { $0.children }, bind: { _, selected in
                 XCTAssertTrue(selected === search)
                 return try XCTUnwrap(queryResults.first { $0 === selected })
-            }, sameIdentity: { $0 === $1 }, matches: matches)
+            }), sameIdentity: { $0 === $1 }, matches: matches)
         XCTAssertTrue(result.0 === search)
     }
 
@@ -100,20 +100,20 @@ final class RunnerAXTreeTests: XCTestCase {
         let root = Node("app", children: [branch], type: 2)
         let path = [step(root, index: 0), step(branch, index: 0), step(field, index: 0)]
         XCTAssertThrowsError(try RunnerAXTree.resolve(
-            root: root, path: path, snapshot: { $0 }, children: { $0.children },
+            root: root, path: path, access: .init(snapshot: { $0 }, children: { $0.children },
             bind: { _, selected in
                 branch.children[0] = replacement
                 return selected
-            }, sameIdentity: { $0 === $1 }, matches: matches)) {
+            }), sameIdentity: { $0 === $1 }, matches: matches)) {
                 XCTAssertEqual($0 as? RunnerAXTree.Failure, .targetChanged)
             }
         branch.children = [field]
         XCTAssertThrowsError(try RunnerAXTree.resolve(
-            root: root, path: path, snapshot: { $0 }, children: { $0.children },
+            root: root, path: path, access: .init(snapshot: { $0 }, children: { $0.children },
             bind: { _, selected in
                 branch.attributes["value"] = "changed ancestor"
                 return selected
-            }, sameIdentity: { $0 === $1 }, matches: matches)) {
+            }), sameIdentity: { $0 === $1 }, matches: matches)) {
                 XCTAssertEqual($0 as? RunnerAXTree.Failure, .targetChanged)
             }
     }
@@ -124,7 +124,8 @@ final class RunnerAXTreeTests: XCTestCase {
         enum Unavailable: Error { case runtime }
         XCTAssertThrowsError(try RunnerAXTree.resolve(
             root: root, path: [step(root, index: 0), step(field, index: 0)],
-            snapshot: { $0 }, children: { $0.children }, bind: { _, _ -> Node in throw Unavailable.runtime },
+            access: .init(snapshot: { $0 }, children: { $0.children },
+                          bind: { _, _ -> Node in throw Unavailable.runtime }),
             sameIdentity: { $0 === $1 }, matches: matches)) {
                 XCTAssertTrue($0 is Unavailable)
             }
@@ -163,8 +164,8 @@ final class RunnerAXTreeTests: XCTestCase {
         let path = [step(root, index: 0), step(field, index: 0)]
         var bound = false
         XCTAssertThrowsError(try RunnerAXTree.resolve(
-            root: root, path: path, snapshot: { $0 }, children: { $0.children },
-            bind: { _, selected in bound = true; return selected }, sameIdentity: { $0 === $1 },
+            root: root, path: path, access: .init(snapshot: { $0 }, children: { $0.children },
+            bind: { _, selected in bound = true; return selected }), sameIdentity: { $0 === $1 },
             matches: { node, _ in node === root || node === field },
             geometryMatches: { node, _ in node !== root })) {
                 XCTAssertEqual($0 as? RunnerAXTree.Failure, .targetChanged)
@@ -172,8 +173,8 @@ final class RunnerAXTreeTests: XCTestCase {
         XCTAssertFalse(bound)
         root.children = []
         XCTAssertThrowsError(try RunnerAXTree.resolve(
-            root: root, path: path, snapshot: { $0 }, children: { $0.children },
-            bind: { _, selected in selected }, sameIdentity: { $0 === $1 }, matches: matches,
+            root: root, path: path, access: .init(snapshot: { $0 }, children: { $0.children },
+            bind: { _, selected in selected }), sameIdentity: { $0 === $1 }, matches: matches,
             geometryMatches: { _, _ in false })) {
                 XCTAssertEqual($0 as? RunnerAXTree.Failure, .pathChanged)
             }
@@ -187,11 +188,11 @@ final class RunnerAXTreeTests: XCTestCase {
         for replaceOnBind in [false, true] {
             root.children = [field]
             XCTAssertThrowsError(try RunnerAXTree.resolve(
-                root: root, path: path, snapshot: { $0 }, children: { $0.children },
+                root: root, path: path, access: .init(snapshot: { $0 }, children: { $0.children },
                 bind: { _, selected in
                     if replaceOnBind { root.children = [other]; return selected }
                     return other
-                }, sameIdentity: { $0 === $1 },
+                }), sameIdentity: { $0 === $1 },
                 matches: { node, _ in node === root || node === field },
                 geometryMatches: { _, _ in false })) {
                     XCTAssertEqual($0 as? RunnerAXTree.Failure, .targetChanged)
@@ -205,8 +206,8 @@ final class RunnerAXTreeTests: XCTestCase {
         let path = [step(root, index: 0), step(field, index: 0)]
         var captures = 0
         XCTAssertThrowsError(try RunnerAXTree.resolve(
-            root: root, path: path, snapshot: { captures += 1; return $0 }, children: { $0.children },
-            bind: { _, selected in selected }, sameIdentity: { $0 === $1 }, matches: matches,
+            root: root, path: path, access: .init(snapshot: { captures += 1; return $0 }, children: { $0.children },
+            bind: { _, selected in selected }), sameIdentity: { $0 === $1 }, matches: matches,
             geometryMatches: { _, _ in false })) {
                 XCTAssertEqual($0 as? RunnerAXTree.Failure, .geometryChanged)
             }
@@ -221,10 +222,10 @@ final class RunnerAXTreeTests: XCTestCase {
         var captures = 0
         let result = try RunnerAXTree.resolve(
             root: root, path: [step(root, index: 0), step(field, index: 0)],
-            snapshot: { element in
+            access: .init(snapshot: { element in
                 captures += 1
                 return captures == 3 ? latestRoot : element
-            }, children: { $0.children }, bind: { _, selected in selected },
+            }, children: { $0.children }, bind: { _, selected in selected }),
             sameIdentity: { first, second in
                 // Two immutable snapshots of the same platform identity.
                 (first === field || first === latestField) && (second === field || second === latestField)

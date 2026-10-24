@@ -60,6 +60,25 @@ extension LiveSessionTests {
     }
 
     @MainActor
+    private func captureNodes(_ root: XCUIElement) throws -> [[String: Any]] {
+        let tree = RunnerAXTree.flatten(try freshSnapshot(root), children: { $0.children })
+        var references = RunnerAXReferences<NSObject>()
+        let nodes: [[String: Any]] = try tree.enumerated().map { index, entry in
+            let node = entry.node
+            let frame = node.frame
+            return [
+                "index": index, "parent": entry.parent.map { $0 as Any } ?? NSNull(),
+                "identityToken": references.register(try RunnerAXBinding.identity(of: node)),
+                "type": node.elementType.rawValue, "identifier": node.identifier,
+                "label": node.label, "value": node.value ?? NSNull(), "enabled": node.isEnabled,
+                "frame": ["x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height]
+            ]
+        }
+        observedReferences = references
+        return nodes
+    }
+
+    @MainActor
     func observe(
         _ app: XCUIApplication?, root: XCUIElement?, scope: String, error: String? = nil
     ) -> [String: Any] {
@@ -69,20 +88,7 @@ extension LiveSessionTests {
         var axError = error
         if let root {
             do {
-                let tree = RunnerAXTree.flatten(try freshSnapshot(root), children: { $0.children })
-                var references = RunnerAXReferences<NSObject>()
-                nodes = try tree.enumerated().map { index, entry in
-                    let node = entry.node
-                    let frame = node.frame
-                    return [
-                        "index": index, "parent": entry.parent.map { $0 as Any } ?? NSNull(),
-                        "identityToken": references.register(try RunnerAXBinding.identity(of: node)),
-                        "type": node.elementType.rawValue, "identifier": node.identifier,
-                        "label": node.label, "value": node.value ?? NSNull(), "enabled": node.isEnabled,
-                        "frame": ["x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height]
-                    ]
-                }
-                observedReferences = references
+                nodes = try captureNodes(root)
             } catch { axError = String(describing: error) }
         }
         let snapshotFinished = Date().timeIntervalSince1970

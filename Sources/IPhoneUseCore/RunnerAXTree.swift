@@ -2,6 +2,12 @@ import Foundation
 
 // Shared by the Runner and host tests. Capture is independent of presentation budgets.
 enum RunnerAXTree {
+    struct Access<Element, Snapshot> {
+        let snapshot: (Element) throws -> Snapshot
+        let children: (Snapshot) -> [Snapshot]
+        let bind: (Element, Snapshot) throws -> Element
+    }
+
     // Text edits may change both AX value and the text-derived label. Only the
     // selected leaf's content may change, after identity has been checked.
     static func validationAttributes(
@@ -40,8 +46,7 @@ enum RunnerAXTree {
     // Walk the live snapshot, then bind that exact AX identity. Query child order
     // is not assumed to match snapshot child order (including across windows).
     static func resolve<Element, Snapshot>(
-        root: Element, path: [[String: Any]], snapshot: (Element) throws -> Snapshot,
-        children: (Snapshot) -> [Snapshot], bind: (Element, Snapshot) throws -> Element,
+        root: Element, path: [[String: Any]], access: Access<Element, Snapshot>,
         sameIdentity: (Snapshot, Snapshot) throws -> Bool,
         matches: (Snapshot, [String: Any]) throws -> Bool,
         geometryMatches: ((Snapshot, [String: Any]) -> Bool)? = nil
@@ -54,14 +59,14 @@ enum RunnerAXTree {
             if geometryMatches?(node, step) == false { geometryChanged = true }
             return true
         }
-        let selected = try walk(snapshot(root), path: path, children: children, matches: check)
-        let element = try bind(root, selected)
-        let resolved = try snapshot(element)
+        let selected = try walk(access.snapshot(root), path: path, children: access.children, matches: check)
+        let element = try access.bind(root, selected)
+        let resolved = try access.snapshot(element)
         guard try sameIdentity(selected, resolved), try check(resolved, path[path.count - 1]) else {
             throw Failure.targetChanged
         }
         // Revalidate the complete path after binding, not just the leaf's attributes.
-        let latest = try walk(snapshot(root), path: path, children: children, matches: check)
+        let latest = try walk(access.snapshot(root), path: path, children: access.children, matches: check)
         guard try sameIdentity(latest, resolved) else { throw Failure.targetChanged }
         guard !geometryChanged else { throw Failure.geometryChanged }
         return (element, latest)

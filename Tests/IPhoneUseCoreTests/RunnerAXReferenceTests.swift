@@ -34,8 +34,8 @@ final class RunnerAXReferenceTests: XCTestCase {
         ]
         func resolve() throws -> Node {
             try RunnerAXTree.resolve(
-                root: root, path: path, snapshot: { $0 }, children: { $0.children },
-                bind: { _, selected in selected }, sameIdentity: { $0 === $1 }, matches: { node, step in
+                root: root, path: path, access: .init(snapshot: { $0 }, children: { $0.children },
+                bind: { _, selected in selected }), sameIdentity: { $0 === $1 }, matches: { node, step in
                     try references.identity(for: step["identityToken"] as? String) === node
                 }).0
         }
@@ -78,8 +78,8 @@ final class RunnerAXReferenceTests: XCTestCase {
         var calls = 0
         XCTAssertThrowsError(try RunnerAXTree.resolve(
             root: observedRoot, path: [["childIndex": 0], ["childIndex": 0]],
-            snapshot: { _ in calls += 1; return liveRoot }, children: { $0.children },
-            bind: { _, selected in selected }, sameIdentity: { $0 === $1 }, matches: { _, _ in true })) {
+            access: .init(snapshot: { _ in calls += 1; return liveRoot }, children: { $0.children },
+            bind: { _, selected in selected }), sameIdentity: { $0 === $1 }, matches: { _, _ in true })) {
                 XCTAssertEqual($0 as? RunnerAXTree.Failure, .pathChanged)
             }
         XCTAssertEqual(calls, 1)

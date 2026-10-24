@@ -138,13 +138,13 @@ extension LiveSessionTests {
         let liveSnapshot: XCUIElementSnapshot
         do {
             (target, liveSnapshot) = try RunnerAXTree.resolve(
-                root: root, path: path, snapshot: freshSnapshot, children: { $0.children },
+                root: root, path: path, access: .init(snapshot: freshSnapshot, children: { $0.children },
                 bind: { root, selected in
                     guard let element = try RunnerAXBinding.bind(
                         snapshot: selected, query: root.descendants(matching: .any)) as? XCUIElement
                     else { throw CommandError("target_binding_unavailable") }
                     return element
-                }, sameIdentity: { first, second in
+                }), sameIdentity: { first, second in
                     try RunnerAXBinding.identity(of: first)
                         .isEqual(RunnerAXBinding.identity(of: second))
                 }, matches: { node, step in
@@ -205,8 +205,11 @@ extension LiveSessionTests {
         do {
             let final = try transaction.run(
                 initial: snapshot, needsFocus: !(try RunnerAXBinding.keyboardFocus(of: target)).boolValue,
-                focus: { try self.event { target.tap() } },
-                validate: { allowContentChange in
+                events: .init(focus: { try self.event { target.tap() } }, position: {
+                    try self.event { target.typeKey(XCUIKeyboardKey.downArrow.rawValue, modifierFlags: .command) }
+                }, sendText: { input in
+                    try self.event { target.typeText(input) }
+                }), validation: .init(read: { allowContentChange in
                     let (app, root) = try self.actionRoot(scope: expected["scope"] as? String ?? "")
                     let (current, snapshot) = try self.actionTarget(
                         expected, root: root, allowingLeafContentChange: allowContentChange,
@@ -219,7 +222,9 @@ extension LiveSessionTests {
                     target = current
                     self.postInputContext = self.screenContext(app: app, root: root)
                     return snapshot
-                }, plan: { current in
+                }, isEmpty: { RunnerTextInput.isCleared($0.value) }, resultMatches: { current, input in
+                    input.isEmpty ? RunnerTextInput.isCleared(current.value) : current.value as? String == input
+                }), plan: { current in
                     let input = try self.preparedText(
                         text, mode: mode, kind: "type", target: target, snapshot: current) ?? ""
                     let replacing = mode == "replace" || mode == "append"
@@ -227,12 +232,6 @@ extension LiveSessionTests {
                         "", value: current.value, secure: current.elementType == .secureTextField,
                         placeholder: current.placeholderValue, deleteKey: XCUIKeyboardKey.delete.rawValue) : ""
                     return RunnerTextTransaction.Plan(replacing: replacing, deletion: deletion, insertion: input)
-                }, position: {
-                    try self.event { target.typeKey(XCUIKeyboardKey.downArrow.rawValue, modifierFlags: .command) }
-                }, sendText: { input in
-                    try self.event { target.typeText(input) }
-                }, isEmpty: { RunnerTextInput.isCleared($0.value) }, resultMatches: { current, input in
-                    input.isEmpty ? RunnerTextInput.isCleared(current.value) : current.value as? String == input
                 })
             postInputTextFields = [ScreenRect(final.frame)]
         } catch let failure as RunnerTextInput.Failure {
@@ -240,8 +239,9 @@ extension LiveSessionTests {
         } catch let failure as RunnerAXTree.Failure {
             throw CommandError(failure.rawValue, requiresObservation: true)
         } catch let failure as RunnerTextTransaction.Failure {
-            throw CommandError(failure.rawValue, requiresObservation: true,
-                               message: "Text result was not confirmed; inspect textExecution and observe without replay")
+            throw CommandError(
+                failure.rawValue, requiresObservation: true,
+                message: "Text result was not confirmed; inspect textExecution and observe without replay")
         }
     }
 

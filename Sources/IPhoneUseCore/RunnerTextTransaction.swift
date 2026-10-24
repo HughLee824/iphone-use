@@ -3,6 +3,18 @@ import Foundation
 // Shared orchestration, exercised with event-recording doubles on the host.
 // Only read-only geometry validation can repeat. Input and target selection never replay.
 final class RunnerTextTransaction {
+    struct Events {
+        let focus: () throws -> Void
+        let position: () throws -> Void
+        let sendText: (String) throws -> Void
+    }
+
+    struct Validation<State> {
+        let read: (Bool) throws -> State
+        let isEmpty: (State) -> Bool
+        let resultMatches: (State, String) -> Bool
+    }
+
     struct Plan {
         let replacing: Bool
         let deletion: String
@@ -68,52 +80,50 @@ final class RunnerTextTransaction {
     }
 
     func run<State>(
-        initial: State, needsFocus: Bool, focus: () throws -> Void,
-        validate: (Bool) throws -> State, plan: (State) throws -> Plan,
-        position: () throws -> Void, sendText: (String) throws -> Void,
-        isEmpty: (State) -> Bool, resultMatches: (State, String) -> Bool
+        initial: State, needsFocus: Bool, events: Events,
+        validation: Validation<State>, plan: (State) throws -> Plan
     ) throws -> State {
         // Reject unsupported values before focus can mutate the page.
         _ = try plan(initial)
         if needsFocus {
             stage = "focusing"
             focusAttempted = true
-            try focus()
+            try events.focus()
             focusCompleted = true
         }
         stage = "validating_after_focus"
-        var current = try needsFocus ? converged { try validate(false) } : validate(false)
+        var current = try needsFocus ? converged { try validation.read(false) } : validation.read(false)
         let prepared = try plan(current)
         if prepared.replacing {
             if !prepared.deletion.isEmpty {
                 stage = "positioning"
                 keyboardEventsAttempted += 1
-                try position()
-                current = try converged { try validate(false) }
+                try events.position()
+                current = try converged { try validation.read(false) }
                 stage = "clearing"
                 keyboardEventsAttempted += 1
-                try sendText(prepared.deletion)
+                try events.sendText(prepared.deletion)
             }
             stage = "verifying_clear"
-            current = try converged { try validate(true) }
-            guard isEmpty(current) else { throw Failure.clearUnconfirmed }
+            current = try converged { try validation.read(true) }
+            guard validation.isEmpty(current) else { throw Failure.clearUnconfirmed }
             clearConfirmed = true
         }
         // Fresh identity/path validation immediately before insertion; if an
         // external edit followed clearing, do not overwrite it or repeat clearing.
         stage = "validating_before_insert"
-        current = try validate(prepared.replacing)
-        if prepared.replacing && !isEmpty(current) { throw Failure.clearUnconfirmed }
+        current = try validation.read(prepared.replacing)
+        if prepared.replacing && !validation.isEmpty(current) { throw Failure.clearUnconfirmed }
         if !prepared.insertion.isEmpty {
             stage = "inserting"
             insertionAttempted = true
             keyboardEventsAttempted += 1
-            try sendText(prepared.insertion)
+            try events.sendText(prepared.insertion)
             insertionAcknowledged = true
         }
         stage = "verifying_result"
-        current = try converged { try validate(true) }
-        if prepared.replacing && !resultMatches(current, prepared.insertion) {
+        current = try converged { try validation.read(true) }
+        if prepared.replacing && !validation.resultMatches(current, prepared.insertion) {
             throw Failure.resultUnconfirmed
         }
         stage = "completed"

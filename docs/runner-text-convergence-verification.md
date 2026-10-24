@@ -42,6 +42,18 @@
 - 最终 Runner 签名构建、安装、连接及上述真机验证通过。`git diff --check` 通过。
 - 提交整理时额外启动了一次最终版本全量测试，构建成功，但运行异常缓慢：同一动态目标用例由前次约 1.7 秒增至 61 秒，另一项由约 0.7 秒增至 41 秒。主动停止该补跑，未将其计为通过；已输出部分未见失败。仍以上述已完成的全量、最终 53 项相关回归及真机结果作为验证依据。日志保存在本机 `/private/tmp/iu-precommit-swift-tests.log`。环境未安装 SwiftLint，未执行该检查。
 
+## 重启后补验与 SwiftLint 整理
+
+2026-10-24，用户确认前次本机 CPU 负载过高，重启并安装 SwiftLint 后补验。
+
+- 提交 `6663015` 的全量 Swift 测试通过：594 项、2 项跳过、0 失败，测试耗时约 134 秒。
+- SwiftLint 0.65.1 首轮发现本次修复的 23 处违规。将 AX 访问回调、输入事件和只读验证分别归组，提取节点采集辅助函数，修正测试变量名和长行；未修改定位条件、收敛预算、执行顺序或重放策略，也未禁用规则。
+- 整理后 `swiftlint lint --strict --no-cache` 通过：251 个文件、0 违规。关闭缓存仅用于避免本机缓存目录权限错误，不影响检查范围。
+- 整理后的最终代码再次完成全量 Swift 测试：594 项、2 项跳过、0 失败，测试耗时约 134 秒。此前最终版本全量未完成的验证缺口现已补齐。
+- 整理后的 iPhone Runner 无签名 `build-for-testing` 通过。本轮未重新安装 Runner 或重复真机操作；三类页面的真机结果仍对应上文记录的签名构建。
+
+本机日志：`/private/tmp/iu-post-reboot-swift-tests.log`、`/private/tmp/iu-post-reboot-final-swift-tests.log`、`/private/tmp/iu-post-reboot-swiftlint-fixed.log`、`/private/tmp/iu-post-reboot-runner-build.log`。
+
 ## 中间失败与证据
 
 本机完整证据根目录 `.local/text-convergence-verification/evidence/`，保存每项截图、snapshot.json 和 response.json，未加入版本控制。
