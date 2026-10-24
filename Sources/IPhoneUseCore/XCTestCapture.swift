@@ -60,6 +60,7 @@ enum XCTestCapture {
         for key in ["snapshotStartedAt", "snapshotFinishedAt", "screenshotCapturedAt"] {
             metadata[key] = result[key] as? Double ?? NSNull()
         }
+        metadata["snapshotSource"] = result["snapshotSource"] as? String ?? NSNull()
         metadata["screenContext"] = result["screenContext"] as? [String: Any] ?? NSNull()
         let available = result["axStatus"] as? String == "available"
         metadata["axStatus"] = available ? "available" : "unavailable"
@@ -68,9 +69,9 @@ enum XCTestCapture {
             metadata["axError"] = result["axError"] as? String ?? "AX data was not captured"
             return CapturedObservation(nodes: [], metadata: metadata, screenshot: png)
         }
-        guard let rawNodes = result["nodes"] as? [[String: Any]], !rawNodes.isEmpty, rawNodes.count <= 200,
+        guard let rawNodes = result["nodes"] as? [[String: Any]], !rawNodes.isEmpty,
             result["truncated"] is Bool
-        else { throw IPhoneUseError("invalid_snapshot", "Invalid AX node list or capture limit") }
+        else { throw IPhoneUseError("invalid_snapshot", "Invalid AX node list") }
         let nodes = try rawNodes.enumerated().map { index, attributes -> AXNode in
             let parent = attributes["parent"] as? Int
             guard attributes["index"] as? Int == index,

@@ -11,8 +11,8 @@ extension LiveSessionTests {
             let hostManaged = ProcessInfo.processInfo.environment["IPHONE_USE_HOST_MANAGED"] == "1"
             return [
                 "protocol": "iphone-use-spike-jsonl-v1", "lifecycleOwner": hostManaged ? "host" : "spike",
-                "lifetimeLimitSeconds": hostManaged ? NSNull() : 900, "observationVersion": 2,
-                "actionVersion": 9, "launchVersion": 2, "startupGuard": RunnerStartupGuard.facts(),
+                "lifetimeLimitSeconds": hostManaged ? NSNull() : 900, "observationVersion": 4,
+                "actionVersion": 12, "launchVersion": 2, "startupGuard": RunnerStartupGuard.facts(),
                 "frameStabilityVersion": 2, "screenGuardVersion": 1, "previewGeometryVersion": 2,
                 "inputProgressVersion": 1,
                 "applicationStateTimeoutSupported": stateTimeout != nil

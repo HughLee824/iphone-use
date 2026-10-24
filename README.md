@@ -230,7 +230,7 @@ iPhone-use is in early development. Real-device validation covers the environmen
 
 - The Swift package targets macOS 13+, and the packaged Runner has an iOS 17 compilation floor. These are build limits, not claims of end-to-end support. Binary distribution targets Apple Silicon / macOS 15+.
 - Full Xcode is required in both modes; local development signing is required only for Runner. Fresh-Mac onboarding and free Personal Team provisioning/renewal remain unverified. The Mac CLI is ad-hoc signed; Developer ID signing and notarization are not in the current release workflow.
-- Screenshot and AX capture are separate, non-atomic operations. Default observation text is capped at 60 lines / 8 KiB and source capture at 200 nodes; `inspect` cannot recover uncaptured nodes.
+- Screenshot and AX capture are separate, non-atomic operations. Default observation text is capped at 60 lines / 8 KiB. Runner exports the full tree returned by XCTest; `inspect` searches/paginates the cached nodes independently of that display budget. Transport size/time limits still apply and fail explicitly rather than silently truncating the tree.
 - Screen guards are heuristic checks, not an atomic guarantee against an app changing before input. XCTest runtime compatibility is limited to tested configurations.
 - Automatic recovery after a killed host, Mac restart, cable disconnect, or device lock is not guaranteed. Unknown actions are not automatically replayed.
 

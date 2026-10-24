@@ -78,7 +78,7 @@ extension XCTestBackend {
 
     static func validateCapabilities(_ result: [String: Any]) throws {
         let expected = [
-            "observationVersion": 2, "actionVersion": 9, "launchVersion": 2, "frameStabilityVersion": 2,
+            "observationVersion": 4, "actionVersion": 12, "launchVersion": 2, "frameStabilityVersion": 2,
             "screenGuardVersion": 1, "previewGeometryVersion": 2, "inputProgressVersion": 1
         ]
         var differences = expected.keys.sorted().compactMap { key -> String? in

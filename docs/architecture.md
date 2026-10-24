@@ -121,3 +121,18 @@ Session files default to `/private/tmp/iphone-use-<uid>`; `IPHONE_USE_STATE_DIR`
 Packaged Runner preparation is stored in `~/Library/Application Support/iphone-use`, separate from the source checkout and install directory. It contains locally re-signed artifacts and the user's provisioning profile. Private keys remain in Keychain. The device token stays in host memory and the XCTest subprocess environment rather than configuration files or CLI output.
 
 See [installation](install.md), [onboarding](onboarding.md), and [release tooling](release-setup.md) for setup, renewal, and distribution.
+
+
+### Runner 路径定位与完整 AX 采集
+
+`observationVersion=4` 通过 `snapshotWithParameters:error:` 显式请求 `snapshotKeyHonorModalViews=false` 的标准属性快照，不读取查询对象缓存的根快照。每次观察和动作校验都重新请求。导出不再固定截断为 200 个节点；宿主保存返回树的全部节点，展示仍受 60 行 / 8 KiB 预算约束，`inspect` 在缓存上查询和分页。既有传输大小与时间限制继续生效，超限明确失败，不静默返回部分树。App 未向 XCTest 暴露的节点无法凭此补齐；非模态采集也不代表所有节点可操作，执行前仍检查上下文、enabled 和 hittable。
+
+`actionVersion=12` 的 type/press 从最新原始快照根节点沿观察时保存的完整 `childIndex` 路径逐级校验类型、identifier、label、value、enabled、frame 和 AX 身份。观察时每个节点产生随机 `identityToken`，Runner 保留 token 对应的 AX 身份，仅用于比较；新观察、动作消费使旧引用失效。命中节点后，通过 `RunnerAXBinding` 绑定该快照的 AX 身份。随后检查绑定元素的身份与属性，再重新采集根快照、复核整条路径和目标身份。没有全 App 的 type/identifier/label 模糊重查，也不假定 `XCUIElement.children` 查询的顺序等于原始快照子节点顺序。坐标手势保持现有像素 guard 路径，不使用此文本目标解析器。
+
+绑定封装使用 XCTest 运行时的 `accessibilityElement` 和 `_elementMatchingAccessibilityElementOfSnapshot:`，调用前检查方法签名，捕获异常；接口缺失或绑定结果类型不符时返回 `target_binding_unavailable`，不降级为按名称或索引猜测。CLI 与 Runner 必须同时更新，不兼容版本在连接时拒绝。
+
+路径是结构地址而非永久对象身份。观察时保留的 AX 身份可以拒绝同地址、同属性但 AX 身份不同的替换；不宣称能识别平台自身复用的身份，也不能消除最后一次校验与事件发送之间的竞态。
+
+文本操作使用 `hasKeyboardFocus` 判断绑定元素是否已获键盘焦点，不使用表示 UI 焦点的 `hasFocus`。需要聚焦时只点击一次，随后重新采集和校验路径、身份及键盘焦点。定位光标后、清空后、插入前和插入后均重新验证；自身修改文本后仅允许叶节点 label/value 内容变化。焦点切换创建了新控件时停止，要求新观察，不能迁移旧命令。替换/追加还验证清空结果和最终完整值。`textExecution` 回执记录阶段、聚焦、键盘事件尝试次数和插入确认；部分执行或结果不确定时不重放。运行时接口不可用时明确失败，不退回按名字或位置猜测。以上逻辑不含 App 名称、bundle ID 或特定页面分支。
+
+自身聚焦、定位、清空、插入之后，事务内允许仅几何差异的有界只读收敛：每阶段最多 5 秒、6 次完整解析，间隔最多 100 ms。先完成全路径身份及非几何属性、绑定和最新根复核，再分类几何差异；身份/路径错误不会被移动的祖先掩盖。每次重新采集，最终仍要求原 frame 的 0.5 pt 容差，返回最新根中的叶快照。超时为 `text_geometry_unsettled`，不重放输入。回执记录累计读取/几何重查次数、超时和最近阶段耗时；Apple 同步调用不能被期限硬中断。实现与三类真机验收见 [输入事务收敛验证](runner-text-convergence-verification.md)。

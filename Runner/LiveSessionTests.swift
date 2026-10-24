@@ -23,6 +23,9 @@ final class LiveSessionTests: XCTestCase {
     var inputCompleted = false
     var inputSessionUncertain = false
     var lifecycleFacts: [String: Any]?
+    var observedReferences = RunnerAXReferences<NSObject>()
+    var commandReferences = RunnerAXReferences<NSObject>()
+    var textTransaction: RunnerTextTransaction?
     let stateTimeout = XCTestStateTimeout()
     var postInputTextFields: [ScreenRect] = []
     var postInputContext: ScreenContext?
@@ -95,6 +98,8 @@ final class LiveSessionTests: XCTestCase {
         commandIssues = []
         handlingCommand = true
         lifecycleFacts = nil
+        commandReferences = RunnerAXReferences()
+        textTransaction = nil
         executionStarted = false
         inputProgress = nil
         inputCompleted = false
@@ -146,6 +151,11 @@ final class LiveSessionTests: XCTestCase {
             ]
         }
         if command["op"] as? String == "act" {
+            if let textTransaction {
+                var result = response["result"] as? [String: Any] ?? [:]
+                result["textExecution"] = textTransaction.facts
+                response["result"] = result
+            }
             response["execution"] = [
                 "started": executionStarted, "inputCompleted": inputCompleted,
                 "completed": response["ok"] as? Bool == true
@@ -183,6 +193,7 @@ final class LiveSessionTests: XCTestCase {
         guard let stateTimeout else { throw CommandError("unsupported_xctest_runtime") }
         publishInputStarted()
         executionStarted = true // Before entering any API that can send input, including focus/select-all.
+        observedReferences = RunnerAXReferences()
         let began = ProcessInfo.processInfo.systemUptime
         // Idle may exceed this short budget during normal deceleration. Avoid synchronous
         // timeout diagnostics; the caller still checks XCTest errors and frame stability.

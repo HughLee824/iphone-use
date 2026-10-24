@@ -76,7 +76,7 @@ extension ScreenGuardTests {
 
     func testOlderRunnerCannotSilentlySkipScreenGuards() throws {
         let supported: [String: Any] = [
-            "lifecycleOwner": "host", "observationVersion": 2, "actionVersion": 9,
+            "lifecycleOwner": "host", "observationVersion": 4, "actionVersion": 12,
             "launchVersion": 2, "frameStabilityVersion": 2, "screenGuardVersion": 1,
             "previewGeometryVersion": 2,
             "inputProgressVersion": 1

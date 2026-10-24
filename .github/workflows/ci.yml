@@ -32,6 +32,12 @@ jobs:
           xcodebuild -version
           swift --version
       - run: swift test
+      - name: Test the Runner AX binding with host runtime doubles
+        run: |
+          xcrun clang -fobjc-arc -framework Foundation \
+            Runner/RunnerAXBinding.m Tests/RunnerRuntime/AXBindingTests.m \
+            -o .build/runner-ax-binding-tests
+          .build/runner-ax-binding-tests
       - name: Test the Runner event bridge with host runtime doubles
         run: |
           xcrun clang -fobjc-arc -framework Foundation -framework CoreGraphics \

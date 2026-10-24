@@ -4,6 +4,13 @@ import Darwin
 
 extension LiveSessionTests {
 
+    func freshSnapshot(_ element: XCUIElement) throws -> XCUIElementSnapshot {
+        guard let snapshot = try RunnerAXBinding.snapshot(of: element) as? XCUIElementSnapshot else {
+            throw CommandError("snapshot_unavailable", requiresObservation: true)
+        }
+        return snapshot
+    }
+
     @MainActor
     func waitForStableFrame() async throws {
         var stability = FrameStability(
@@ -38,24 +45,18 @@ extension LiveSessionTests {
 
     // Pixel-analysis boundaries only, never proof of focus. No AX focus traversal.
     func visibleTextFields(root: XCUIElement, context: ScreenContext) -> [ScreenRect] {
-        guard context.valid, context.keyboardCount == 1, let snapshot = try? root.snapshot() else {
+        guard context.valid, context.keyboardCount == 1, let snapshot = try? freshSnapshot(root) else {
             return []
         }
-        var fields: [ScreenRect] = []
-        var visited = 0, truncated = false
-        func visit(_ node: XCUIElementSnapshot) {
-            guard visited < 200 else { truncated = true; return }
-            visited += 1
+        let fields = RunnerAXTree.flatten(snapshot, children: { $0.children }).compactMap { entry -> ScreenRect? in
+            let node = entry.node
             let frame = ScreenRect(node.frame)
-            if [XCUIElement.ElementType.textField, .secureTextField, .textView, .searchField].contains(
-                node.elementType),
-                node.isEnabled, frame.valid, context.scope.cgRect.contains(frame.cgRect) {
-                fields.append(frame)
-            }
-            for child in node.children { visit(child) }
+            guard [XCUIElement.ElementType.textField, .secureTextField, .textView, .searchField].contains(
+                node.elementType), node.isEnabled, frame.valid, context.scope.cgRect.contains(frame.cgRect)
+            else { return nil }
+            return frame
         }
-        visit(snapshot)
-        return !truncated && fields.count <= 8 ? fields : []
+        return fields.count <= 8 ? fields : []
     }
 
     @MainActor
@@ -64,22 +65,25 @@ extension LiveSessionTests {
     ) -> [String: Any] {
         let snapshotTime = Date().timeIntervalSince1970
         var nodes: [[String: Any]] = []
-        var truncated = false
+        observedReferences = RunnerAXReferences()
         var axError = error
-        func visit(_ node: XCUIElementSnapshot, parent: Int?) {
-            guard nodes.count < 200 else { truncated = true; return }
-            let index = nodes.count
-            let frame = node.frame
-            nodes.append([
-                "index": index, "parent": parent.map { $0 as Any } ?? NSNull(),
-                "type": node.elementType.rawValue, "identifier": node.identifier,
-                "label": node.label, "value": node.value ?? NSNull(), "enabled": node.isEnabled,
-                "frame": ["x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height]
-            ])
-            node.children.forEach { visit($0, parent: index) }
-        }
         if let root {
-            do { visit(try root.snapshot(), parent: nil) } catch { axError = String(describing: error) }
+            do {
+                let tree = RunnerAXTree.flatten(try freshSnapshot(root), children: { $0.children })
+                var references = RunnerAXReferences<NSObject>()
+                nodes = try tree.enumerated().map { index, entry in
+                    let node = entry.node
+                    let frame = node.frame
+                    return [
+                        "index": index, "parent": entry.parent.map { $0 as Any } ?? NSNull(),
+                        "identityToken": references.register(try RunnerAXBinding.identity(of: node)),
+                        "type": node.elementType.rawValue, "identifier": node.identifier,
+                        "label": node.label, "value": node.value ?? NSNull(), "enabled": node.isEnabled,
+                        "frame": ["x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height]
+                    ]
+                }
+                observedReferences = references
+            } catch { axError = String(describing: error) }
         }
         let snapshotFinished = Date().timeIntervalSince1970
         let frame = app?.frame
@@ -101,7 +105,8 @@ extension LiveSessionTests {
                 ["x": $0.minX, "y": $0.minY, "width": $0.width, "height": $0.height] as Any
             }
                 ?? NSNull(),
-            "coordinateSpace": "screen_points", "nodes": nodes, "truncated": truncated,
+            "coordinateSpace": "screen_points", "nodes": nodes, "truncated": false,
+            "snapshotSource": "explicit_nonmodal_standard_attributes_v1",
             "screenContext": context,
             "axStatus": nodes.isEmpty ? "unavailable" : "available", "axError": axError as Any? ?? NSNull(),
             "snapshotStartedAt": snapshotTime, "snapshotFinishedAt": snapshotFinished,
