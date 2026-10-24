@@ -138,6 +138,8 @@ The [.gitignore](../.gitignore) separates local development material from the pu
 
 New private notes and device records should go under `.local/`. The former root `output/` and `spikes/` directories have been archived there; their old paths remain ignored so older tools cannot accidentally add generated files. Share only intentionally curated, sanitized excerpts; do not add broad exceptions for raw evidence directories.
 
+Root-level design QA and alignment notes are archived under `.local/` too. Their former filenames remain ignored. Optional personal skill installations and their local lockfile are excluded explicitly; `.agents/plugins/marketplace.json` remains a public project input. Repository ignore rules carry this policy across clones rather than relying on `.git/info/exclude`.
+
 Ignore rules do not remove files already tracked by Git. Use `git rm --cached` for a file that should remain on disk but leave the repository, and commit that change. An ordinary removal affects later commits; earlier commits still contain their original contents.
 
 ## Runtime storage

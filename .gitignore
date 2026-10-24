@@ -41,5 +41,10 @@ xcuserdata/
 # Keep the former experiment path ignored if an old tool recreates it.
 /spikes/
 /alignment.md
+/design-qa.md
+
+# Optional personal skill installation; keep tracked marketplace configuration visible.
+/.agents/skills/huashu-motion/
+/skills-lock.json
 
 # Public documentation lives in docs/; private notes and captures belong in .local/.
